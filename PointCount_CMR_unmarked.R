@@ -1,19 +1,22 @@
-
+# Load Library
 library(tidyverse)
+library(unmarked)
 
-# Load in data
-pc_dat <- read.csv("./NOBO_PC_Summer2024data.csv")
-
+# Load in capture data
+pc_dat <- read.csv("./Data/Point_Count_Data/NOBO_PC_Summer2024data.csv")
 print(pc_dat)
+pc_dat <- na.omit(pc_dat)# Remove rows with NA values
 
-# Remove rows with NA values
-pc_dat <- na.omit(pc_dat)
+# Load in site covariates
+site_covs <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
+
+# Match Match site covs with point count data on the Point count number
+head(pc_dat)
+head(site_covs)
+pc_dat <- merge(pc_dat, site_covs, by = "PointNum", all.x = TRUE)
 
 # Format date
 pc_dat$Date <- as.POSIXct(pc_dat$Date, format = "%m/%d/%Y")
-
-# Creating a survey number column
-pc_dat$Survey <- as.numeric(as.factor(pc_dat$Date))
 
 # Create a day of year column
 pc_dat$DOY <- yday(pc_dat$Date)
@@ -21,11 +24,12 @@ pc_dat$DOY <- yday(pc_dat$Date)
 # Add a unique id column based on Point Count number, NOBO number, and Day of Year
 pc_dat$UniqueID <- paste(pc_dat$PointNum, pc_dat$NOBOnum, pc_dat$DOY, sep = "_")
 
-# Columns to subset
-cols_sub <- c( "UniqueID", "Survey","int1", "int2", "int3", "int4")
-
 # Subset the capture-mark data
-pc_CMR <- pc_dat[, cols_sub, drop = FALSE]
+pc_CMR <- pc_dat[, c( "UniqueID", "Survey","int1", "int2", "int3", "int4",
+                      "Observor", "Temp.deg.F", "Wind.Beau.Code", "Sky.Beau.Code",
+                      "DOY", "woody_prp", "herb_prp", "baregnd_prp", 
+                      "woody_mean_p_Area", "woody_c_clumpy"),
+                 drop = FALSE]
 head(pc_CMR)
 
 
@@ -47,8 +51,43 @@ pc_CMRtab <- table(pc_CMR$UniqueID, pc_CMR$captureHistory)
 class(pc_CMRtab) <- "matrix"
 nrow(pc_CMRtab)
 
-# Covariate for time interval
-intervalMat <- matrix(c('1','2','3', '4'), nrow(pc_CMRtab), 4, byrow=TRUE)
+# Obs cov for time interval
+inter_mat <- matrix(c('1','2','3', '4'), nrow(pc_CMRtab), 4, byrow=TRUE)
+
+# Obs cov for observer
+obser_mat <- matrix(NA, nrow(pc_CMRtab), 4, byrow=TRUE)
+obser_mat[,1] <- pc_CMR$Observor
+obser_mat[,2] <- pc_CMR$Observor
+obser_mat[,3] <- pc_CMR$Observor
+obser_mat[,4] <- pc_CMR$Observor
+
+# Obs cov for day of year
+doy_mat <- matrix(NA, nrow(pc_CMRtab), 4, byrow=TRUE)
+doy_mat[,1] <- pc_CMR$DOY
+doy_mat[,2] <- pc_CMR$DOY
+doy_mat[,3] <- pc_CMR$DOY
+doy_mat[,4] <- pc_CMR$DOY
+
+# Temp.deg.F
+temp_mat <- matrix(NA, nrow(pc_CMRtab), 4, byrow=TRUE)
+temp_mat[,1] <- pc_CMR$Temp.deg.F
+temp_mat[,2] <- pc_CMR$Temp.deg.F
+temp_mat[,3] <- pc_CMR$Temp.deg.F
+temp_mat[,4] <- pc_CMR$Temp.deg.F
+
+# Wind.Beau.Code
+wind_mat <- matrix(NA, nrow(pc_CMRtab), 4, byrow=TRUE)
+wind_mat[,1] <- pc_CMR$Wind.Beau.Code
+wind_mat[,2] <- pc_CMR$Wind.Beau.Code
+wind_mat[,3] <- pc_CMR$Wind.Beau.Code
+wind_mat[,4] <- pc_CMR$Wind.Beau.Code
+
+# Sky.Beau.Code
+sky_mat <- matrix(NA, nrow(pc_CMRtab), 4, byrow=TRUE)
+sky_mat[,1] <- pc_CMR$Sky.Beau.Code
+sky_mat[,2] <- pc_CMR$Sky.Beau.Code
+sky_mat[,3] <- pc_CMR$Sky.Beau.Code
+sky_mat[,4] <- pc_CMR$Sky.Beau.Code
 
 # Matrix describing the relationship between obs covs and y
 o2y <- matrix(1, 4, 15)
@@ -78,23 +117,144 @@ crPiFun <- function(p) {
   )
 } # end statement
 
+head(pc_CMR)
+head(pc_CMRtab)
+
+# Reorder pc_CMR to match the rownames of pc_CMRtab
+pc_CMR <- pc_CMR[match(rownames(pc_CMRtab), pc_CMR$UniqueID), ]
 
 # Bundle into unmarked object
 cmr_umf <- unmarkedFrameMPois(y = pc_CMRtab,
-                              siteCovs = NULL,
-                              obsCovs = list(interval=intervalMat), obsToY=o2y, piFun="crPiFun")
+                              siteCovs = pc_CMR[,12:16],
+                              obsCovs = list(interval = inter_mat,
+                                             observor = obser_mat,
+                                             doy = doy_mat,
+                                             temp = temp_mat,
+                                             wind = wind_mat,
+                                             sky = sky_mat), 
+                              obsToY=o2y, 
+                              piFun="crPiFun")
+
+# Take a look
+str(cmr_umf)
 
 
+# Null
+fm.0 <- multinomPois(~ 1 ~ 1, cmr_umf)
+print(fm.0)
 
-M0 <- multinomPois(~ 1 ~ 1, cmr_umf)
-print(M0)
+# Interval
+detfm.1 <- multinomPois(~ interval - 1 ~ 1, cmr_umf)
+print(detfm.1)
 
-Mt <- multinomPois(~ interval - 1 ~ 1, cmr_umf)
-print(Mt)
+# observor
+detfm.2 <- multinomPois(~ observor ~ 1, cmr_umf)
+print(detfm.2)
+
+# doy
+detfm.3 <- multinomPois(~ doy ~ 1, cmr_umf)
+print(detfm.3)
+
+# temp
+detfm.4 <- multinomPois(~ temp ~ 1, cmr_umf)
+print(detfm.4)
+
+# wind
+detfm.5 <- multinomPois(~ wind ~ 1, cmr_umf)
+print(detfm.5)
+
+# sky
+detfm.6 <- multinomPois(~ sky ~ 1, cmr_umf)
+print(detfm.6)
+
+# Model selection
+model_list <- modSel(fitList(fm.0, 
+                             detfm.1,
+                             detfm.2,
+                             detfm.3,
+                             detfm.4,
+                             detfm.5,
+                             detfm.6))
 
 
-fl <- modSel(fitList(M0, Mt))
-print(fl)
+print(model_list)
+
+# sky shows most support, so does doy
+# sky + doy
+detfm.7 <- multinomPois(~ sky + doy ~ 1, cmr_umf)
+print(detfm.7)
+
+# Model selection
+model_list <- modSel(fitList(fm.0, 
+                             detfm.1,
+                             detfm.2,
+                             detfm.3,
+                             detfm.4,
+                             detfm.5,
+                             detfm.6,
+                             detfm.7))
+
+
+print(model_list)
+
+# Sky is the most informative detection covariate
+
+# woody_prp
+fm.1 <- multinomPois(~ sky 
+                     ~ woody_prp, 
+                     cmr_umf)
+
+
+# herb_prp
+fm.2 <- multinomPois(~ sky 
+                     ~ herb_prp, 
+                     cmr_umf)
+
+# baregnd_prp
+fm.3 <- multinomPois(~ sky 
+                     ~ baregnd_prp, 
+                     cmr_umf)
+
+# woody_mean_p_Area
+fm.4 <- multinomPois(~ sky 
+                     ~ baregnd_prp, 
+                     cmr_umf)
+
+# woody_c_clumpy
+fm.5 <- multinomPois(~ sky 
+                     ~ woody_c_clumpy, 
+                     cmr_umf)
+
+# herb_prp + woody_mean_p_Area
+fm.6 <- multinomPois(~ sky 
+                     ~ herb_prp + woody_mean_p_Area, 
+                     cmr_umf)
+
+# herb_prp + woody_c_clumpy
+fm.7 <- multinomPois(~ sky 
+                     ~ herb_prp + woody_c_clumpy, 
+                     cmr_umf)
+
+# herb_prp + woody_mean_p_Area + woody_c_clumpy
+fm.8 <- multinomPois(~ sky 
+                     ~ herb_prp + woody_mean_p_Area + woody_c_clumpy, 
+                     cmr_umf)
+
+# Model selection
+model_list <- modSel(fitList(fm.0, 
+                             #fm.1,
+                             fm.2,
+                             #fm.3,
+                             #fm.4,
+                             fm.5,
+                             fm.6,
+                             fm.7,
+                             fm.8))
+
+
+print(model_list)
+
+
 
 
 # 7.8.3 Models with individual heterogeneity model
