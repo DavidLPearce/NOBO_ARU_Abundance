@@ -42,6 +42,8 @@ pc_dat <- na.omit(pc_dat)
 # Detection Matrix
 # ------------------------------------------------------- 
 
+# Need to stack data
+
 # Organize data into counts by distance bins for each row
 det_mat <- pc_dat %>%
   group_by(PointNum, DistBin) %>%
