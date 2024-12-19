@@ -164,140 +164,140 @@ tuning <- list(
 # ------------------------------------------------------- 
 detfm.0 <- NMix(abund.formula = ~ 1, 
               det.formula = ~ 1, 
-              data = pc_spA_Nmix, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
               inits = inits, 
               priors = priors,
               tuning = tuning,
               accept.rate = 0.43,
               n.batch = n.batch,
               batch.length = batch.length,
-              n.omp.threads = 1,
-              n.report = 1000,
-              family = 'Poisson',
-              verbose = TRUE,
               n.burn = n.burn,
               n.thin = n.thin, 
-              n.chains = n.chains)
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 1000,
+              verbose = TRUE)
 
 # -------------------------------------------------------
 # Detection Fit 1: Observer
 # ------------------------------------------------------- 
 detfm.1 <- NMix(abund.formula = ~ 1, 
                 det.formula = ~ obsvr, 
-                data = pc_spA_Nmix, 
-                inits = inits , 
-                priors = priors ,
-                tuning = tuning ,
+                data = pc_spA_Nmix,
+                family = 'Poisson',
+                inits = inits, 
+                priors = priors,
+                tuning = tuning,
                 accept.rate = 0.43,
                 n.batch = n.batch,
                 batch.length = batch.length,
-                n.omp.threads = 1,
-                n.report = 1000,
-                family = 'Poisson',
-                verbose = TRUE,
                 n.burn = n.burn,
                 n.thin = n.thin, 
-                n.chains = n.chains)
+                n.chains = n.chains,
+                n.omp.threads = 1,
+                n.report = 1000,
+                verbose = TRUE)
 
 # -------------------------------------------------------
 # Detection Fit 2: Temperature
 # ------------------------------------------------------- 
 detfm.2 <- NMix(abund.formula = ~ 1, 
                 det.formula = ~ temp, 
-                data = pc_spA_Nmix, 
-                inits = inits , 
+                data = pc_spA_Nmix,
+                family = 'Poisson',
+                inits = inits, 
                 priors = priors,
                 tuning = tuning,
                 accept.rate = 0.43,
                 n.batch = n.batch,
                 batch.length = batch.length,
-                n.omp.threads = 1,
-                n.report = 1000,
-                family = 'Poisson',
-                verbose = TRUE,
                 n.burn = n.burn,
                 n.thin = n.thin, 
-                n.chains = n.chains)
+                n.chains = n.chains,
+                n.omp.threads = 1,
+                n.report = 1000,
+                verbose = TRUE)
 
 # -------------------------------------------------------
 # Detection Fit 3: Wind
 # ------------------------------------------------------- 
 detfm.3 <- NMix(abund.formula = ~ 1, 
                 det.formula = ~ wind, 
-                data = pc_spA_Nmix, 
-                inits = inits , 
+                data = pc_spA_Nmix,
+                family = 'Poisson',
+                inits = inits, 
                 priors = priors,
                 tuning = tuning,
                 accept.rate = 0.43,
                 n.batch = n.batch,
                 batch.length = batch.length,
-                n.omp.threads = 1,
-                n.report = 1000,
-                family = 'Poisson',
-                verbose = TRUE,
                 n.burn = n.burn,
                 n.thin = n.thin, 
-                n.chains = n.chains)
+                n.chains = n.chains,
+                n.omp.threads = 1,
+                n.report = 1000,
+                verbose = TRUE)
 
 # -------------------------------------------------------
 # Detection Fit 4: Sky
 # ------------------------------------------------------- 
 detfm.4 <- NMix(abund.formula = ~ 1, 
                 det.formula = ~ sky, 
-                data = pc_spA_Nmix, 
-                inits = inits , 
+                data = pc_spA_Nmix,
+                family = 'Poisson',
+                inits = inits, 
                 priors = priors,
                 tuning = tuning,
                 accept.rate = 0.43,
                 n.batch = n.batch,
                 batch.length = batch.length,
-                n.omp.threads = 1,
-                n.report = 1000,
-                family = 'Poisson',
-                verbose = TRUE,
                 n.burn = n.burn,
                 n.thin = n.thin, 
-                n.chains = n.chains)
+                n.chains = n.chains,
+                n.omp.threads = 1,
+                n.report = 1000,
+                verbose = TRUE)
 
 # -------------------------------------------------------
 # Detection Fit 5: Day of Year
 # ------------------------------------------------------- 
 detfm.5 <- NMix(abund.formula = ~ 1, 
                 det.formula = ~ doy, 
-                data = pc_spA_Nmix, 
-                inits = inits , 
+                data = pc_spA_Nmix,
+                family = 'Poisson',
+                inits = inits, 
                 priors = priors,
                 tuning = tuning,
                 accept.rate = 0.43,
                 n.batch = n.batch,
                 batch.length = batch.length,
-                n.omp.threads = 1,
-                n.report = 1000,
-                family = 'Poisson',
-                verbose = TRUE,
                 n.burn = n.burn,
                 n.thin = n.thin, 
-                n.chains = n.chains)
+                n.chains = n.chains,
+                n.omp.threads = 1,
+                n.report = 1000,
+                verbose = TRUE)
 
 # -------------------------------------------------------
 # Detection Fit 6: Day of Year + Observer
 # ------------------------------------------------------- 
 detfm.6 <- NMix(abund.formula = ~ 1, 
                 det.formula = ~ doy + obsvr, 
-                data = pc_spA_Nmix, 
-                inits = inits , 
+                data = pc_spA_Nmix,
+                family = 'Poisson',
+                inits = inits, 
                 priors = priors,
                 tuning = tuning,
                 accept.rate = 0.43,
                 n.batch = n.batch,
                 batch.length = batch.length,
-                n.omp.threads = 1,
-                n.report = 1000,
-                family = 'Poisson',
-                verbose = TRUE,
                 n.burn = n.burn,
                 n.thin = n.thin, 
-                n.chains = n.chains)
+                n.chains = n.chains,
+                n.omp.threads = 1,
+                n.report = 1000,
+                verbose = TRUE)
 
 # -------------------------------------------------------
 # Checking Convergence
@@ -396,117 +396,88 @@ print(detmodel_waic_df)
 summary(detfm.5)
 
 # -------------------------------------------------------
-#                    Abundance Model
+#                    Abundance Models
 # ------------------------------------------------------- 
-
-
-##  Determining best abundance model ##
-
-# MCMC Specifications
-batch.length <- 20
-n.batch <- 10000 # should change to 10,000 when running it for real 
-batch.length * n.batch # Total number of MCMC samples per chain
-n.burn <- 20000 # Change this to 20,000
-n.thin <- 10
-n.chains <- 3
-
-# Initial values for model start
-inits <- list(
-  alpha = 0.1,                                   
-  beta = 0.1,                                   
-  N = apply(pc_spA_Nmix$y, 1, max, na.rm = TRUE))  
-
-
-# Set Priors
-priors <- list(
-  alpha.normal = list(mean = 0, var = 1),  
-  beta.normal = list(mean = 0, var = 10)) 
-
-
-# Tuning
-tuning <- list(
-  alpha = 0.25,    
-  beta = 0.25)       
 
 # -------------------------------------------------------
 # Abundance Fit 1: Null
 # ------------------------------------------------------- 
 fm.0 <- NMix(abund.formula = ~ 1, 
              det.formula = ~ doy, 
-             data = pc_spA_Nmix, 
-             inits = inits , 
+             data = pc_spA_Nmix,
+             family = 'Poisson',
+             inits = inits, 
              priors = priors,
              tuning = tuning,
              accept.rate = 0.43,
              n.batch = n.batch,
              batch.length = batch.length,
-             n.omp.threads = 1,
-             n.report = 1000,
-             family = 'Poisson',
-             verbose = TRUE,
              n.burn = n.burn,
              n.thin = n.thin, 
-             n.chains = n.chains)
+             n.chains = n.chains,
+             n.omp.threads = 1,
+             n.report = 1000,
+             verbose = TRUE)
 
 # -------------------------------------------------------
 # Abundance Fit 1: Herbaceous Proportion 
 # ------------------------------------------------------- 
 fm.1 <- NMix(abund.formula = ~ herb_prp, 
               det.formula = ~ doy, 
-              data = pc_spA_Nmix, 
-              inits = inits , 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
               priors = priors,
               tuning = tuning,
               accept.rate = 0.43,
               n.batch = n.batch,
               batch.length = batch.length,
-              n.omp.threads = 1,
-              n.report = 1000,
-              family = 'Poisson',
-              verbose = TRUE,
               n.burn = n.burn,
               n.thin = n.thin, 
-              n.chains = n.chains)
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 1000,
+              verbose = TRUE)
 
 # -------------------------------------------------------
 # Abundance Fit 2: Mean Woody Patch Area 
 # ------------------------------------------------------- 
 fm.2 <- NMix(abund.formula = ~ woody_mean_p_Area, 
              det.formula = ~ doy, 
-             data = pc_spA_Nmix, 
-             inits = inits , 
+             data = pc_spA_Nmix,
+             family = 'Poisson',
+             inits = inits, 
              priors = priors,
              tuning = tuning,
              accept.rate = 0.43,
              n.batch = n.batch,
              batch.length = batch.length,
-             n.omp.threads = 1,
-             n.report = 1000,
-             family = 'Poisson',
-             verbose = TRUE,
              n.burn = n.burn,
              n.thin = n.thin, 
-             n.chains = n.chains)
+             n.chains = n.chains,
+             n.omp.threads = 1,
+             n.report = 1000,
+             verbose = TRUE)
 
 # -------------------------------------------------------
 # Abundance Fit 3: Woody Clumpy Index 
 # ------------------------------------------------------- 
 fm.3 <- NMix(abund.formula = ~ woody_c_clumpy, 
              det.formula = ~ doy, 
-             data = pc_spA_Nmix, 
-             inits = inits , 
+             data = pc_spA_Nmix,
+             family = 'Poisson',
+             inits = inits, 
              priors = priors,
              tuning = tuning,
              accept.rate = 0.43,
              n.batch = n.batch,
              batch.length = batch.length,
-             n.omp.threads = 1,
-             n.report = 1000,
-             family = 'Poisson',
-             verbose = TRUE,
              n.burn = n.burn,
              n.thin = n.thin, 
-             n.chains = n.chains)
+             n.chains = n.chains,
+             n.omp.threads = 1,
+             n.report = 1000,
+             verbose = TRUE)
 
 
 # -------------------------------------------------------
@@ -514,20 +485,20 @@ fm.3 <- NMix(abund.formula = ~ woody_c_clumpy,
 # ------------------------------------------------------- 
 fm.4 <- NMix(abund.formula = ~ herb_prp + woody_mean_p_Area, 
              det.formula = ~ doy, 
-             data = pc_spA_Nmix, 
-             inits = inits , 
+             data = pc_spA_Nmix,
+             family = 'Poisson',
+             inits = inits, 
              priors = priors,
              tuning = tuning,
              accept.rate = 0.43,
              n.batch = n.batch,
              batch.length = batch.length,
-             n.omp.threads = 1,
-             n.report = 1000,
-             family = 'Poisson',
-             verbose = TRUE,
              n.burn = n.burn,
              n.thin = n.thin, 
-             n.chains = n.chains)
+             n.chains = n.chains,
+             n.omp.threads = 1,
+             n.report = 1000,
+             verbose = TRUE)
 
 
 # -------------------------------------------------------
@@ -535,20 +506,20 @@ fm.4 <- NMix(abund.formula = ~ herb_prp + woody_mean_p_Area,
 # ------------------------------------------------------- 
 fm.5 <- NMix(abund.formula = ~ herb_prp + woody_c_clumpy, 
              det.formula = ~ doy, 
-             data = pc_spA_Nmix, 
-             inits = inits , 
+             data = pc_spA_Nmix,
+             family = 'Poisson',
+             inits = inits, 
              priors = priors,
              tuning = tuning,
              accept.rate = 0.43,
              n.batch = n.batch,
              batch.length = batch.length,
-             n.omp.threads = 1,
-             n.report = 1000,
-             family = 'Poisson',
-             verbose = TRUE,
              n.burn = n.burn,
              n.thin = n.thin, 
-             n.chains = n.chains)
+             n.chains = n.chains,
+             n.omp.threads = 1,
+             n.report = 1000,
+             verbose = TRUE)
 
 # -------------------------------------------------------
 # Checking Convergence
