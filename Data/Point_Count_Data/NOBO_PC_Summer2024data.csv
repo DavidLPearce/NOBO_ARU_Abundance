@@ -1,4 +1,4 @@
-PointNum,Observor,Survey,Date,StartTime,EndTime,Temp.deg.F,Wind.Beau.Code,Sky.Beau.Code,NOBOnum,Angle,DistBin,int1,int2,int3,int4
+PointNum,Observer,Survey,Date,StartTime,EndTime,Temp.deg.F,Wind.Beau.Code,Sky.Beau.Code,NOBOnum,Angle,DistBin,int1,int2,int3,int4
 2,Elina,1,4/27/2024,7:41:00 AM,7:53:00 AM,76,4,2,1,200,2,0,1,0,0
 2,Elina,1,4/27/2024,7:41:00 AM,7:53:00 AM,76,4,2,2,56,1,0,1,1,1
 4,Dave,1,4/27/2024,7:25:00 AM,7:37:00 AM,76,4,2,1,276,1,1,0,0,0
