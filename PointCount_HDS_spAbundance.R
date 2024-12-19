@@ -428,23 +428,23 @@ model_waic_df <- model_waic_df[order(model_waic_df$WAIC), ]
 # Print the ranked models
 print(model_waic_df)
 
-# Model 4: Herbaceous Proportion + Woody Patch is the best abundance model
-summary(fm.4)
+# Model 2: Mean Woody Patch Area is the best abundance model
+summary(fm.2)
 
 # Check model posterior predictive check
-ppc1 <- ppcAbund(fm.4, fit.stat = 'freeman-tukey', group = 1)
+ppc1 <- ppcAbund(fm.2, fit.stat = 'freeman-tukey', group = 1)
 summary(ppc1)
 
-# Bayesian p-value = 0.6683, using group of site
-# using group of 2, replicate, PPC Bayesian p-value = 0.5288
-# ppc2 <- ppcAbund(fm.4, fit.stat = 'freeman-tukey', group = 2)
-# summary(ppc2)
+# Bayesian p-value = 0.4499, using group of site
 
 
+# -------------------------------------------------------
+#                    Abundance
+# -------------------------------------------------------
 
-
-
-
+# Mean abundance per point
+print(mean(fm.2$N.samples)) # Latent Abundance
+print(mean(fm.2$mu.samples)) # Expected abundance
 
 
 
