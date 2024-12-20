@@ -127,12 +127,12 @@ str(pc_spA_HDS)
 #               Hierarchical Distance Models
 #
 # -------------------------------------------------------
-
+?DS
 # MCMC Specifications
 batch.length <- 20
-n.batch <- 10000
+n.batch <- 25000
 batch.length * n.batch # Total number of MCMC samples per chain
-n.burn <- 20000
+n.burn <- 50000
 n.thin <- 10
 n.chains <- 3
 
@@ -140,7 +140,7 @@ n.chains <- 3
 inits <- list(
               alpha = 0.1,               
               beta = 0.1,                
-              sigma.sq.p = 0.1,
+              sigma.sq.mu = 0.1,
               N = apply(pc_spA_HDS$y, 1, sum)) 
 
 
@@ -148,14 +148,14 @@ inits <- list(
 priors <- list(
               alpha.normal = list(mean = 0, var = 10),  
               beta.normal = list(mean = 0, var = 10),
-              sigma.sq.p.ig = list(mean = 0, var = 2.72))
+              sigma.sq.mu.ig = list(mean = 0, var = 2.72))
 
 
 # Tuning
 tuning <- list(
               alpha = 0.25,  
               beta = 0.25,
-              alpha.star = 0.25)   
+              beta.star = 0.25)   
 
 
 
@@ -163,11 +163,12 @@ tuning <- list(
 #                    Detection Function
 # ------------------------------------------------------- 
 
-# PointNum is included as a random effect to account for autocorrelation in stacked data
+# PointNum is included as a random effect in the abundance model
+# to account for pseudoreplication in the stacked data
 
 # Half-normal detection function
-fn_hn <- DS(abund.formula = ~ 1,
-            det.formula = ~ (1|PointNum), 
+fn_hn <- DS(abund.formula = ~ (1|PointNum),
+            det.formula = ~ 1, 
             data = pc_spA_HDS,
             family = 'Poisson',
             det.func = 'halfnormal',
@@ -182,13 +183,13 @@ fn_hn <- DS(abund.formula = ~ 1,
             n.thin = n.thin,
             n.chains = n.chains,
             n.omp.threads = 1,
-            n.report = 1000,
+            n.report = 5000,
             verbose = TRUE)
 
 
 # Negative exponential detection function
-fn_ne <- DS(abund.formula = ~ 1,
-            det.formula = ~ (1|PointNum),
+fn_ne <- DS(abund.formula = ~ (1|PointNum),
+            det.formula = ~ 1,
             data = pc_spA_HDS,
             family = 'Poisson',
             det.func = 'negexp',
@@ -203,7 +204,7 @@ fn_ne <- DS(abund.formula = ~ 1,
             n.thin = n.thin,
             n.chains = n.chains,
             n.omp.threads = 1,
-            n.report = 1000,
+            n.report = 5000,
             verbose = TRUE) 
 
 
@@ -231,21 +232,21 @@ waic_fn_hn <- waicAbund(fn_hn)
 waic_fn_ne<- waicAbund(fn_ne)
  
 # Extract the WAIC values for each model
-waic_values <- c(waic_fn_hn["WAIC"],
+waic_fn_values <- c(waic_fn_hn["WAIC"],
                  waic_fn_ne["WAIC"])
 
 # Create a named vector with model names
-fitnames <- c("fn_hn", 
-              "fn_ne")
+fnfitnames <- c("fn_hn", 
+                "fn_ne")
 
 # Combine model names and WAIC values into a data frame for ranking
-model_waic_df <- data.frame(Model = fitnames, WAIC = waic_values)
+model_fnwaic_df <- data.frame(Model = fnfitnames, WAIC = waic_fn_values)
 
 # Rank models based on WAIC (lower WAIC is better)
-model_waic_df <- model_waic_df[order(model_waic_df$WAIC), ]
+model_fnwaic_df <- model_fnwaic_df[order(model_fnwaic_df$WAIC), ]
 
 # Print the ranked models
-print(model_waic_df)
+print(model_fnwaic_df)
 
 ## Negative exponential is the better detection function
 
@@ -259,8 +260,8 @@ print(model_waic_df)
 # -------------------------------------------------------
 # Detection Fit 0: Null model 
 # ------------------------------------------------------- 
-detfm.0 <- DS(abund.formula = ~ 1,
-              det.formula = ~ (1|PointNum),
+detfm.0 <- DS(abund.formula = ~ (1|PointNum),
+              det.formula = ~ 1,
               data = pc_spA_HDS,
               family = 'Poisson',
               det.func = 'negexp',
@@ -275,14 +276,14 @@ detfm.0 <- DS(abund.formula = ~ 1,
               n.thin = n.thin,
               n.chains = n.chains,
               n.omp.threads = 1,
-              n.report = 1000,
+              n.report = 5000,
               verbose = TRUE) 
 
 # -------------------------------------------------------
 # Detection Fit 1: Observer
 # ------------------------------------------------------- 
-detfm.1 <- DS(abund.formula = ~ 1,
-              det.formula = ~ Observer + (1|PointNum),
+detfm.1 <- DS(abund.formula = ~ (1|PointNum),
+              det.formula = ~ Observer + ,
               data = pc_spA_HDS,
               family = 'Poisson',
               det.func = 'negexp',
@@ -297,14 +298,14 @@ detfm.1 <- DS(abund.formula = ~ 1,
               n.thin = n.thin,
               n.chains = n.chains,
               n.omp.threads = 1,
-              n.report = 1000,
+              n.report = 5000,
               verbose = TRUE) 
 
 # -------------------------------------------------------
 # Detection Fit 2: Temperature
 # ------------------------------------------------------- 
-detfm.2 <- DS(abund.formula = ~ 1,
-              det.formula = ~ Temp + (1|PointNum),
+detfm.2 <- DS(abund.formula = ~ (1|PointNum),
+              det.formula = ~ Temp,
               data = pc_spA_HDS,
               family = 'Poisson',
               det.func = 'negexp',
@@ -319,14 +320,14 @@ detfm.2 <- DS(abund.formula = ~ 1,
               n.thin = n.thin,
               n.chains = n.chains,
               n.omp.threads = 1,
-              n.report = 1000,
+              n.report = 5000,
               verbose = TRUE) 
 
 # -------------------------------------------------------
 # Detection Fit 3: Wind
 # ------------------------------------------------------- 
-detfm.3 <- DS(abund.formula = ~ 1,
-              det.formula = ~ Wind + (1|PointNum),
+detfm.3 <- DS(abund.formula = ~ (1|PointNum),
+              det.formula = ~ Wind,
               data = pc_spA_HDS,
               family = 'Poisson',
               det.func = 'negexp',
@@ -341,14 +342,14 @@ detfm.3 <- DS(abund.formula = ~ 1,
               n.thin = n.thin,
               n.chains = n.chains,
               n.omp.threads = 1,
-              n.report = 1000,
+              n.report = 5000,
               verbose = TRUE) 
 
 # -------------------------------------------------------
 # Detection Fit 4: Sky
 # ------------------------------------------------------- 
-detfm.4 <- DS(abund.formula = ~ 1,
-              det.formula = ~ Sky + (1|PointNum),
+detfm.4 <- DS(abund.formula = ~ (1|PointNum),
+              det.formula = ~ Sky,
               data = pc_spA_HDS,
               family = 'Poisson',
               det.func = 'negexp',
@@ -363,14 +364,14 @@ detfm.4 <- DS(abund.formula = ~ 1,
               n.thin = n.thin,
               n.chains = n.chains,
               n.omp.threads = 1,
-              n.report = 1000,
+              n.report = 5000,
               verbose = TRUE) 
 
 # -------------------------------------------------------
 # Detection Fit 5: Day of Year
 # ------------------------------------------------------- 
-detfm.5 <- DS(abund.formula = ~ 1,
-              det.formula = ~ DOY + (1|PointNum),
+detfm.5 <- DS(abund.formula = ~ (1|PointNum),
+              det.formula = ~ DOY,
               data = pc_spA_HDS,
               family = 'Poisson',
               det.func = 'negexp',
@@ -385,14 +386,14 @@ detfm.5 <- DS(abund.formula = ~ 1,
               n.thin = n.thin,
               n.chains = n.chains,
               n.omp.threads = 1,
-              n.report = 1000,
+              n.report = 5000,
               verbose = TRUE) 
 
 # -------------------------------------------------------
 # Detection Fit 6: Day of Year + Observer
 # ------------------------------------------------------- 
-detfm.6 <- DS(abund.formula = ~ 1,
-              det.formula = ~ Observer + DOY + (1|PointNum),
+detfm.6 <- DS(abund.formula = ~ (1|PointNum),
+              det.formula = ~ Observer + DOY,
               data = pc_spA_HDS,
               family = 'Poisson',
               det.func = 'negexp',
@@ -407,7 +408,7 @@ detfm.6 <- DS(abund.formula = ~ 1,
               n.thin = n.thin,
               n.chains = n.chains,
               n.omp.threads = 1,
-              n.report = 1000,
+              n.report = 5000,
               verbose = TRUE) 
 
 # -------------------------------------------------------
@@ -514,8 +515,8 @@ summary(detfm.1)
 # -------------------------------------------------------
 # Abundance Fit 1: Null
 # ------------------------------------------------------- 
-fm.0 <- DS(abund.formula = ~ 1,
-           det.formula = ~ Observer + (1|PointNum),
+fm.0 <- DS(abund.formula = ~ (1|PointNum),
+           det.formula = ~ Observer,
            data = pc_spA_HDS,
            family = 'Poisson',
            det.func = 'negexp',
@@ -530,15 +531,15 @@ fm.0 <- DS(abund.formula = ~ 1,
            n.thin = n.thin,
            n.chains = n.chains,
            n.omp.threads = 1,
-           n.report = 1000,
+           n.report = 5000,
            verbose = TRUE) 
 
 
 # -------------------------------------------------------
 # Abundance Fit 1: Herbaceous Proportion 
 # ------------------------------------------------------- 
-fm.1 <- DS(abund.formula = ~ herb_prp,
-           det.formula = ~ Observer + (1|PointNum),
+fm.1 <- DS(abund.formula = ~ herb_prp + (1|PointNum),
+           det.formula = ~ Observer,
            data = pc_spA_HDS,
            family = 'Poisson',
            det.func = 'negexp',
@@ -553,15 +554,15 @@ fm.1 <- DS(abund.formula = ~ herb_prp,
            n.thin = n.thin,
            n.chains = n.chains,
            n.omp.threads = 1,
-           n.report = 1000,
+           n.report = 5000,
            verbose = TRUE) 
 
 
 # -------------------------------------------------------
 # Abundance Fit 2: Mean Woody Patch Area 
 # ------------------------------------------------------- 
-fm.2 <- DS(abund.formula = ~ woody_mean_p_Area,
-           det.formula = ~ Observer + (1|PointNum),
+fm.2 <- DS(abund.formula = ~ woody_mean_p_Area + (1|PointNum),
+           det.formula = ~ Observer,
            data = pc_spA_HDS,
            family = 'Poisson',
            det.func = 'negexp',
@@ -576,15 +577,15 @@ fm.2 <- DS(abund.formula = ~ woody_mean_p_Area,
            n.thin = n.thin,
            n.chains = n.chains,
            n.omp.threads = 1,
-           n.report = 1000,
+           n.report = 5000,
            verbose = TRUE) 
 
 
 # -------------------------------------------------------
 # Abundance Fit 3: Woody Clumpy Index 
 # ------------------------------------------------------- 
-fm.3 <- DS(abund.formula = ~ woody_c_clumpy,
-           det.formula = ~ Observer + (1|PointNum),
+fm.3 <- DS(abund.formula = ~ woody_c_clumpy + (1|PointNum),
+           det.formula = ~ Observer,
            data = pc_spA_HDS,
            family = 'Poisson',
            det.func = 'negexp',
@@ -599,15 +600,15 @@ fm.3 <- DS(abund.formula = ~ woody_c_clumpy,
            n.thin = n.thin,
            n.chains = n.chains,
            n.omp.threads = 1,
-           n.report = 1000,
+           n.report = 5000,
            verbose = TRUE) 
 
 
 # -------------------------------------------------------
 # Abundance Fit 4: Herbaceous Proportion + Woody Patch
 # ------------------------------------------------------- 
-fm.4 <- DS(abund.formula = ~ herb_prp + woody_mean_p_Area, 
-           det.formula = ~ Observer + (1|PointNum),
+fm.4 <- DS(abund.formula = ~ herb_prp + woody_mean_p_Area  + (1|PointNum), 
+           det.formula = ~ Observer,
            data = pc_spA_HDS,
            family = 'Poisson',
            det.func = 'negexp',
@@ -622,15 +623,15 @@ fm.4 <- DS(abund.formula = ~ herb_prp + woody_mean_p_Area,
            n.thin = n.thin,
            n.chains = n.chains,
            n.omp.threads = 1,
-           n.report = 1000,
+           n.report = 5000,
            verbose = TRUE) 
 
 
 # -------------------------------------------------------
 # Abundance Fit 5: Herbaceous Proportion + Woody Clumpy
 # ------------------------------------------------------- 
-fm.5 <- DS(abund.formula = ~ herb_prp + woody_c_clumpy, 
-           det.formula = ~ Observer + (1|PointNum),
+fm.5 <- DS(abund.formula = ~ herb_prp + woody_c_clumpy + (1|PointNum), 
+           det.formula = ~ Observer,
            data = pc_spA_HDS,
            family = 'Poisson',
            det.func = 'negexp',
@@ -645,7 +646,7 @@ fm.5 <- DS(abund.formula = ~ herb_prp + woody_c_clumpy,
            n.thin = n.thin,
            n.chains = n.chains,
            n.omp.threads = 1,
-           n.report = 1000,
+           n.report = 5000,
            verbose = TRUE) 
 
 
