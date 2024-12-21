@@ -127,7 +127,7 @@ str(pc_spA_HDS)
 #               Hierarchical Distance Models
 #
 # -------------------------------------------------------
-?DS
+
 # MCMC Specifications
 batch.length <- 20
 n.batch <- 25000
@@ -283,7 +283,7 @@ detfm.0 <- DS(abund.formula = ~ (1|PointNum),
 # Detection Fit 1: Observer
 # ------------------------------------------------------- 
 detfm.1 <- DS(abund.formula = ~ (1|PointNum),
-              det.formula = ~ Observer + ,
+              det.formula = ~ Observer,
               data = pc_spA_HDS,
               family = 'Poisson',
               det.func = 'negexp',
@@ -412,6 +412,28 @@ detfm.6 <- DS(abund.formula = ~ (1|PointNum),
               verbose = TRUE) 
 
 # -------------------------------------------------------
+# Detection Fit 7: Woody Proportion
+# ------------------------------------------------------- 
+detfm.7 <- DS(abund.formula = ~ (1|PointNum),
+              det.formula = ~ woody_prp,
+              data = pc_spA_HDS,
+              family = 'Poisson',
+              det.func = 'negexp',
+              transect = 'point',
+              inits = inits,
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin,
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
 # Checking Convergence
 # -------------------------------------------------------
 
@@ -461,6 +483,11 @@ plot(detfm.6, 'alpha', density = FALSE)
 detfm.6$rhat
 dev.off()
 
+# Detection Fit 7: Woody Proportion
+plot(detfm.7, 'beta', density = FALSE)  
+plot(detfm.7, 'alpha', density = FALSE)  
+detfm.7$rhat
+dev.off()
 
 # -------------------------------------------------------
 # Ranking Detection Models
@@ -475,6 +502,7 @@ waic_detfm.3 <- waicAbund(detfm.3)
 waic_detfm.4 <- waicAbund(detfm.4)
 waic_detfm.5 <- waicAbund(detfm.5)  
 waic_detfm.6 <- waicAbund(detfm.6)
+waic_detfm.7 <- waicAbund(detfm.7)
 
 # Extract the WAIC values for each model
 waic_detvalues <- c(waic_detfm.0["WAIC"],
@@ -483,7 +511,8 @@ waic_detvalues <- c(waic_detfm.0["WAIC"],
                     waic_detfm.3["WAIC"],
                     waic_detfm.4["WAIC"],
                     waic_detfm.5["WAIC"],
-                    waic_detfm.6["WAIC"])
+                    waic_detfm.6["WAIC"],
+                    waic_detfm.7["WAIC"])
 
 # Create a named vector with model names
 detfitnames <- c("detfm.0", 
@@ -492,7 +521,8 @@ detfitnames <- c("detfm.0",
                  "detfm.3", 
                  "detfm.4",
                  "detfm.5",
-                 "detfm.6")
+                 "detfm.6",
+                 "detfm.7")
 
 
 # Combine model names and WAIC values into a data frame for ranking
@@ -734,20 +764,20 @@ model_waic_df <- model_waic_df[order(model_waic_df$WAIC), ]
 # Print the ranked models
 print(model_waic_df)
 
-# Model 2: Mean Woody Patch Area is the best abundance model
+# Model 3: Woody Clumpy Index is the best abundance model
 # Model 4: Herbaceous Proportion + Woody Patch also shows support
-summary(fm.2)
+summary(fm.3)
 summary(fm.4)
 
 # Check model posterior predictive check
-ppc_fm.2 <- ppcAbund(fm.2, fit.stat = 'freeman-tukey', group = 1)
-summary(ppc_fm.2)
+ppc_fm.3 <- ppcAbund(fm.3, fit.stat = 'freeman-tukey', group = 1)
+summary(ppc_fm.3)
 
 ppc_fm.4 <- ppcAbund(fm.4, fit.stat = 'freeman-tukey', group = 1)
 summary(ppc_fm.4)
 
-# Model 2 Bayesian p-value = 0.4739
-# Model 4 Bayesian p-value = 0.4898
+# Model 2 Bayesian p-value = 0.4905 
+# Model 4 Bayesian p-value = 0.4882
 
 # Model shows a slightly better model fit
 
@@ -802,7 +832,7 @@ ggplot(lat_dens_df, aes(x = Model, y = Density, fill = Model)) +
     title = "Latent Density", 
     x = "Model", 
     y = "Density") +
-  scale_y_continuous(limits = c(0, 1.5), breaks = seq(0, 1.5, by = 0.25), labels = scales::comma) + # Customize y-axis
+  scale_y_continuous(limits = c(0, 5), breaks = seq(0, 5, by = 0.25), labels = scales::comma) + # Customize y-axis
   theme_minimal() +
   theme(
     axis.text.x = element_text(size = 12, angle = 45, hjust = 1), # Tilt x-axis text
