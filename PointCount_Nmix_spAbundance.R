@@ -135,9 +135,9 @@ str(pc_spA_Nmix)
 
 # MCMC Specifications
 batch.length <- 20
-n.batch <- 10000 
+n.batch <- 25000
 batch.length * n.batch # Total number of MCMC samples per chain
-n.burn <- 20000 
+n.burn <- 50000
 n.thin <- 10
 n.chains <- 3
 
