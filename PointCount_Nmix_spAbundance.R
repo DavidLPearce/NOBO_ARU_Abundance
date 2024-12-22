@@ -392,8 +392,8 @@ detmodel_waic_df <- detmodel_waic_df[order(detmodel_waic_df$WAIC), ]
 # Print the ranked models
 print(detmodel_waic_df)
 
-## Detection model 5 (day of year), is the best detection model
-summary(detfm.5)
+## Detection model 1 observer, is the best detection model
+summary(detfm.1)
 
 # -------------------------------------------------------
 #                    Abundance Models
@@ -403,7 +403,7 @@ summary(detfm.5)
 # Abundance Fit 1: Null
 # ------------------------------------------------------- 
 fm.0 <- NMix(abund.formula = ~ 1, 
-             det.formula = ~ doy, 
+             det.formula = ~ obsvr, 
              data = pc_spA_Nmix,
              family = 'Poisson',
              inits = inits, 
@@ -423,7 +423,7 @@ fm.0 <- NMix(abund.formula = ~ 1,
 # Abundance Fit 1: Herbaceous Proportion 
 # ------------------------------------------------------- 
 fm.1 <- NMix(abund.formula = ~ herb_prp, 
-              det.formula = ~ doy, 
+              det.formula = ~ obsvr, 
               data = pc_spA_Nmix,
               family = 'Poisson',
               inits = inits, 
@@ -443,7 +443,7 @@ fm.1 <- NMix(abund.formula = ~ herb_prp,
 # Abundance Fit 2: Mean Woody Patch Area 
 # ------------------------------------------------------- 
 fm.2 <- NMix(abund.formula = ~ woody_mean_p_Area, 
-             det.formula = ~ doy, 
+             det.formula = ~ obsvr, 
              data = pc_spA_Nmix,
              family = 'Poisson',
              inits = inits, 
@@ -463,7 +463,7 @@ fm.2 <- NMix(abund.formula = ~ woody_mean_p_Area,
 # Abundance Fit 3: Woody Clumpy Index 
 # ------------------------------------------------------- 
 fm.3 <- NMix(abund.formula = ~ woody_c_clumpy, 
-             det.formula = ~ doy, 
+             det.formula = ~ obsvr, 
              data = pc_spA_Nmix,
              family = 'Poisson',
              inits = inits, 
@@ -484,7 +484,7 @@ fm.3 <- NMix(abund.formula = ~ woody_c_clumpy,
 # Abundance Fit 4: Herbaceous Proportion + Woody Patch
 # ------------------------------------------------------- 
 fm.4 <- NMix(abund.formula = ~ herb_prp + woody_mean_p_Area, 
-             det.formula = ~ doy, 
+             det.formula = ~ obsvr, 
              data = pc_spA_Nmix,
              family = 'Poisson',
              inits = inits, 
@@ -505,7 +505,7 @@ fm.4 <- NMix(abund.formula = ~ herb_prp + woody_mean_p_Area,
 # Abundance Fit 5: Herbaceous Proportion + Woody Clumpy
 # ------------------------------------------------------- 
 fm.5 <- NMix(abund.formula = ~ herb_prp + woody_c_clumpy, 
-             det.formula = ~ doy, 
+             det.formula = ~ obsvr, 
              data = pc_spA_Nmix,
              family = 'Poisson',
              inits = inits, 
@@ -605,17 +605,15 @@ model_waic_df <- model_waic_df[order(model_waic_df$WAIC), ]
 # Print the ranked models
 print(model_waic_df)
 
-# Model 4: Herbaceous Proportion + Woody Patch is the best abundance model
-summary(fm.4)
+# Model 5: Herbaceous Proportion + Woody Clumpy is the best abundance model
+summary(fm.5)
 
 # Check model posterior predictive check
-ppc1 <- ppcAbund(fm.4, fit.stat = 'freeman-tukey', group = 1)
-summary(ppc1)
+ppc_fm.5 <- ppcAbund(fm.5, fit.stat = 'freeman-tukey', group = 1)
+summary(ppc_fm.5)
 
-# Bayesian p-value = 0.6683, using group of site
-# using group of 2, replicate, PPC Bayesian p-value = 0.5288
-# ppc2 <- ppcAbund(fm.4, fit.stat = 'freeman-tukey', group = 2)
-# summary(ppc2)
+# Bayesian p-value = 0.8226, using group of site
+
 
 
 # -------------------------------------------------------
@@ -623,8 +621,8 @@ summary(ppc1)
 # -------------------------------------------------------
 
 # Mean abundance per point
-print(mean(fm.4$N.samples)) # Latent Abundance
-print(mean(fm.4$mu.samples)) # Expected abundance
+print(mean(fm.5$N.samples)) # Latent Abundance
+print(mean(fm.5$mu.samples)) # Expected abundance
 
 # Area = π * r^2
 # Point counts were assumed to have a effective sampling radius of 
@@ -668,7 +666,7 @@ ggplot(lat_dens_df, aes(x = Model, y = Density, fill = Model)) +
     title = "Latent Density", 
     x = "Model", 
     y = "Density") +
-  scale_y_continuous(limits = c(0, 1.5), breaks = seq(0, 1.5, by = 0.25), labels = scales::comma) + # Customize y-axis
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, by = 2), labels = scales::comma) + # Customize y-axis
   theme_minimal() +
   theme(
     axis.text.x = element_text(size = 12, angle = 45, hjust = 1), # Tilt x-axis text
