@@ -4,13 +4,15 @@
 #
 # ------------------------------------------------------------------------------
 
-install.packages("sf")
-install.packages("raster")
-install.packages("ggplot2")
-install.packages("terra")
-install.packages("landscapemetrics")
-install.packages("progress")
+# Install packages (if needed)
+# install.packages("sf")
+# install.packages("raster")
+# install.packages("ggplot2")
+# install.packages("terra")
+# install.packages("landscapemetrics")
+# install.packages("progress")
 
+# Load packages
 library(sf)
 library(raster)
 library(ggplot2)
@@ -18,6 +20,7 @@ library(terra)
 library(landscapemetrics)
 library(progress)
 
+# Set seed, scientific notation, and workplace
 set.seed(123)
 options(scipen = 9999)
 setwd(".")
