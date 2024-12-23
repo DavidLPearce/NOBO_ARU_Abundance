@@ -1,6 +1,7 @@
 # Load Library
 library(tidyverse)
 library(unmarked)
+library(AICcmodavg)
 
 # Load in capture data
 pc_dat <- read.csv("./Data/Point_Count_Data/NOBO_PC_Summer2024data.csv")
@@ -26,10 +27,11 @@ pc_dat$UniqueID <- paste(pc_dat$PointNum, pc_dat$NOBOnum, pc_dat$DOY, sep = "_")
 
 # Subset the capture-mark data
 pc_CMR <- pc_dat[, c( "UniqueID", "Survey","int1", "int2", "int3", "int4",
-                      "Observor", "Temp.deg.F", "Wind.Beau.Code", "Sky.Beau.Code",
+                      "Observer", "Temp.deg.F", "Wind.Beau.Code", "Sky.Beau.Code",
                       "DOY", "woody_prp", "herb_prp", "baregnd_prp", 
                       "woody_mean_p_Area", "woody_c_clumpy"),
                  drop = FALSE]
+# Take a look
 head(pc_CMR)
 
 
@@ -56,10 +58,10 @@ inter_mat <- matrix(c('1','2','3', '4'), nrow(pc_CMRtab), 4, byrow=TRUE)
 
 # Obs cov for observer
 obser_mat <- matrix(NA, nrow(pc_CMRtab), 4, byrow=TRUE)
-obser_mat[,1] <- pc_CMR$Observor
-obser_mat[,2] <- pc_CMR$Observor
-obser_mat[,3] <- pc_CMR$Observor
-obser_mat[,4] <- pc_CMR$Observor
+obser_mat[,1] <- pc_CMR$Observer
+obser_mat[,2] <- pc_CMR$Observer
+obser_mat[,3] <- pc_CMR$Observer
+obser_mat[,4] <- pc_CMR$Observer
 
 # Obs cov for day of year
 doy_mat <- matrix(NA, nrow(pc_CMRtab), 4, byrow=TRUE)
@@ -147,7 +149,7 @@ print(fm.0)
 detfm.1 <- multinomPois(~ interval - 1 ~ 1, cmr_umf)
 print(detfm.1)
 
-# observor
+# observer
 detfm.2 <- multinomPois(~ observor ~ 1, cmr_umf)
 print(detfm.2)
 
@@ -197,64 +199,91 @@ model_list <- modSel(fitList(fm.0,
 
 print(model_list)
 
-# Sky is the most informative detection covariate
-
-# woody_prp
-fm.1 <- multinomPois(~ sky 
-                     ~ woody_prp, 
-                     cmr_umf)
-
+# observer is the most informative detection covariate
 
 # herb_prp
-fm.2 <- multinomPois(~ sky 
+fm.0 <- multinomPois(~ observor 
+                     ~ 1, 
+                     cmr_umf)
+
+# herb_prp
+fm.1 <- multinomPois(~ observor 
                      ~ herb_prp, 
                      cmr_umf)
 
-# baregnd_prp
-fm.3 <- multinomPois(~ sky 
-                     ~ baregnd_prp, 
-                     cmr_umf)
 
 # woody_mean_p_Area
-fm.4 <- multinomPois(~ sky 
-                     ~ baregnd_prp, 
+fm.2 <- multinomPois(~ observor 
+                     ~ woody_mean_p_Area, 
                      cmr_umf)
 
 # woody_c_clumpy
-fm.5 <- multinomPois(~ sky 
+fm.3 <- multinomPois(~ observor 
                      ~ woody_c_clumpy, 
                      cmr_umf)
 
 # herb_prp + woody_mean_p_Area
-fm.6 <- multinomPois(~ sky 
+fm.4 <- multinomPois(~ observor 
                      ~ herb_prp + woody_mean_p_Area, 
                      cmr_umf)
 
 # herb_prp + woody_c_clumpy
-fm.7 <- multinomPois(~ sky 
+fm.5 <- multinomPois(~ observor 
                      ~ herb_prp + woody_c_clumpy, 
                      cmr_umf)
 
-# herb_prp + woody_mean_p_Area + woody_c_clumpy
-fm.8 <- multinomPois(~ sky 
-                     ~ herb_prp + woody_mean_p_Area + woody_c_clumpy, 
-                     cmr_umf)
 
 # Model selection
 model_list <- modSel(fitList(fm.0, 
-                             #fm.1,
+                             fm.1,
                              fm.2,
-                             #fm.3,
-                             #fm.4,
-                             fm.5,
-                             fm.6,
-                             fm.7,
-                             fm.8))
+                             fm.3,
+                             fm.4,
+                             fm.5))
 
 
 print(model_list)
 
+# Null model is the best 
 
+# check fit 
+yhat <- fitted(fm.4)
+sum((cmr_umf@y - yhat)^2 / yhat, na.rm=TRUE)
+
+Nmix.gof.test(fm.4, nsim = 1000)
+
+# -------------------------------------------------------
+#              Estimatates of Abundance
+# -------------------------------------------------------
+
+
+# Compute total abundance and confidence intervals
+abundance_pred <- predict(fm.4, type = "state")
+total_abundance <- sum(abundance_pred$Predicted)
+total_abundance_se <- sqrt(sum(abundance_pred$SE^2))  # Combined SE using propagation
+
+# Confidence interval
+ci_lower <- total_abundance - 1.96 * total_abundance_se
+ci_upper <- total_abundance + 1.96 * total_abundance_se
+
+# Create a data frame for plotting
+total_abundance_df <- data.frame(
+  TotalAbundance = total_abundance,
+  CI_Lower = ci_lower,
+  CI_Upper = ci_upper
+)
+
+# Plot
+ggplot(total_abundance_df, aes(x = "Total Abundance", y = TotalAbundance)) +
+  geom_point(size = 5, color = "blue") +  # Use size to adjust point size
+  geom_errorbar(aes(ymin = CI_Lower, ymax = CI_Upper), width = 0.2, color = "black") +
+  labs(title = "CMR",
+       x = "",
+       y = "Abundance") +
+  theme_minimal() +
+  ylim(0, 300) +  # Set y-axis limits
+  theme(axis.text.x = element_blank(),  # Remove x-axis text
+        axis.ticks.x = element_blank())
 
 
 # 7.8.3 Models with individual heterogeneity model

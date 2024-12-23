@@ -518,35 +518,13 @@ total_abundance_df <- data.frame(
 ggplot(total_abundance_df, aes(x = "Total Abundance", y = TotalAbundance)) +
   geom_point(size = 5, color = "blue") +  # Use size to adjust point size
   geom_errorbar(aes(ymin = CI_Lower, ymax = CI_Upper), width = 0.2, color = "black") +
-  labs(title = "Total Abundance Estimate with Confidence Interval",
+  labs(title = "Temp E Nmix",
        x = "",
        y = "Abundance") +
   theme_minimal() +
+  ylim(0, 300) +  # Set y-axis limits
   theme(axis.text.x = element_blank(),  # Remove x-axis text
         axis.ticks.x = element_blank())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
