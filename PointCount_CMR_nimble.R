@@ -178,8 +178,8 @@ fm.covs <- nimbleMCMC(code = model.cov,
                   constants = constants,
                   inits = inits.cov,
                   monitors = params.cov,
-                  niter = 1000,
-                  nburnin = 100,
+                  niter = 250000,
+                  nburnin = 10000,
                   nchains = 3,
                   thin = 5,
                   samplesAsCodaMCMC = TRUE)
@@ -269,8 +269,8 @@ fm.h <- nimbleMCMC(code = model.H,
                    constants = constants,
                    inits = inits.h,
                    monitors = params.h,
-                   niter = 1000,
-                   nburnin = 100, 
+                   niter = 250000,
+                   nburnin = 10000, 
                    nchains = 3,
                    thin = 5,
                    samplesAsCodaMCMC  = TRUE)
@@ -318,7 +318,7 @@ abundance_summary <- t(abundance_summary)
 print(abundance_summary)
 
 # Abundance by site
-install.packages("reshape2")
+#install.packages("reshape2")
 
 library(ggplot2)
 library(reshape2)
