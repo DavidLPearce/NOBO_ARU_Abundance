@@ -794,7 +794,7 @@ print(availfm.4$WAIC$WAIC)
 
 
 # ---------------------------------------------------------- 
-# Ranking Models using WAIC
+# Ranking Availability Models using WAIC
 # ----------------------------------------------------------
 
 # Extract the WAIC values for each model
@@ -831,6 +831,133 @@ print(avail_waic_df)
 # ----------------------------------------------------------
 #                         Detection
 # ----------------------------------------------------------
+
+
+# ---------------------------------------------------------- 
+# Det Model 0: Null
+# ----------------------------------------------------------
+detmod.0 <- nimbleCode({
+  
+  # Priors
+  # Abundance parameters
+  beta0 ~ dnorm(0, 0.1)
+  beta1 ~ dnorm(0, 0.1)
+  beta2 ~ dnorm(0, 0.1)
+  
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  for(k in 1:4) {
+    gamma1[k] ~ dunif(0.1, 0.9)
+    logit.gamma1[k]<- log(gamma1[k]/(1-gamma1[k])) 
+  }
+  gamma2 ~ dnorm(0, 0.01)
+  
+  # Detection parameters
+  sigma0 ~ dunif(0.1, 50)  
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+  
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+      # Availability parameter
+      logit.phi[s,k] <- logit.gamma1[k] + gamma2*DOY[s,k]
+      phi[s,k] <- exp(logit.phi[s,k])/(1+ exp(logit.phi[s,k]))
+      
+      # Distance sampling parameter
+      log(sigma[s,k]) <- log(sigma0)
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        #log(g[s,b,k]) <- -midpt[b]*midpt[b]/(2*sigma[s,k]*sigma[s,k]) # half-normal
+        cloglog(g[s,b,k]) <- theta*log(sigma[s,k])  - theta*log(midpt[b])  # hazard
+        f[s,b,k] <- (2*midpt[b]*delta)/(B*B)
+        cellprobs[s,b,k] <- g[s,b,k]*f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k]/sum(cellprobs[s,1:nD,k])
+      }
+      cellprobs[s,nD+1,k]<- 1-sum(cellprobs[s,1:nD,k])
+      
+      #  Conditional 4-part hierarchical model
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k]*phi[s,k]
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k]) # Part 4
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])  # Part 3: Number of detected individuals
+      Navail[s,k] ~ dbin(phi[s,k],M[s])   # Part 2: Number of available individuals
+    } # end k loop
+    
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r/(r+lambda[s])
+    # M[s] ~ dpois(lambda[s])         # Part 1: Abundance model
+    log(lambda[s]) <- beta0 + beta1*HerbPRP[s] + beta2*WoodyPatch[s]
+  }  # end s loop
+  
+  # Derived quantities
+  for(k in 1:K){
+    Davail[k] <- mean(phi[1:nsites,k])*exp(beta0)/area
+  }
+  Mtotal <- sum(M[1:nsites])
+  Dtotal <- exp(beta0)/area
+  #Ntotal <- Dtotal * 1096.698 # Study area total hectares
+}) # End model
+# ----------------------------------------------------------
+
+# Inits
+detinits.0 <- function() {
+  list(
+    M = apply(y3d, 1, max) + 2,
+    Navail = apply(y3d, c(1, 3), sum),
+    sigma0 = 50,
+    gamma1 = rep(0.5, 4),
+    gamma2 = 0,
+    beta0 = 0,
+    beta1 = 0,
+    beta2 = 0,
+    phi0 = 0.5,
+    theta = 1,
+    r = 5
+  )
+}
+
+# Parameters to monitor
+detparams.0 <- c("r",
+                   "sigma0",
+                   "beta0", 
+                   "beta1", 
+                   "beta2", 
+                   "theta", 
+                   "Dtotal", 
+                   "phi0", 
+                   "gamma1", 
+                   "gamma2", 
+                   "logit.gamma1")
+
+
+# Run nimble 
+detfm.0 <- nimbleMCMC(code = detmod.0,
+                        constants = data,
+                        inits = detinits.0,
+                        monitors = detparams.0,
+                        thin = 10,
+                        niter = 500000,
+                        nburnin = 50000,
+                        nchains = 3,
+                        samplesAsCodaMCMC = TRUE,
+                        WAIC = TRUE)
+
+
+# Rhat
+coda::gelman.diag(detfm.0$samples)
+
+# Inspect
+mcmcplot(detfm.0$samples)
+
+# Model Summary
+summary(detfm.0$samples)
+
+# WAIC
+print(detfm.0$WAIC$WAIC)
+
+
 
 # ----------------------------------------------------------
 # Det Model 1: Observer
@@ -948,16 +1075,16 @@ detfm.1 <- nimbleMCMC(code = detmod.1,
                     
 
 # Rhat
-coda::gelman.diag(detfm.2$samples)
+coda::gelman.diag(detfm.1$samples)
 
 # Inspect
-mcmcplot(detfm.2$samples)
+mcmcplot(detfm.1$samples)
 
 # Model Summary
-summary(detfm.2$samples)
+summary(detfm.1$samples)
 
 # WAIC
-print(detfm.2$WAIC$WAIC)
+print(detfm.1$WAIC$WAIC)
 
 
 
@@ -1087,4 +1214,355 @@ summary(detfm.2$samples)
 
 # WAIC
 print(detfm.2$WAIC$WAIC)
+
+
+
+# ----------------------------------------------------------
+# Det Model 3: Wind
+# ----------------------------------------------------------
+detmod.3 <- nimbleCode({
+  
+  # Priors
+  # Abundance parameters
+  beta0 ~ dnorm(0, 0.1)
+  beta1 ~ dnorm(0, 0.1)
+  beta2 ~ dnorm(0, 0.1)
+  
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  for(k in 1:4) {
+    gamma1[k] ~ dunif(0.1, 0.9)
+    logit.gamma1[k]<- log(gamma1[k]/(1-gamma1[k]))
+  }
+  gamma2 ~ dnorm(0, 0.01)
+  
+  # Detection parameters
+  sigma0 ~ dunif(0.1, 50)
+  alpha2 ~ dnorm(0, 0.01)
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+  
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+      # Availability parameter
+      logit.phi[s,k] <- logit.gamma1[k] + gamma2*DOY[s,k]
+      phi[s,k] <- exp(logit.phi[s,k])/(1+ exp(logit.phi[s,k]))
+      
+      # Distance sampling parameter
+      log(sigma[s,k]) <- log(sigma0) + alpha2*Wind[s,k]
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        #log(g[s,b,k]) <- -midpt[b]*midpt[b]/(2*sigma[s,k]*sigma[s,k]) # half-normal
+        cloglog(g[s,b,k]) <- theta*log(sigma[s,k])  - theta*log(midpt[b])  # hazard
+        f[s,b,k] <- (2*midpt[b]*delta)/(B*B)
+        cellprobs[s,b,k] <- g[s,b,k]*f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k]/sum(cellprobs[s,1:nD,k])
+      }
+      cellprobs[s,nD+1,k]<- 1-sum(cellprobs[s,1:nD,k])
+      
+      #  Conditional 4-part hierarchical model
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k]*phi[s,k]
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k]) # Part 4
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])  # Part 3: Number of detected individuals
+      Navail[s,k] ~ dbin(phi[s,k],M[s])   # Part 2: Number of available individuals
+    } # end k loop
+    
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r/(r+lambda[s])
+    # M[s] ~ dpois(lambda[s])         # Part 1: Abundance model
+    log(lambda[s]) <- beta0 + beta1*HerbPRP[s] + beta2*WoodyPatch[s]
+  }  # end s loop
+  
+  # Derived quantities
+  for(k in 1:K){
+    Davail[k] <- mean(phi[1:nsites,k])*exp(beta0)/area
+  }
+  Mtotal <- sum(M[1:nsites])
+  Dtotal <- exp(beta0)/area
+  #Ntotal <- Dtotal * 1096.698 # Study area total hectares
+}) # End model
+# ----------------------------------------------------------
+
+# Inits
+detinits.3 <- function() {
+  list(
+    M = apply(y3d, 1, max) + 2,
+    Navail = apply(y3d, c(1, 3), sum),
+    sigma0 = 50,
+    alpha2 = 0,
+    gamma1 = rep(0.5, 4),
+    gamma2 = 0,
+    beta0 = 0,
+    beta1 = 0,
+    beta2 = 0,
+    phi0 = 0.5,
+    theta = 1,
+    r = 5
+  )
+}
+
+# Parameters to monitor
+detparams.3 <- c("r",
+                 "sigma0",
+                 "beta0",
+                 "beta1",
+                 "beta2",
+                 "alpha2",
+                 "theta",
+                 "Dtotal",
+                 "phi0",
+                 "gamma1",
+                 "gamma2",
+                 "logit.gamma1")
+
+
+# Run nimble
+detfm.3 <- nimbleMCMC(
+                      code = detmod.3,
+                      constants = data,
+                      inits = detinits.3,
+                      monitors = detparams.3,
+                      thin = 10,
+                      niter = 500000,
+                      nburnin = 50000,
+                      nchains = 3,
+                      samplesAsCodaMCMC = TRUE,
+                      WAIC = TRUE)
+
+# Rhat
+coda::gelman.diag(detfm.3$samples)
+
+# Inspect
+mcmcplot(detfm.3$samples)
+
+# Model Summary
+summary(detfm.3$samples)
+
+# WAIC
+print(detfm.3$WAIC$WAIC)
+
+
+# ----------------------------------------------------------
+# Det Model 4: Sky
+# ----------------------------------------------------------
+detmod.4 <- nimbleCode({
+  
+  # Priors
+  # Abundance parameters
+  beta0 ~ dnorm(0, 0.1)
+  beta1 ~ dnorm(0, 0.1)
+  beta2 ~ dnorm(0, 0.1)
+  
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  for(k in 1:4) {
+    gamma1[k] ~ dunif(0.1, 0.9)
+    logit.gamma1[k]<- log(gamma1[k]/(1-gamma1[k]))
+  }
+  gamma2 ~ dnorm(0, 0.01)
+  
+  # Detection parameters
+  sigma0 ~ dunif(0.1, 50)
+  alpha2 ~ dnorm(0, 0.01)
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+  
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+      # Availability parameter
+      logit.phi[s,k] <- logit.gamma1[k] + gamma2*DOY[s,k]
+      phi[s,k] <- exp(logit.phi[s,k])/(1+ exp(logit.phi[s,k]))
+      
+      # Distance sampling parameter
+      log(sigma[s,k]) <- log(sigma0) + alpha2*Sky[s,k]
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        #log(g[s,b,k]) <- -midpt[b]*midpt[b]/(2*sigma[s,k]*sigma[s,k]) # half-normal
+        cloglog(g[s,b,k]) <- theta*log(sigma[s,k])  - theta*log(midpt[b])  # hazard
+        f[s,b,k] <- (2*midpt[b]*delta)/(B*B)
+        cellprobs[s,b,k] <- g[s,b,k]*f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k]/sum(cellprobs[s,1:nD,k])
+      }
+      cellprobs[s,nD+1,k]<- 1-sum(cellprobs[s,1:nD,k])
+      
+      #  Conditional 4-part hierarchical model
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k]*phi[s,k]
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k]) # Part 4
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])  # Part 3: Number of detected individuals
+      Navail[s,k] ~ dbin(phi[s,k],M[s])   # Part 2: Number of available individuals
+    } # end k loop
+    
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r/(r+lambda[s])
+    # M[s] ~ dpois(lambda[s])         # Part 1: Abundance model
+    log(lambda[s]) <- beta0 + beta1*HerbPRP[s] + beta2*WoodyPatch[s]
+  }  # end s loop
+  
+  # Derived quantities
+  for(k in 1:K){
+    Davail[k] <- mean(phi[1:nsites,k])*exp(beta0)/area
+  }
+  Mtotal <- sum(M[1:nsites])
+  Dtotal <- exp(beta0)/area
+  #Ntotal <- Dtotal * 1096.698 # Study area total hectares
+}) # End model
+# ----------------------------------------------------------
+
+# Inits
+detinits.4 <- function() {
+  list(
+    M = apply(y3d, 1, max) + 2,
+    Navail = apply(y3d, c(1, 3), sum),
+    sigma0 = 50,
+    alpha2 = 0,
+    gamma1 = rep(0.5, 4),
+    gamma2 = 0,
+    beta0 = 0,
+    beta1 = 0,
+    beta2 = 0,
+    phi0 = 0.5,
+    theta = 1,
+    r = 5
+  )
+}
+
+# Parameters to monitor
+detparams.4 <- c("r",
+                 "sigma0",
+                 "beta0",
+                 "beta1",
+                 "beta2",
+                 "alpha2",
+                 "theta",
+                 "Dtotal",
+                 "phi0",
+                 "gamma1",
+                 "gamma2",
+                 "logit.gamma1")
+
+
+# Run nimble
+detfm.4 <- nimbleMCMC(code = detmod.4,
+                      constants = data,
+                      inits = detinits.4,
+                      monitors = detparams.4,
+                      thin = 10,
+                      niter = 500000,
+                      nburnin = 50000,
+                      nchains = 3,
+                      samplesAsCodaMCMC = TRUE,
+                      WAIC = TRUE)
+                      
+
+# Rhat
+coda::gelman.diag(detfm.4$samples)
+
+# Inspect
+mcmcplot(detfm.4$samples)
+
+# Model Summary
+summary(detfm.4$samples)
+
+# WAIC
+print(detfm.4$WAIC$WAIC)
+
+
+
+# ---------------------------------------------------------- 
+# Ranking Detection Models using WAIC
+# ----------------------------------------------------------
+
+# Extract the WAIC values for each model
+det_waic_values <- c(detfm.0$WAIC$WAIC,
+                     detfm.1$WAIC$WAIC,
+                     detfm.2$WAIC$WAIC,
+                     detfm.3$WAIC$WAIC,
+                     detfm.4$WAIC$WAIC)
+
+# Naming models
+det_fitnames <- c("detfm.0", 
+                  "detfm.1", 
+                  "detfm.2",
+                  "detfm.3", 
+                  "detfm.4")
+
+
+# Combine model names and WAIC values into a data frame for ranking
+det_waic_df <- data.frame(Model = det_fitnames, WAIC = det_waic_values)
+
+# Rank models based on WAIC (lower WAIC is better)
+det_waic_df <- det_waic_df[order(det_waic_df$WAIC), ]
+
+# Print the ranked models
+print(det_waic_df)
+
+# Detection model 2 is the best detection model
+summary(detfm.2$samples)
+
+#  -------------------------------------------------------
+#
+#   Saving Data
+#
+#  -------------------------------------------------------
+
+# Save environment
+save.image(file = "PointCount_TempEmHDS_nimble.RData")
+
+#  -------------------------------------------------------
+#
+#   Estimating Abundance 
+#
+#  -------------------------------------------------------
+
+# Combine chains
+combined_chains <- as.mcmc(do.call(rbind, detfm.2$samples))
+
+# Extract Dtotal samples
+Dtotal_samples <- combined_chains[, "Dtotal"]
+
+# Summarize Dtotal
+Dtotal_summary <- c(
+  mean = mean(Dtotal_samples),
+  sd = sd(Dtotal_samples),
+  quantiles = quantile(Dtotal_samples, probs = c(0.025, 0.5, 0.975))
+)
+print(Dtotal_summary)
+
+# Reshape Dtotal_samples for ggplot
+Dtotal_df <- data.frame(Dtotal = Dtotal_samples)
+head(Dtotal_df)
+
+
+
+# Extract the quantile range for Dtotal
+lower_bound <- 0.06427
+upper_bound <- 8.31792
+
+# Filter the Dtotal samples within the quantile range
+filtered_Dtotal <- Dtotal_df$var1[Dtotal_df$var1 >= lower_bound & Dtotal_df$var1 <= upper_bound]
+
+# Convert to a data frame for plotting
+filtered_Dtotal_df <- data.frame(Dtotal = filtered_Dtotal)
+
+# Rename the column to Dtotal for clarity (optional but recommended)
+colnames(filtered_Dtotal_df) <- "Dtotal"
+
+
+# Create a violin plot for filtered Dtotal
+ggplot(filtered_Dtotal_df, aes(x = factor(1), y = Dtotal)) +
+  geom_violin(fill = "skyblue", color = "black", alpha = 0.7) +
+  geom_boxplot(width = 0.1, color = "red", outlier.shape = NA, alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "Filtered Posterior Distribution of Dtotal",
+       x = "",
+       y = "Value") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
 
