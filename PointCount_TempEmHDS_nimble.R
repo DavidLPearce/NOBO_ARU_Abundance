@@ -31,6 +31,9 @@ pc_dat <- read.csv("./Data/Point_Count_Data/NOBO_PC_Summer2024data.csv")
 # Load in site covariates
 site_covs <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
 
+# All objects created by script
+#load("./PointCount_TempEmHDS_nimble.RData")
+
 # -------------------------------------------------------
 #
 #                   Data Wrangling
@@ -221,12 +224,8 @@ availmodel.0 <- nimbleCode({
   }  # end s loop
   
   # Derived quantities
-  for(k in 1:K){
-    Davail[k] <- mean(phi[1:nsites,k])*exp(beta0)/area
-  }
-  Mtotal <- sum(M[1:nsites])
-  Dtotal <- exp(beta0)/area
-  #Ntotal <- Dtotal * 1096.698 # Study area total hectares
+  Lam_mean <- mean(lambda[1:nsites])
+  
 }) # End model
 # ----------------------------------------------------------
 
@@ -253,10 +252,11 @@ availparams.0 <- c("r",
                    "beta1", 
                    "beta2", 
                    "theta", 
-                   "Dtotal", 
                    "phi0", 
                    "gamma1", 
-                   "logit.gamma1")
+                   "logit.gamma1",
+                   "lambda",
+                   "Lam_mean")
 
 
 # Run nimble 
@@ -273,16 +273,16 @@ availfm.0 <- nimbleMCMC(code = availmodel.0,
 
 
 # Rhat
-coda::gelman.diag(availfm.0$samples)
+#coda::gelman.diag(availfm.0$samples)
 
 # Inspect
 mcmcplot(availfm.0$samples)
 
 # Model Summary
-summary(availfm.0$samples)
+#summary(availfm.0$samples)
 
 # WAIC
-print(availfm.0$WAIC$WAIC)
+#print(availfm.0$WAIC$WAIC)
 
 
 
@@ -345,12 +345,8 @@ availmodel.1 <- nimbleCode({
   }  # end s loop
   
   # Derived quantities
-  for(k in 1:K){
-    Davail[k] <- mean(phi[1:nsites,k])*exp(beta0)/area
-  }
-  Mtotal <- sum(M[1:nsites])
-  Dtotal <- exp(beta0)/area
-  #Ntotal <- Dtotal * 1096.698 # Study area total hectares
+  Lam_mean <- mean(lambda[1:nsites])
+  
 }) # End model
 # ----------------------------------------------------------
 
@@ -378,11 +374,12 @@ availparams.1 <- c("r",
                    "beta1", 
                    "beta2", 
                    "theta", 
-                   "Dtotal", 
                    "phi0", 
                    "gamma1", 
                    "gamma2", 
-                   "logit.gamma1")
+                   "logit.gamma1",
+                   "lambda",
+                   "Lam_mean")
 
 
 # Run nimble 
@@ -399,16 +396,16 @@ availfm.1 <- nimbleMCMC(code = availmodel.1,
 
 
 # Rhat
-coda::gelman.diag(availfm.1$samples)
+#coda::gelman.diag(availfm.1$samples)
 
 # Inspect
 mcmcplot(availfm.1$samples)
 
 # Model Summary
-summary(availfm.1$samples)
+#summary(availfm.1$samples)
 
 # WAIC
-print(availfm.1$WAIC$WAIC)
+#print(availfm.1$WAIC$WAIC)
                       
 
 
@@ -471,12 +468,8 @@ availmodel.2 <- nimbleCode({
   }  # end s loop
   
   # Derived quantities
-  for(k in 1:K){
-    Davail[k] <- mean(phi[1:nsites,k])*exp(beta0)/area
-  }
-  Mtotal <- sum(M[1:nsites])
-  Dtotal <- exp(beta0)/area
-  #Ntotal <- Dtotal * 1096.698 # Study area total hectares
+  Lam_mean <- mean(lambda[1:nsites])
+  
 }) # End model
 # ----------------------------------------------------------
 
@@ -504,11 +497,12 @@ availparams.2 <- c("r",
                    "beta1", 
                    "beta2", 
                    "theta", 
-                   "Dtotal", 
                    "phi0", 
                    "gamma1", 
                    "gamma2", 
-                   "logit.gamma1")
+                   "logit.gamma1",
+                   "lambda",
+                   "Lam_mean")
 
 
 # Run nimble 
@@ -525,16 +519,16 @@ availfm.2 <- nimbleMCMC(code = availmodel.2,
 
 
 # Rhat
-coda::gelman.diag(availfm.2$samples)
+#coda::gelman.diag(availfm.2$samples)
 
 # Inspect
 mcmcplot(availfm.2$samples)
 
 # Model Summary
-summary(availfm.2$samples)
+#summary(availfm.2$samples)
 
 # WAIC
-print(availfm.2$WAIC$WAIC)
+#print(availfm.2$WAIC$WAIC)
 
 
 
@@ -598,12 +592,8 @@ availmodel.3 <- nimbleCode({
   }  # end s loop
   
   # Derived quantities
-  for(k in 1:K){
-    Davail[k] <- mean(phi[1:nsites,k])*exp(beta0)/area
-  }
-  Mtotal <- sum(M[1:nsites])
-  Dtotal <- exp(beta0)/area
-  #Ntotal <- Dtotal * 1096.698 # Study area total hectares
+  Lam_mean <- mean(lambda[1:nsites])
+  
 }) # End model
 # ----------------------------------------------------------
 
@@ -631,11 +621,12 @@ availparams.3 <- c("r",
                    "beta1", 
                    "beta2", 
                    "theta", 
-                   "Dtotal", 
                    "phi0", 
                    "gamma1", 
                    "gamma2", 
-                   "logit.gamma1")
+                   "logit.gamma1",
+                   "lambda",
+                   "Lam_mean")
 
 
 # Run nimble 
@@ -652,16 +643,16 @@ availfm.3 <- nimbleMCMC(code = availmodel.3,
 
 
 # Rhat
-coda::gelman.diag(availfm.3$samples)
+#coda::gelman.diag(availfm.3$samples)
 
 # Inspect
 mcmcplot(availfm.3$samples)
 
 # Model Summary
-summary(availfm.3$samples)
+#summary(availfm.3$samples)
 
 # WAIC
-print(availfm.3$WAIC$WAIC)
+#print(availfm.3$WAIC$WAIC)
 
 
 
@@ -725,12 +716,9 @@ availmodel.4 <- nimbleCode({
   }  # end s loop
   
   # Derived quantities
-  for(k in 1:K){
-    Davail[k] <- mean(phi[1:nsites,k])*exp(beta0)/area
-  }
-  Mtotal <- sum(M[1:nsites])
-  Dtotal <- exp(beta0)/area
-  #Ntotal <- Dtotal * 1096.698 # Study area total hectares
+  Lam_mean <- mean(lambda[1:nsites])
+  
+
 }) # End model
 # ----------------------------------------------------------
 
@@ -758,11 +746,12 @@ availparams.4 <- c("r",
                    "beta1", 
                    "beta2", 
                    "theta", 
-                   "Dtotal", 
                    "phi0", 
                    "gamma1", 
                    "gamma2", 
-                   "logit.gamma1")
+                   "logit.gamma1",
+                   "lambda",
+                   "Lam_mean")
 
 
 # Run nimble 
@@ -779,16 +768,16 @@ availfm.4 <- nimbleMCMC(code = availmodel.4,
 
 
 # Rhat
-coda::gelman.diag(availfm.4$samples)
+#coda::gelman.diag(availfm.4$samples)
 
 # Inspect
 mcmcplot(availfm.4$samples)
 
 # Model Summary
-summary(availfm.4$samples)
+#summary(availfm.4$samples)
 
 # WAIC
-print(availfm.4$WAIC$WAIC)
+#print(availfm.4$WAIC$WAIC)
 
 
 
@@ -892,12 +881,8 @@ detmod.0 <- nimbleCode({
   }  # end s loop
   
   # Derived quantities
-  for(k in 1:K){
-    Davail[k] <- mean(phi[1:nsites,k])*exp(beta0)/area
-  }
-  Mtotal <- sum(M[1:nsites])
-  Dtotal <- exp(beta0)/area
-  #Ntotal <- Dtotal * 1096.698 # Study area total hectares
+  Lam_mean <- mean(lambda[1:nsites])
+  
 }) # End model
 # ----------------------------------------------------------
 
@@ -925,11 +910,12 @@ detparams.0 <- c("r",
                    "beta1", 
                    "beta2", 
                    "theta", 
-                   "Dtotal", 
                    "phi0", 
                    "gamma1", 
                    "gamma2", 
-                   "logit.gamma1")
+                   "logit.gamma1",
+                   "lambda",
+                 "Lam_mean")
 
 
 # Run nimble 
@@ -946,16 +932,16 @@ detfm.0 <- nimbleMCMC(code = detmod.0,
 
 
 # Rhat
-coda::gelman.diag(detfm.0$samples)
+#coda::gelman.diag(detfm.0$samples)
 
 # Inspect
 mcmcplot(detfm.0$samples)
 
 # Model Summary
-summary(detfm.0$samples)
+#summary(detfm.0$samples)
 
 # WAIC
-print(detfm.0$WAIC$WAIC)
+#print(detfm.0$WAIC$WAIC)
 
 
 
@@ -1019,12 +1005,8 @@ detmod.1 <- nimbleCode({
   }  # end s loop
   
   # Derived quantities
-  for(k in 1:K){
-    Davail[k] <- mean(phi[1:nsites,k])*exp(beta0)/area
-  }
-  Mtotal <- sum(M[1:nsites])
-  Dtotal <- exp(beta0)/area
-  #Ntotal <- Dtotal * 1096.698 # Study area total hectares
+  Lam_mean <- mean(lambda[1:nsites])
+  
 }) # End model
 # ----------------------------------------------------------
 
@@ -1054,11 +1036,12 @@ detparams.1 <- c("r",
                  "beta2",
                  "alpha2",
                  "theta",
-                 "Dtotal",
                  "phi0",
                  "gamma1",
                  "gamma2",
-                 "logit.gamma1")
+                 "logit.gamma1",
+                 "lambda",
+                 "Lam_mean")
 
 
 # Run nimble
@@ -1075,16 +1058,16 @@ detfm.1 <- nimbleMCMC(code = detmod.1,
                     
 
 # Rhat
-coda::gelman.diag(detfm.1$samples)
+#coda::gelman.diag(detfm.1$samples)
 
 # Inspect
 mcmcplot(detfm.1$samples)
 
 # Model Summary
-summary(detfm.1$samples)
+#summary(detfm.1$samples)
 
 # WAIC
-print(detfm.1$WAIC$WAIC)
+#print(detfm.1$WAIC$WAIC)
 
 
 
@@ -1146,14 +1129,10 @@ detmod.2 <- nimbleCode({
     # M[s] ~ dpois(lambda[s])         # Part 1: Abundance model
     log(lambda[s]) <- beta0 + beta1*HerbPRP[s] + beta2*WoodyPatch[s]
   }  # end s loop
-
+  
   # Derived quantities
-  for(k in 1:K){
-    Davail[k] <- mean(phi[1:nsites,k])*exp(beta0)/area
-  }
-  Mtotal <- sum(M[1:nsites])
-  Dtotal <- exp(beta0)/area
-  #Ntotal <- Dtotal * 1096.698 # Study area total hectares
+  Lam_mean <- mean(lambda[1:nsites])
+  
 }) # End model
 # ----------------------------------------------------------
 
@@ -1183,11 +1162,12 @@ detparams.2 <- c("r",
             "beta2",
             "alpha2",
             "theta",
-            "Dtotal",
             "phi0",
             "gamma1",
             "gamma2",
-            "logit.gamma1")
+            "logit.gamma1",
+            "lambda",
+            "Lam_mean")
 
 
 # Run nimble
@@ -1197,7 +1177,7 @@ detfm.2 <- nimbleMCMC(
                   inits = detinits.2,
                   monitors = detparams.2,
                   thin = 10,
-                  niter = 500000,
+                  niter = 1000000,
                   nburnin = 50000,
                   nchains = 3,
                   samplesAsCodaMCMC = TRUE,
@@ -1214,6 +1194,7 @@ summary(detfm.2$samples)
 
 # WAIC
 print(detfm.2$WAIC$WAIC)
+
 
 
 
@@ -1277,12 +1258,8 @@ detmod.3 <- nimbleCode({
   }  # end s loop
   
   # Derived quantities
-  for(k in 1:K){
-    Davail[k] <- mean(phi[1:nsites,k])*exp(beta0)/area
-  }
-  Mtotal <- sum(M[1:nsites])
-  Dtotal <- exp(beta0)/area
-  #Ntotal <- Dtotal * 1096.698 # Study area total hectares
+  Lam_mean <- mean(lambda[1:nsites])
+  
 }) # End model
 # ----------------------------------------------------------
 
@@ -1312,11 +1289,12 @@ detparams.3 <- c("r",
                  "beta2",
                  "alpha2",
                  "theta",
-                 "Dtotal",
                  "phi0",
                  "gamma1",
                  "gamma2",
-                 "logit.gamma1")
+                 "logit.gamma1",
+                 "lambda",
+                 "Lam_mean")
 
 
 # Run nimble
@@ -1333,16 +1311,16 @@ detfm.3 <- nimbleMCMC(
                       WAIC = TRUE)
 
 # Rhat
-coda::gelman.diag(detfm.3$samples)
+#coda::gelman.diag(detfm.3$samples)
 
 # Inspect
 mcmcplot(detfm.3$samples)
 
 # Model Summary
-summary(detfm.3$samples)
+#summary(detfm.3$samples)
 
 # WAIC
-print(detfm.3$WAIC$WAIC)
+#print(detfm.3$WAIC$WAIC)
 
 
 # ----------------------------------------------------------
@@ -1405,12 +1383,8 @@ detmod.4 <- nimbleCode({
   }  # end s loop
   
   # Derived quantities
-  for(k in 1:K){
-    Davail[k] <- mean(phi[1:nsites,k])*exp(beta0)/area
-  }
-  Mtotal <- sum(M[1:nsites])
-  Dtotal <- exp(beta0)/area
-  #Ntotal <- Dtotal * 1096.698 # Study area total hectares
+  Lam_mean <- mean(lambda[1:nsites])
+  
 }) # End model
 # ----------------------------------------------------------
 
@@ -1440,11 +1414,12 @@ detparams.4 <- c("r",
                  "beta2",
                  "alpha2",
                  "theta",
-                 "Dtotal",
                  "phi0",
                  "gamma1",
                  "gamma2",
-                 "logit.gamma1")
+                 "logit.gamma1",
+                 "lambda",
+                 "Lam_mean")
 
 
 # Run nimble
@@ -1461,16 +1436,16 @@ detfm.4 <- nimbleMCMC(code = detmod.4,
                       
 
 # Rhat
-coda::gelman.diag(detfm.4$samples)
+#coda::gelman.diag(detfm.4$samples)
 
 # Inspect
 mcmcplot(detfm.4$samples)
 
 # Model Summary
-summary(detfm.4$samples)
+#summary(detfm.4$samples)
 
 # WAIC
-print(detfm.4$WAIC$WAIC)
+#print(detfm.4$WAIC$WAIC)
 
 
 
@@ -1505,14 +1480,6 @@ print(det_waic_df)
 # Detection model 2 is the best detection model
 summary(detfm.2$samples)
 
-#  -------------------------------------------------------
-#
-#   Saving Data
-#
-#  -------------------------------------------------------
-
-# Save environment
-save.image(file = "PointCount_TempEmHDS_nimble.RData")
 
 #  -------------------------------------------------------
 #
@@ -1523,46 +1490,79 @@ save.image(file = "PointCount_TempEmHDS_nimble.RData")
 # Combine chains
 combined_chains <- as.mcmc(do.call(rbind, detfm.2$samples))
 
-# Extract Dtotal samples
-Dtotal_samples <- combined_chains[, "Dtotal"]
+# Extract Lam_mean column
+Lam_mean_column <- combined_chains[, "Lam_mean"]
 
-# Summarize Dtotal
-Dtotal_summary <- c(
-  mean = mean(Dtotal_samples),
-  sd = sd(Dtotal_samples),
-  quantiles = quantile(Dtotal_samples, probs = c(0.025, 0.5, 0.975))
-)
-print(Dtotal_summary)
+# Area in hectares
+area <- pi*(200^2)/10000
 
-# Reshape Dtotal_samples for ggplot
-Dtotal_df <- data.frame(Dtotal = Dtotal_samples)
-head(Dtotal_df)
+# Getting density
+dens_df <- as.data.frame(Lam_mean_column/area)
 
+# Summarize by row
+colnames(dens_df)[1] <- "Density"
+dens_df[,2] <- "PC Temp Em HDS"
+colnames(dens_df)[2] <- "Model"
+# Switch the order of columns
+dens_df <- dens_df[, c("Model", "Density")]
+head(dens_df)
 
-
-# Extract the quantile range for Dtotal
-lower_bound <- 0.06427
-upper_bound <- 8.31792
-
-# Filter the Dtotal samples within the quantile range
-filtered_Dtotal <- Dtotal_df$var1[Dtotal_df$var1 >= lower_bound & Dtotal_df$var1 <= upper_bound]
-
-# Convert to a data frame for plotting
-filtered_Dtotal_df <- data.frame(Dtotal = filtered_Dtotal)
-
-# Rename the column to Dtotal for clarity (optional but recommended)
-colnames(filtered_Dtotal_df) <- "Dtotal"
+# Calculate the 95% Credible Interval
+ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
 
 
-# Create a violin plot for filtered Dtotal
-ggplot(filtered_Dtotal_df, aes(x = factor(1), y = Dtotal)) +
-  geom_violin(fill = "skyblue", color = "black", alpha = 0.7) +
-  geom_boxplot(width = 0.1, color = "red", outlier.shape = NA, alpha = 0.5) +
+# Subset the data frame to 95% CI
+dens_df <- subset(dens_df, Density >= ci_bounds[1] & Density <= ci_bounds[2])
+
+
+# Plot
+ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
+  geom_violin() +
+  geom_boxplot(aes(x = Model, y = Density),
+               width = 0.2, position = position_dodge(width = 0.8)) +
+  labs(
+    title = "Latent Density",
+    x = "Model",
+    y = "Density") +
+  scale_y_continuous(limits = c(0, 25),
+                     breaks = seq(0, 25, by = 5),
+                     labels = scales::comma) +
   theme_minimal() +
-  labs(title = "Filtered Posterior Distribution of Dtotal",
-       x = "",
-       y = "Value") +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank())
+  theme(
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "none"
+  )
 
 
+# total density
+mean_dens <- mean(dens_df$Density)
+LCI_dens <- min(dens_df$Density)
+HCI_dens <- max(dens_df$Density)
+
+print(mean_dens)
+print(LCI_dens)
+print(HCI_dens)
+
+# total abundance
+mean_dens * 1096.698
+LCI_dens * 1096.698
+HCI_dens * 1096.698
+
+#  -------------------------------------------------------
+#
+#   Saving Data
+#
+#  -------------------------------------------------------
+
+# Export Density data frame
+saveRDS(dens_df, "./Data/Fitted_Models/PC_TempEmHDS_Dens.rds")
+
+# Save environment
+#save.image(file = "PointCount_TempEmHDS_nimble.RData")
+
+# Clear environment
+#rm(list = ls())
