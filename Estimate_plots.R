@@ -6,10 +6,18 @@ nmix_dat<-readRDS("./Data/Fitted_Models/PC_Nmix_Dens.rds")
 tmpEhds_dat <- readRDS("./Data/Fitted_Models/PC_TempEmHDS_Dens.rds")
 cmr_dat <-readRDS("./Data/Fitted_Models/PC_CMR_Dens.rds")
 
+# mean density
 mean(hds_dat$Density)
 mean(nmix_dat$Density)
 mean(tmpEhds_dat$Density)
 mean(cmr_dat$Density)
+
+# mean study area abundance
+mean(hds_dat$Density) * 1096.698
+mean(nmix_dat$Density) * 1096.698
+mean(tmpEhds_dat$Density) * 1096.698
+mean(cmr_dat$Density) * 1096.698
+
 
 # Combine into one dataframe
 dens_df <- rbind(hds_dat, nmix_dat, tmpEhds_dat, cmr_dat)
