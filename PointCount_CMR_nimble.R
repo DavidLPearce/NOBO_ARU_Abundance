@@ -139,6 +139,8 @@ model.cov <- nimbleCode({
       y[i,j] ~ dbern(pz[i,j])
     }
   }
+  # Derived quantities
+  Lam_mean <- mean(lambda[1:nsites])
 }
 ) # End model statement
 # -------------------------------------------------------
@@ -153,7 +155,8 @@ params.cov <- c("lambda",
                 "beta1",
                 "beta2",
                 "psi", 
-                "lambda")
+                "lambda",
+                "Lam_mean")
 
 # Initial values
 inits.cov <- function() {
@@ -178,18 +181,24 @@ fm.covs <- nimbleMCMC(code = model.cov,
                   constants = constants,
                   inits = inits.cov,
                   monitors = params.cov,
-                  niter = 250000,
-                  nburnin = 10000,
+                  niter = 500000,
+                  nburnin = 50000,
                   nchains = 3,
-                  thin = 5,
-                  samplesAsCodaMCMC = TRUE)
+                  thin = 10,
+                  samplesAsCodaMCMC = TRUE,
+                  WAIC = TRUE)
 
+# Save fitted model
+saveRDS(fm.covs, "./Data/Fitted_Models/PC_CMR_fmcovs.rds")
+
+# Rhat
+#coda::gelman.diag(fm.covs$samples)
 
 # Trace plots
-mcmcplot(fm.covs)
+mcmcplot(fm.covs$samples)
 
 # Model Summary
-summary(fm.covs)
+summary(fm.covs$samples)
 
 
 
@@ -228,6 +237,8 @@ model.H <- nimbleCode( {
       y[i,j] ~ dbern(pz[i,j])
     }   
   }
+  # Derived quantities
+  Lam_mean <- mean(lambda[1:nsites])
 }
 ) # End model statement
 # -------------------------------------------------------
@@ -242,16 +253,17 @@ params.h <- c("lambda",
               "beta1",
               "beta2",
               "psi", 
-              "sigma")
+              "sigma",
+              "Lam_mean")
 
 
 # Initial values: add tau
 inits.h <- function() {
   list (p0 = runif(1),
-        alpha1 = runif(1),
-        beta0=runif(1),
-        beta1=rnorm(1),
-        beta2=rnorm(1),
+        alpha1 = 0,
+        beta0 = 0,
+        beta1 = 0,
+        beta2 = 0,
         tau = 1,
         z = c( rep(1,nind), rep(0, (M-nind))),
         group = c(rep(NA,length(pc_dat$UniqueID)),
@@ -269,20 +281,52 @@ fm.h <- nimbleMCMC(code = model.H,
                    constants = constants,
                    inits = inits.h,
                    monitors = params.h,
-                   niter = 250000,
-                   nburnin = 10000, 
+                   niter = 500000,
+                   nburnin = 50000,
                    nchains = 3,
-                   thin = 5,
-                   samplesAsCodaMCMC  = TRUE)
+                   thin = 10,
+                   samplesAsCodaMCMC = TRUE,
+                   WAIC = TRUE)
+
+# Save fitted model
+saveRDS(fm.h, "./Data/Fitted_Models/PC_CMR_fmH.rds")
+
+# Rhat
+#coda::gelman.diag(fm.h$samples)
 
 # Trace plots
-mcmcplot(fm.h)
+mcmcplot(fm.h$samples)
 
 # Model Summary
-summary(fm.h)
+summary(fm.h$samples)
 
-# Model structure
-str(fm.h)
+
+
+# ---------------------------------------------------------- 
+# Ranking Detection Models using WAIC
+# ----------------------------------------------------------
+
+# Extract the WAIC values for each model
+waic_values <- c(fm.covs$WAIC$WAIC,
+                 fm.h$WAIC$WAIC)
+
+# Naming models
+fitnames <- c("fm.covs", 
+              "fm.h")
+
+
+# Combine model names and WAIC values into a data frame for ranking
+waic_df <- data.frame(Model = fitnames, WAIC = waic_values)
+
+# Rank models based on WAIC (lower WAIC is better)
+waic_df <- waic_df[order(waic_df$WAIC), ]
+
+# Print the ranked models
+print(waic_df)
+
+# ModelDetection model 2 is the best detection model
+summary(fm.covs$samples)
+
 
 
 #  -------------------------------------------------------
@@ -292,7 +336,7 @@ str(fm.h)
 #  -------------------------------------------------------
 
 # Save environment
-save.image(file = "PointCount_CMR_nimble.RData")
+#save.image(file = "PointCount_CMR_nimble.RData")
 
 #  -------------------------------------------------------
 #
@@ -302,130 +346,75 @@ save.image(file = "PointCount_CMR_nimble.RData")
 
 
 # Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.h))
+combined_chains <- as.mcmc(do.call(rbind, fm.covs$samples))
 
 # Extract lambda estimates (assuming "lambda[1]", "lambda[2]", etc., are in the output)
 lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
 lambda_samples <- combined_chains[, lambda_columns]
 
-# Summarize abundance for each site
-abundance_summary <- apply(lambda_samples, 2, function(x) {
-  c(mean = mean(x), sd = sd(x), quantile(x, probs = c(0.025, 0.5, 0.975)))
-})
-abundance_summary <- t(abundance_summary)
+# mean abundance 
+lambda_tot <- rowSums(lambda_samples)
 
-# Print summary
-print(abundance_summary)
+# Area in hectares
+area <- pi*(200^2)/10000
 
-# Abundance by site
-#install.packages("reshape2")
+# Getting density
+dens_df <- as.data.frame(lambda_tot/area)
 
-library(ggplot2)
-library(reshape2)
+# Summarize by row
+colnames(dens_df)[1] <- "Density"
+dens_df[,2] <- "PC CMR"
+colnames(dens_df)[2] <- "Model"
+dens_df <- dens_df[, c("Model", "Density")]# Switch the order of columns
+head(dens_df)
 
-# Reshape lambda_samples for ggplot
-lambda_df <- as.data.frame(lambda_samples)
-colnames(lambda_df) <- paste0("Site", 1:ncol(lambda_df))
-lambda_long <- melt(lambda_df, variable.name = "Site", value.name = "Abundance")
-
-# Create violin plot
-ggplot(lambda_long, aes(x = Site, y = Abundance)) +
-  geom_violin(fill = "skyblue", color = "black", alpha = 0.7) +
-  theme_minimal() +
-  labs(title = "Posterior Distribution of Abundance by Site",
-       x = "Site",
-       y = "Abundance")
+# Calculate the 95% Credible Interval
+ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
 
 
-### Getting total abundance
-# ------------------------------
+# Subset the data frame to 95% CI
+dens_df <- subset(dens_df, Density >= ci_bounds[1] & Density <= ci_bounds[2])
 
-
-# Assuming fm.h is your MCMC result object
-# Check if site-specific lambdas exist
-lambda_sites <- sapply(fm.h, function(chain) {
-  chain_lambda <- as.matrix(chain[, grep("^lambda\\[", colnames(chain))])
-  rowSums(chain_lambda, na.rm = TRUE)
-})
-
-# Compute total abundance
-total_abundance <- rowMeans(lambda_sites)
-
-# Compute 95% confidence intervals
-ci_2.5 <- apply(lambda_sites, 1, quantile, probs = 0.025)
-ci_97.5 <- apply(lambda_sites, 1, quantile, probs = 0.975)
-
-# Summary
-abundance_summary <- data.frame(
-  mean = total_abundance,
-  sd = apply(lambda_sites, 1, sd),
-  `2.5%` = ci_2.5,
-  `50%` = apply(lambda_sites, 1, median),
-  `97.5%` = ci_97.5
-)
-
-print(abundance_summary)
-
-
-fm.h_abund <- colMeans(abundance_summary)
-
-# Area = π * r^2
-# Point counts were assumed to have a effective sampling radius of 
-# 200 meters which is 656.2 feet (1 meter = 3.281 feet).
-# So the Area =  pi * 656.2 ^2 = 1352765 feet squared.
-# Converting Area from ft^2 to acres is 1352765 ft^2 / 43560 ft^2 per acre
-# Area = 31.05521 acres
-area = 31.05521
-
-
-# So the mean density per acre is 
-mean_density <- fm.h_abund / area
-print(mean_density)
-
-# The study area has a acreage of 2710 acres
-study_area = 2710
-
-# The abundance across the study area is 
-study_area_abund = mean_density * study_area
-print(study_area_abund)
-
-
-# Creating a matrix of latent density
-lat_dens_mat <- (abundance_summary) / area
-head(lat_dens_mat)
-
-# Matrix is density per point.
-# stacking each point column to one column for plotting
-lat_dens_df <- as.data.frame(lat_dens_mat) %>%
-  pivot_longer(cols = everything(), names_to = "Sample", values_to = "Density")
-
-# The point that the estimate came from doesn't matter since comparison is across models
-colnames(lat_dens_df)[1] <- "Model"
-lat_dens_df[,1] <- "PC ind H"
-head(lat_dens_df)
 
 # Plot
-ggplot(lat_dens_df, aes(x = Model, y = Density, fill = Model)) +
-  geom_violin() + 
-  geom_boxplot(aes(x = Model, y = Density), 
+ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
+  geom_violin() +
+  geom_boxplot(aes(x = Model, y = Density),
                width = 0.2, position = position_dodge(width = 0.8)) +
   labs(
-    title = "Latent Density", 
-    x = "Model", 
+    title = "Latent Density",
+    x = "Model",
     y = "Density") +
-  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, by = 2), labels = scales::comma) + # Customize y-axis
+  scale_y_continuous(limits = c(0, 10),
+                     breaks = seq(0, 10, by = 5),
+                     labels = scales::comma) +
   theme_minimal() +
   theme(
-    axis.text.x = element_text(size = 12, angle = 45, hjust = 1), # Tilt x-axis text
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
     axis.text.y = element_text(size = 12),
-    plot.title = element_text(hjust = 0.5), 
+    plot.title = element_text(hjust = 0.5),
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
-    legend.position = "none" 
+    legend.position = "none"
   )
 
 
+# total density
+mean_dens <- mean(dens_df$Density)
+LCI_dens <- min(dens_df$Density)
+HCI_dens <- max(dens_df$Density)
+
+print(mean_dens)
+print(LCI_dens)
+print(HCI_dens)
+
+# total abundance
+mean_dens * 1096.698
+LCI_dens * 1096.698
+HCI_dens * 1096.698
 
 
+# Export Density data frame
+saveRDS(dens_df, "./Data/Fitted_Models/PC_CMR_Dens.rds")
 
 
