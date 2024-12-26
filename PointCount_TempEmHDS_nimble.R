@@ -125,12 +125,6 @@ delta <- 50                     # Class width
 B <- 200                        # Maximum distance
 nobs <- apply(y3d, c(1,3), sum) # Total detections per site and occasion
 
-# Area in hectares
-area <- pi*(200^2)/10000
-
-# Effort
-#offset <- rep(area, nsites)
-
 
 # Bundle data for nimble
 data <- list(y3d = y3d, 
@@ -142,8 +136,8 @@ data <- list(y3d = y3d,
              B = B,
              nobs = nobs, 
              area = area,
-             HerbPRP = site_covs[,'herb_prp'],
-             WoodyPatch = site_covs[,'woody_mean_p_Area'],
+             HerbPRP = scale(site_covs[,'herb_prp']),
+             WoodyPatch = scale(site_covs[,'woody_mean_p_Area']),
              Observer = Observer_numeric,
              Temp = scale(temp_mat),
              Wind = wind_mat,
@@ -1079,8 +1073,8 @@ detmod.2 <- nimbleCode({
   # Priors
   # Abundance parameters
   beta0 ~ dnorm(0, 0.1)
-  beta1 ~ dnorm(0, 0.1)
-  beta2 ~ dnorm(0, 0.1)
+  beta1 ~ dnorm(0, 1)
+  beta2 ~ dnorm(0, 1)
 
   # Availability parameters
   phi0 ~ dunif(0.1, 0.9)
@@ -1127,7 +1121,7 @@ detmod.2 <- nimbleCode({
     M[s] ~ dnegbin(prob[s], r)
     prob[s] <- r/(r+lambda[s])
     # M[s] ~ dpois(lambda[s])         # Part 1: Abundance model
-    log(lambda[s]) <- beta0 + beta1*HerbPRP[s] + beta2*WoodyPatch[s]
+    log(lambda[s]) <- beta0 + beta1*HerbPRP[s,1] + beta2*WoodyPatch[s,1]
   }  # end s loop
   
   # Derived quantities
@@ -1182,6 +1176,9 @@ detfm.2 <- nimbleMCMC(
                   nchains = 3,
                   samplesAsCodaMCMC = TRUE,
                   WAIC = TRUE)
+
+# Save model
+saveRDS(detfm.2, "./Data/Fitted_Models/PC_TempEmHDS_detfm2.rds")
 
 # Rhat
 coda::gelman.diag(detfm.2$samples)
@@ -1508,12 +1505,23 @@ dens_df <- dens_df[, c("Model", "Density")]
 head(dens_df)
 
 # Calculate the 95% Credible Interval
-ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
+# ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
 
+# Calculate the 85% Credible Interval
+ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.875))
 
 # Subset the data frame to 95% CI
 dens_df <- subset(dens_df, Density >= ci_bounds[1] & Density <= ci_bounds[2])
 
+print(paste("min =", min(dens_df$Density), 
+            "mean =", mean(dens_df$Density),
+            "max =", max(dens_df$Density)))
+
+
+
+
+# Export Density data frame
+saveRDS(dens_df, "./Data/Fitted_Models/PC_TempEmHDS_Dens.rds")
 
 # Plot
 ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
@@ -1558,8 +1566,7 @@ HCI_dens * 1096.698
 #
 #  -------------------------------------------------------
 
-# Export Density data frame
-saveRDS(dens_df, "./Data/Fitted_Models/PC_TempEmHDS_Dens.rds")
+
 
 # Save environment
 #save.image(file = "PointCount_TempEmHDS_nimble.RData")
