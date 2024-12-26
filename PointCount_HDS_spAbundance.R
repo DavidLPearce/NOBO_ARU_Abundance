@@ -656,6 +656,9 @@ fm.4 <- DS(abund.formula = ~ herb_prp + woody_mean_p_Area  + (1|PointNum),
            n.report = 5000,
            verbose = TRUE) 
 
+# Save fitted model
+saveRDS(fm.4, "./Data/Fitted_Models/PC_HDS_spAbund_fm4.rds")
+
 
 # -------------------------------------------------------
 # Abundance Fit 5: Herbaceous Proportion + Woody Clumpy
@@ -790,23 +793,16 @@ print(mean(fm.4$N.samples)) # Latent Abundance
 print(mean(fm.4$mu.samples)) # Expected abundance
 
 
-# Area = π * r^2
-# Point counts were assumed to have a effective sampling radius of 
-# 200 meters which is 656.2 feet (1 meter = 3.281 feet).
-# So the Area =  pi * 656.2 ^2 = 1352765 feet squared.
-# Converting Area from ft^2 to acres is 1352765 ft^2 / 43560 ft^2 per acre
-# Area = 31.05521 acres
-area = 31.05521
+# Area in hectares
+area <- pi*(200^2)/10000
 
 # So the mean density per acre is 
 hds_density <- mean(fm.4$N.samples) / area
 print(hds_density)
 
-# The study area has a acreage of 2710 acres
-study_area = 2710
 
 # The abundance across the study area is 
-study_area_abund = hds_density * study_area
+study_area_abund = hds_density * 1096.698
 print(study_area_abund)
 
 # Creating a matrix of latent density
@@ -823,6 +819,12 @@ colnames(lat_dens_df)[1] <- "Model"
 lat_dens_df[,1] <- "PC HDS"
 head(lat_dens_df)
 
+# Export density dataframe
+saveRDS(lat_dens_df, "./Data/Fitted_Models/PC_HDS_Dens.rds")
+
+# In case of crash
+# lat_dens_df <- readRDS("./Data/Fitted_Models/PC_HDS_spAbund_fm4.rds")
+
 # Plot
 ggplot(lat_dens_df, aes(x = Model, y = Density, fill = Model)) +
   geom_violin() + 
@@ -832,7 +834,7 @@ ggplot(lat_dens_df, aes(x = Model, y = Density, fill = Model)) +
     title = "Latent Density", 
     x = "Model", 
     y = "Density") +
-  scale_y_continuous(limits = c(0, 5), breaks = seq(0, 5, by = 0.25), labels = scales::comma) + # Customize y-axis
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, by = 1), labels = scales::comma) + # Customize y-axis
   theme_minimal() +
   theme(
     axis.text.x = element_text(size = 12, angle = 45, hjust = 1), # Tilt x-axis text
@@ -843,8 +845,7 @@ ggplot(lat_dens_df, aes(x = Model, y = Density, fill = Model)) +
     legend.position = "none" 
   )
 
-# Export Point Count N-mixture Latent Density
-saveRDS(lat_dens_df, "./Data/Fitted_Models/PC_HDS_Dens.rds")
+
 
 
 
