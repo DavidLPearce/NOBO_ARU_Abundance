@@ -176,7 +176,7 @@ detfm.0 <- NMix(abund.formula = ~ 1,
               n.thin = n.thin, 
               n.chains = n.chains,
               n.omp.threads = 1,
-              n.report = 1000,
+              n.report = 5000,
               verbose = TRUE)
 
 # -------------------------------------------------------
@@ -196,7 +196,7 @@ detfm.1 <- NMix(abund.formula = ~ 1,
                 n.thin = n.thin, 
                 n.chains = n.chains,
                 n.omp.threads = 1,
-                n.report = 1000,
+                n.report = 5000,
                 verbose = TRUE)
 
 # -------------------------------------------------------
@@ -216,7 +216,7 @@ detfm.2 <- NMix(abund.formula = ~ 1,
                 n.thin = n.thin, 
                 n.chains = n.chains,
                 n.omp.threads = 1,
-                n.report = 1000,
+                n.report = 5000,
                 verbose = TRUE)
 
 # -------------------------------------------------------
@@ -236,7 +236,7 @@ detfm.3 <- NMix(abund.formula = ~ 1,
                 n.thin = n.thin, 
                 n.chains = n.chains,
                 n.omp.threads = 1,
-                n.report = 1000,
+                n.report = 5000,
                 verbose = TRUE)
 
 # -------------------------------------------------------
@@ -256,7 +256,7 @@ detfm.4 <- NMix(abund.formula = ~ 1,
                 n.thin = n.thin, 
                 n.chains = n.chains,
                 n.omp.threads = 1,
-                n.report = 1000,
+                n.report = 5000,
                 verbose = TRUE)
 
 # -------------------------------------------------------
@@ -276,7 +276,7 @@ detfm.5 <- NMix(abund.formula = ~ 1,
                 n.thin = n.thin, 
                 n.chains = n.chains,
                 n.omp.threads = 1,
-                n.report = 1000,
+                n.report = 5000,
                 verbose = TRUE)
 
 # -------------------------------------------------------
@@ -296,7 +296,7 @@ detfm.6 <- NMix(abund.formula = ~ 1,
                 n.thin = n.thin, 
                 n.chains = n.chains,
                 n.omp.threads = 1,
-                n.report = 1000,
+                n.report = 5000,
                 verbose = TRUE)
 
 # -------------------------------------------------------
@@ -400,7 +400,7 @@ summary(detfm.1)
 # ------------------------------------------------------- 
 
 # -------------------------------------------------------
-# Abundance Fit 1: Null
+# Abundance Fit 0: Null
 # ------------------------------------------------------- 
 fm.0 <- NMix(abund.formula = ~ 1, 
              det.formula = ~ obsvr, 
@@ -416,7 +416,7 @@ fm.0 <- NMix(abund.formula = ~ 1,
              n.thin = n.thin, 
              n.chains = n.chains,
              n.omp.threads = 1,
-             n.report = 1000,
+             n.report = 5000,
              verbose = TRUE)
 
 # -------------------------------------------------------
@@ -436,7 +436,7 @@ fm.1 <- NMix(abund.formula = ~ herb_prp,
               n.thin = n.thin, 
               n.chains = n.chains,
               n.omp.threads = 1,
-              n.report = 1000,
+              n.report = 5000,
               verbose = TRUE)
 
 # -------------------------------------------------------
@@ -456,7 +456,7 @@ fm.2 <- NMix(abund.formula = ~ woody_mean_p_Area,
              n.thin = n.thin, 
              n.chains = n.chains,
              n.omp.threads = 1,
-             n.report = 1000,
+             n.report = 5000,
              verbose = TRUE)
 
 # -------------------------------------------------------
@@ -476,7 +476,7 @@ fm.3 <- NMix(abund.formula = ~ woody_c_clumpy,
              n.thin = n.thin, 
              n.chains = n.chains,
              n.omp.threads = 1,
-             n.report = 1000,
+             n.report = 5000,
              verbose = TRUE)
 
 
@@ -497,9 +497,11 @@ fm.4 <- NMix(abund.formula = ~ herb_prp + woody_mean_p_Area,
              n.thin = n.thin, 
              n.chains = n.chains,
              n.omp.threads = 1,
-             n.report = 1000,
+             n.report = 5000,
              verbose = TRUE)
 
+# Save fitted model
+saveRDS(fm.4, "./Data/Fitted_Models/PC_Nmix_spAbund_fm4.rds")
 
 # -------------------------------------------------------
 # Abundance Fit 5: Herbaceous Proportion + Woody Clumpy
@@ -518,7 +520,7 @@ fm.5 <- NMix(abund.formula = ~ herb_prp + woody_c_clumpy,
              n.thin = n.thin, 
              n.chains = n.chains,
              n.omp.threads = 1,
-             n.report = 1000,
+             n.report = 5000,
              verbose = TRUE)
 
 # -------------------------------------------------------
@@ -621,26 +623,19 @@ summary(ppc_fm.5)
 # -------------------------------------------------------
 
 # Mean abundance per point
-print(mean(fm.5$N.samples)) # Latent Abundance
-print(mean(fm.5$mu.samples)) # Expected abundance
+print(mean(fm.4$N.samples)) # Latent Abundance
+print(mean(fm.4$mu.samples)) # Expected abundance
 
-# Area = π * r^2
-# Point counts were assumed to have a effective sampling radius of 
-# 200 meters which is 656.2 feet (1 meter = 3.281 feet).
-# So the Area =  pi * 656.2 ^2 = 1352765 feet squared.
-# Converting Area from ft^2 to acres is 1352765 ft^2 / 43560 ft^2 per acre
-# Area = 31.05521 acres
-area = 31.05521
+# Area in hectares
+area <- pi*(200^2)/10000
 
 # So the mean density per acre is 
 nmix_density <- mean(fm.4$N.samples) / area
 print(nmix_density)
 
-# The study area has a acreage of 2710 acres
-study_area = 2710
 
 # The abundance across the study area is 
-study_area_abund = nmix_density * study_area
+study_area_abund = nmix_density * 1096.698
 print(study_area_abund)
 
 # Creating a matrix of latent density
@@ -656,6 +651,12 @@ lat_dens_df <- as.data.frame(lat_dens_mat) %>%
 colnames(lat_dens_df)[1] <- "Model"
 lat_dens_df[,1] <- "PC Nmix"
 head(lat_dens_df)
+
+# Export density dataframe
+saveRDS(lat_dens_df, "./Data/Fitted_Models/PC_Nmix_Dens.rds")
+
+# In case of crash
+# lat_dens_df <- readRDS("./Data/Fitted_Models/PC_Nmix_Dens.rds")
 
 # Plot
 ggplot(lat_dens_df, aes(x = Model, y = Density, fill = Model)) +
