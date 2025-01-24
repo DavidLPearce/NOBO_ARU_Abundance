@@ -289,7 +289,7 @@ params.A <- c('alpha.0',
               'beta.1', 
               'tau', 
               'tau.day', 
-              'a.phi', 
+              #'a.phi', 
               'omega', 
               'bp.y', 
               'bp.v',
@@ -406,7 +406,7 @@ out.model.A <- jags(
 
 # Rhat
 coda::gelman.diag(out.model.A$samples)
-
+str(out.model.A$samples)
 # Trace plots
 mcmcplot(out.model.A$samples)
 
@@ -414,5 +414,83 @@ mcmcplot(out.model.A$samples)
 summary(out.model.A$samples)
 
 
+#  -------------------------------------------------------
+#
+#   Estimating Abundance 
+#
+#  -------------------------------------------------------
+
+
+# Combine chains
+combined_chains <- as.mcmc(do.call(rbind, out.model.A$samples))
+
+# Extract lambda estimates
+lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
+lambda_samples <- combined_chains[, lambda_columns]
+
+# mean abundance 
+lambda_tot <- rowSums(lambda_samples)
+
+# Area in hectares
+area <- pi*(200^2)/10000
+
+# Getting density
+dens_df <- as.data.frame(lambda_tot/area)
+
+# Summarize by row
+colnames(dens_df)[1] <- "Density"
+dens_df[,2] <- "ARU Bnet"
+colnames(dens_df)[2] <- "Model"
+dens_df <- dens_df[, c("Model", "Density")]# Switch the order of columns
+head(dens_df)
+
+# Calculate the 95% Credible Interval
+ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
+
+
+# Subset the data frame to 95% CI
+dens_df <- subset(dens_df, Density >= ci_bounds[1] & Density <= ci_bounds[2])
+
+
+# Plot
+ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
+  geom_violin() +
+  geom_boxplot(aes(x = Model, y = Density),
+               width = 0.2, position = position_dodge(width = 0.8)) +
+  labs(
+    title = "Latent Density",
+    x = "Model",
+    y = "Density") +
+  scale_y_continuous(limits = c(0, 10),
+                     breaks = seq(0, 10, by = 5),
+                     labels = scales::comma) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "none"
+  )
+
+
+# total density
+mean_dens <- mean(dens_df$Density)
+LCI_dens <- min(dens_df$Density)
+HCI_dens <- max(dens_df$Density)
+
+print(mean_dens)
+print(LCI_dens)
+print(HCI_dens)
+
+# total abundance
+mean_dens * 1096.698
+LCI_dens * 1096.698
+HCI_dens * 1096.698
+
+
+# Export Density data frame
+saveRDS(dens_df, "./Data/Fitted_Models/ARU_Bnet.rds")
 
 
