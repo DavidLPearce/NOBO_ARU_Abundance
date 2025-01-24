@@ -17,6 +17,44 @@ setwd(".")
 
 # -------------------------------------------------------
 #
+#             Variable and Object Definitions
+#
+# -------------------------------------------------------
+
+# beta.0 = abundance intercept 
+# beta.1 = abundance trend estimate
+# alpha.0 = prob (on logit scale) of detecting at least one vocalization at a site
+#           that is not occupied.
+# alpha.1 = additional prob (on logit scale) of detecting at least one vocalization at 
+#           a site that is not occupied. 
+# omega = mean # of false positive acoustic detections
+# p = detection probability of an individual in point count data
+# tau.day = precision for random day effect on true vocalization detection rate. 
+# a.phi = overdispersion parameter for zero-truncated negative binomial. 
+# gamma.1 = random day effect on true vocalization detection rate
+# n.days = number of recording days.
+# N = latent abundance process
+# tp = true positive rate
+# p.a = prob of detecting at least one vocalization in an acoustic recording
+# v = acoustic vocalization data from clustering algorithm
+# y = binary summary of v, takes value 0 if v = 0 and value 1 if v > 0. 
+# c = point count data
+# R = number of total sites
+# J = number of repeat visits for acoustic data at each site
+# J.A = max number of repeat visits at each acoustic data site. 
+# n.count = number of repeat visits for count data
+# R.val = number of sites where validation of acoustic data occurred
+# days = variable used to index different recording days. 
+# A.times = indexing variable used to determine specific indexes with v > 0.
+# K = true number of acosutic vocalizations
+# k = true number of manually validated acoustic vocalizations
+# n = total number of manually validated acoustic vocalizations 
+# sites.a = specific indices of sites where acoustic data were obtained
+# R.val = number of validated sites for acoustic data
+# Other variables not defined are for computation of Bayesian p-values. 
+
+# -------------------------------------------------------
+#
 #                    Load Data
 #
 # -------------------------------------------------------
@@ -46,55 +84,55 @@ countobs <- bnet_dat %>%
   summarise(Count = n(), .groups = "drop")
 
 # Ensure all site numbers and dates are represented
-det_mat <- countobs %>%
+v <- countobs %>%
   complete(Site_Number = all_sites$Site_Number, Date, fill = list(Count = 0)) %>%
   pivot_wider(names_from = Date, values_from = Count, values_fill = 0)
 
 # Formatting to numeric
-det_mat <- det_mat %>%
+v <- v %>%
   mutate(across(-1, as.numeric))
 
 # View the result
-print(det_mat, n = 27)  
-
-
+print(v, n = 27)  
 
 # Get the site numbers with at least one call
-sites.call <- det_mat %>%
+sites.a <- v %>%
   rowwise() %>%
   mutate(Any_Call = sum(c_across(where(is.numeric))) > 0) %>%
   filter(Any_Call) %>%
   pull(Site_Number)
 
 # Format the output as a vector of site numbers
-print(sites.call) # used as sites.a = specific indices of sites where acoustic data were obtained
+print(sites.a) 
 
-# creating a binary detection matrix, values >= 1 become 1, and 0 stays 0
-bin_det_mat <- det_mat %>%
+# Creating a binary detection matrix, values >= 1 become 1, and 0 stays 0
+y <- v %>%
   mutate(across(where(is.numeric), ~ if_else(. >= 1, 1, 0)))
 
-# View the result
-print(bin_det_mat, n = 27) # used as y = binary summary of v, takes value 0 if v = 0 and value 1 if v > 0. 
-
-# Sites are organized correctly, removing site_number column
-det_mat <- det_mat[,-1]
-
-# Convert det_mat from a tibble to a matrix
-det_mat <- as.matrix(det_mat)
-
-# set row and col names to default ([,1], [,2])
-rownames(det_mat) <- NULL  
-colnames(det_mat) <- NULL  
+# Removing first row and defining as a matrix
+y <- y[,-1]
+y <- as.matrix(y)
+rownames(y) <- NULL  
+colnames(y) <- NULL 
 
 # View the result
-print(det_mat) # used as v = acoustic vocalization data from clustering algorithm
+print(y)
 
+# Sites are organized correctly, removing site_number columnm defining as a matrix and setting to default row/col names
+v <- v[,-1]
+v <- as.matrix(v)
+rownames(v) <- NULL  
+colnames(v) <- NULL  
+write.csv(v, "v.csv")
+
+# View the result
+print(v) # used as v = acoustic vocalization data from clustering algorithm
 
 # Total number of sites
-nsites <- as.integer(27) # used as R = number of total sites
+R <- as.integer(27) 
 
 # Number of repeat visits
-n.occ <- rep(4, 27) # used as J = number of repeat visits for acoustic data at each site
+J <- rep(4, R)  
 
 
 
@@ -102,26 +140,29 @@ n.occ <- rep(4, 27) # used as J = number of repeat visits for acoustic data at e
 # Manually validated info ****** made up
 # ---------------------------------------
 
-filestoval<- sample(108, size = (108*.3), replace = FALSE)
+#sum(det_mat, na.rm = TRUE)
+
+#calls2eval<- sample(177, size = (108*.3), replace = FALSE)
+#write.csv(det_mat, "det_mat.csv")
 
 # Need to redo this - i think not all sites were validated 
-totalval <- read.csv("./totalval_fake.csv") # n = total number of manually validated acoustic vocalizations 
-totaltrue <- read.csv("./totaltrue_fake.csv") # k = true number of manually validated acoustic vocalizations
+n <- read.csv("./totalval_fake.csv") # n = total number of manually validated acoustic vocalizations 
+k <- read.csv("./totaltrue_fake.csv") # k = true number of manually validated acoustic vocalizations
 
-# Convert to numeric
-totalval <- totalval %>% mutate(across(everything(), as.numeric))
-totaltrue <- totaltrue %>% mutate(across(everything(), as.numeric))
+# Convert to a matrix and numeric
+n <- as.matrix(n)
+k <- as.matrix(k)
 
 # set row and col names to default ([,1], [,2])
-rownames(totalval) <- NULL  
-colnames(totalval) <- NULL  
-rownames(totaltrue) <- NULL  
-colnames(totaltrue) <- NULL 
+rownames(n) <- NULL  
+colnames(n) <- NULL  
+rownames(k) <- NULL  
+colnames(k) <- NULL 
 
 # Total number of sites with manually validated data
-nsites.val <- sum(apply(totalval, 1, function(row) any(row >= 1)))
-print(nsites.val) # used as R.val = number of validated sites for acoustic data
-
+# R.val <- sum(apply(n, 1, function(row) any(row >= 1)))
+# print(R.val) # used as R.val = number of validated sites for acoustic data
+R.val = R
 
 # ---------------------------------------
 # Covariates ****** made up
@@ -129,30 +170,19 @@ print(nsites.val) # used as R.val = number of validated sites for acoustic data
 set.seed(123)
 
 # Generate a random vector for 27 sites (e.g., between 0 and 100)
-random_covariate <- runif(27, min = 0, max = 100)
+random_covariate <- runif(R, min = 0, max = 100)
 
 # Scale the covariate between 0 and 1 using min-max scaling
-scaled_covariate <- (random_covariate - min(random_covariate)) / (max(random_covariate) - min(random_covariate))
+X.lambda <- (random_covariate - min(random_covariate)) / (max(random_covariate) - min(random_covariate))
 
 # convert to matrix
-scaled_covariate <- as.matrix(scaled_covariate)
+X.lambda <- as.matrix(X.lambda)
 
 # Display the scaled covariate
-print(scaled_covariate)
+print(X.lambda)
 
 
 # ---------------------------------------
-# Changing naming scheme
-v = as.matrix(det_mat[,-1]) # used as v = acoustic vocalization data from clustering algorithm
-sites.a = sites.call # used as sites.a = specific indices of sites where acoustic data were obtained 
-y = as.matrix(bin_det_mat) # used as y = binary summary of v, takes value 0 if v = 0 and value 1 if v > 0.
-R = nsites # used as R = number of total sites
-J = n.occ # used as J = number of repeat visits for acoustic data at each site
-n = as.matrix(totalval) # n = total number of manually validated acoustic vocalizations
-k = as.matrix(totaltrue) # k = true number of manually validated acoustic vocalizations
-R.val = nsites.val # used as R.val = number of validated sites for acoustic data
-X.lambda = scaled_covariate # Covatiate matrix for abundance
-
 
 # J.r contains the number of surveys at each acoustic site that contains
 # at least 1 detected vocalization. 
@@ -178,17 +208,30 @@ J.val <- apply(v[sites.a, ], 1, function(a){sum(!is.na(a))})
 
 
 # Times validation occured for sites that were validated
-val.times  <- matrix(rep(1:4, times = nrow(det_mat)), nrow = nrow(det_mat), byrow = TRUE)
 # val.times  <- matrix(NA, R.val, max(J))
-# tmp <- apply(v[sites.a, ], 1, function(a) {which(!is.na(a))})
-# 
+# tmp <- apply(v[sites.a, ], 1, function(a) list(which(!is.na(a))))
+# i = 1
 # for (i in 1:R.val) {
 #   val.times[i, 1:length(tmp[[i]])] <- tmp[[i]]
 # }
 
+# All times are valid (no NAs from survey failure)
+val.times <- matrix(rep(1:4, times = nrow(v)), nrow = nrow(v), byrow = TRUE)
+
+
+
+# i=1
+# j=1
+# 
+# for (i in 1:R.val) {
+#   for (j in 1:J.val[i]) {
+#     K[i, j] ~ dbin(tp[sites.a[i], j], v[sites.a[i], val.times[i, j]])
+#     k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
+#   } # j
+# } # i
 
 # For day random effect on cue production rate
-days <- matrix(rep(1:4, times = nrow(det_mat)), nrow = nrow(det_mat), byrow = TRUE)
+days <- matrix(rep(1:4, times = nrow(v)), nrow = nrow(v), byrow = TRUE)
 
 # For Bayesian P-value
 R.A <- sum(J.r > 0)
@@ -249,7 +292,8 @@ params.A <- c('alpha.0',
               'a.phi', 
               'omega', 
               'bp.y', 
-              'bp.v')
+              'bp.v',
+              'lambda')
 
 # MCMC settings 
 n.iter <- 200000
@@ -360,7 +404,14 @@ out.model.A <- jags(
 )
 
 
+# Rhat
+coda::gelman.diag(out.model.A$samples)
 
+# Trace plots
+mcmcplot(out.model.A$samples)
+
+# Model Summary
+summary(out.model.A$samples)
 
 
 
