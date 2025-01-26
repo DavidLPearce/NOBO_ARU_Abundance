@@ -5,20 +5,23 @@ hds_dat <- readRDS("./Data/Fitted_Models/PC_HDS_Dens.rds")
 nmix_dat<-readRDS("./Data/Fitted_Models/PC_Nmix_Dens.rds")
 tmpEhds_dat <- readRDS("./Data/Fitted_Models/PC_TempEmHDS_Dens.rds")
 cmr_dat <-readRDS("./Data/Fitted_Models/PC_CMR_Dens.rds")
-
+aruBnet_dat <- readRDS("./Data/Fitted_Models/ARU_Bnet.rds")
+  
 head(hds_dat)
 
-# mean density
+# Mean density
 mean(hds_dat$Density)
 mean(nmix_dat$Density)
 mean(tmpEhds_dat$Density)
 mean(cmr_dat$Density)
+mean(aruBnet_dat$Density)
 
-# mean study area abundance
+# Mean study area abundance
 mean(hds_dat$Density) * 1096.698
 mean(nmix_dat$Density) * 1096.698
 mean(tmpEhds_dat$Density) * 1096.698
 mean(cmr_dat$Density) * 1096.698
+mean(aruBnet_dat$Density) * 1096.698
 
 # Typical abundance of quail in Texas is 1-2 birds per acre
 # which would be 2.47 to 4.94 birds per hectare.
@@ -31,7 +34,7 @@ head(txDens_dat)
 mean(txDens_dat$Density)
 
 # Combine into one dataframe
-dens_df <- rbind(txDens_dat, hds_dat, nmix_dat, tmpEhds_dat, cmr_dat)
+dens_df <- rbind(txDens_dat, hds_dat, nmix_dat, tmpEhds_dat, cmr_dat, aruBnet_dat)
 head(dens_df)
 
 
@@ -48,7 +51,7 @@ ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
   geom_point(data = means, aes(x = Model, y = mean_density), color = "black", size = 3) +
   geom_hline(yintercept = 3.705, color = "black", linetype = "dashed", size = 1) +  # Add horizontal line
   labs(
-    title = "Density (Per Hectare)", 
+    title = "", 
     x = "Model", 
     y = "Abundance/Hectare") +
   scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, by = 2), labels = scales::comma) + # Customize y-axis
@@ -61,3 +64,4 @@ ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
     panel.grid.minor = element_blank(),
     legend.position = "none"
   )
+
