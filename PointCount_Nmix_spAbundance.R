@@ -83,13 +83,6 @@ print(wind_mat)
 print(sky_mat)
 print(doy_mat)
 
-# Site 3 is missing covariate information for survey 1 
-# adding in information based on other survey 1 info
-obs_mat[3,1] <- "Dave"
-temp_mat[3,1] <- 76
-wind_mat[3,1] <- 4
-sky_mat[3,1] <- 2
-doy_mat[3,1] <- 118
 
 
 # -------------------------------------------------------
@@ -98,7 +91,7 @@ doy_mat[3,1] <- 118
 
 # Formatting long
 pc_spA_Nmix <- list(y = det_mat,
-                    abund.covs = site_covs[,4:8],
+                    abund.covs = site_covs[,-c(1:4)],
                     det.covs = list(obsvr = obs_mat,
                                     temp = temp_mat,
                                     wind = wind_mat,
@@ -108,11 +101,9 @@ pc_spA_Nmix <- list(y = det_mat,
 # Check structure
 str(pc_spA_Nmix)
 
-# Detection covariates need to be a factor
+# Observor, Wind, Sky covariates need to be a factor
 pc_spA_Nmix$det.covs$obsvr <- as.data.frame(lapply(pc_spA_Nmix$det.covs$obsvr, as.factor))
-pc_spA_Nmix$det.covs$temp <- as.data.frame(lapply(pc_spA_Nmix$det.covs$temp, as.factor))
 pc_spA_Nmix$det.covs$wind <- as.data.frame(lapply(pc_spA_Nmix$det.covs$wind, as.factor))
-pc_spA_Nmix$det.covs$sky <- as.data.frame(lapply(pc_spA_Nmix$det.covs$sky, as.factor))
 pc_spA_Nmix$det.covs$doy <- as.data.frame(lapply(pc_spA_Nmix$det.covs$doy, as.factor))
 
 # Recheck structure
@@ -150,8 +141,8 @@ inits <- list(
 
 # Set Priors
 priors <- list(
-                 alpha.normal = list(mean = 0, var = 10),   # Prior for detection - Narrower variance for faster convergence
-                 beta.normal = list(mean = 0, var = 10))   # Prior for abundance - Narrower variance for faster convergence
+               alpha.normal = list(mean = 0, var = 10),   # Prior for detection
+               beta.normal = list(mean = 0, var = 10))   # Prior for abundance
          
 
 # Tuning
@@ -399,6 +390,22 @@ summary(detfm.1)
 #                    Abundance Models
 # ------------------------------------------------------- 
 
+## Getting woody and herb cov model combinations ##
+
+# Select woody and herbaceous covariates
+woody_covs <- site_covs %>% select(starts_with("woody"))
+herb_covs <- site_covs %>% select(starts_with("herb"))
+
+# Get column names
+woody_vars <- colnames(woody_covs)
+herb_vars <- colnames(herb_covs)
+
+# Generate all combinations
+model_combinations <- expand.grid(Woody = woody_vars, Herbaceous = herb_vars, stringsAsFactors = FALSE)
+
+# View the result
+print(model_combinations)
+
 # -------------------------------------------------------
 # Abundance Fit 0: Null
 # ------------------------------------------------------- 
@@ -420,9 +427,9 @@ fm.0 <- NMix(abund.formula = ~ 1,
              verbose = TRUE)
 
 # -------------------------------------------------------
-# Abundance Fit 1: Herbaceous Proportion 
+# Abundance Fit 1: Woody Proportion 
 # ------------------------------------------------------- 
-fm.1 <- NMix(abund.formula = ~ herb_prp, 
+fm.1 <- NMix(abund.formula = ~ woody_prp, 
               det.formula = ~ obsvr, 
               data = pc_spA_Nmix,
               family = 'Poisson',
@@ -442,7 +449,7 @@ fm.1 <- NMix(abund.formula = ~ herb_prp,
 # -------------------------------------------------------
 # Abundance Fit 2: Mean Woody Patch Area 
 # ------------------------------------------------------- 
-fm.2 <- NMix(abund.formula = ~ woody_mean_p_Area, 
+fm.2 <- NMix(abund.formula = ~ woody_Parea, 
              det.formula = ~ obsvr, 
              data = pc_spA_Nmix,
              family = 'Poisson',
@@ -462,7 +469,7 @@ fm.2 <- NMix(abund.formula = ~ woody_mean_p_Area,
 # -------------------------------------------------------
 # Abundance Fit 3: Woody Clumpy Index 
 # ------------------------------------------------------- 
-fm.3 <- NMix(abund.formula = ~ woody_c_clumpy, 
+fm.3 <- NMix(abund.formula = ~ woody_ClmIdx, 
              det.formula = ~ obsvr, 
              data = pc_spA_Nmix,
              family = 'Poisson',
@@ -481,9 +488,9 @@ fm.3 <- NMix(abund.formula = ~ woody_c_clumpy,
 
 
 # -------------------------------------------------------
-# Abundance Fit 4: Herbaceous Proportion + Woody Patch
+# Abundance Fit 4: Woody Patch Density
 # ------------------------------------------------------- 
-fm.4 <- NMix(abund.formula = ~ herb_prp + woody_mean_p_Area, 
+fm.4 <- NMix(abund.formula = ~ scale(woody_Pdens), 
              det.formula = ~ obsvr, 
              data = pc_spA_Nmix,
              family = 'Poisson',
@@ -499,14 +506,11 @@ fm.4 <- NMix(abund.formula = ~ herb_prp + woody_mean_p_Area,
              n.omp.threads = 1,
              n.report = 5000,
              verbose = TRUE)
-
-# Save fitted model
-saveRDS(fm.4, "./Data/Fitted_Models/PC_Nmix_spAbund_fm4.rds")
 
 # -------------------------------------------------------
-# Abundance Fit 5: Herbaceous Proportion + Woody Clumpy
+# Abundance Fit 5: Woody Shape Index
 # ------------------------------------------------------- 
-fm.5 <- NMix(abund.formula = ~ herb_prp + woody_c_clumpy, 
+fm.5 <- NMix(abund.formula = ~ woody_ShpInx, 
              det.formula = ~ obsvr, 
              data = pc_spA_Nmix,
              family = 'Poisson',
@@ -522,6 +526,1501 @@ fm.5 <- NMix(abund.formula = ~ herb_prp + woody_c_clumpy,
              n.omp.threads = 1,
              n.report = 5000,
              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 6: Woody Largest Patch Index
+# ------------------------------------------------------- 
+fm.6 <- NMix(abund.formula = ~ scale(woody_lrgPInx), 
+             det.formula = ~ obsvr, 
+             data = pc_spA_Nmix,
+             family = 'Poisson',
+             inits = inits, 
+             priors = priors,
+             tuning = tuning,
+             accept.rate = 0.43,
+             n.batch = n.batch,
+             batch.length = batch.length,
+             n.burn = n.burn,
+             n.thin = n.thin, 
+             n.chains = n.chains,
+             n.omp.threads = 1,
+             n.report = 5000,
+             verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 7: Woody Aggregation Index
+# ------------------------------------------------------- 
+fm.7 <- NMix(abund.formula = ~ scale(woody_AggInx), 
+             det.formula = ~ obsvr, 
+             data = pc_spA_Nmix,
+             family = 'Poisson',
+             inits = inits, 
+             priors = priors,
+             tuning = tuning,
+             accept.rate = 0.43,
+             n.batch = n.batch,
+             batch.length = batch.length,
+             n.burn = n.burn,
+             n.thin = n.thin, 
+             n.chains = n.chains,
+             n.omp.threads = 1,
+             n.report = 5000,
+             verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 8: Woody edge Density
+# ------------------------------------------------------- 
+fm.8 <- NMix(abund.formula = ~ scale(woody_EdgDens), 
+             det.formula = ~ obsvr, 
+             data = pc_spA_Nmix,
+             family = 'Poisson',
+             inits = inits, 
+             priors = priors,
+             tuning = tuning,
+             accept.rate = 0.43,
+             n.batch = n.batch,
+             batch.length = batch.length,
+             n.burn = n.burn,
+             n.thin = n.thin, 
+             n.chains = n.chains,
+             n.omp.threads = 1,
+             n.report = 5000,
+             verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 9: herb Proportion 
+# ------------------------------------------------------- 
+fm.9 <- NMix(abund.formula = ~ herb_prp, 
+             det.formula = ~ obsvr, 
+             data = pc_spA_Nmix,
+             family = 'Poisson',
+             inits = inits, 
+             priors = priors,
+             tuning = tuning,
+             accept.rate = 0.43,
+             n.batch = n.batch,
+             batch.length = batch.length,
+             n.burn = n.burn,
+             n.thin = n.thin, 
+             n.chains = n.chains,
+             n.omp.threads = 1,
+             n.report = 5000,
+             verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 10: Mean herb Patch Area 
+# ------------------------------------------------------- 
+fm.10 <- NMix(abund.formula = ~ herb_Parea, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 11: herb Clumpy Index 
+# ------------------------------------------------------- 
+fm.11 <- NMix(abund.formula = ~ herb_ClmIdx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+
+# -------------------------------------------------------
+# Abundance Fit 12: herb Patch Density
+# ------------------------------------------------------- 
+fm.12 <- NMix(abund.formula = ~ scale(herb_Pdens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 13: herb Shape Index
+# ------------------------------------------------------- 
+fm.13 <- NMix(abund.formula = ~ herb_ShpInx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 14: herb Largest Patch Index
+# ------------------------------------------------------- 
+fm.14 <- NMix(abund.formula = ~ scale(herb_lrgPInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 15: herb Aggregation Index
+# ------------------------------------------------------- 
+fm.15 <- NMix(abund.formula = ~ scale(herb_AggInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 16: herb Edge Density
+# ------------------------------------------------------- 
+fm.16 <- NMix(abund.formula = ~ scale(herb_EdgDens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 17:  woody_Parea + herb_prp
+# ------------------------------------------------------- 
+fm.17 <- NMix(abund.formula = ~ woody_Parea + herb_prp, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 18: woody_ClmIdx + herb_prp
+# ------------------------------------------------------- 
+fm.18 <- NMix(abund.formula = ~ woody_ClmIdx + herb_prp, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 19: scale(woody_Pdens) + herb_prp
+# ------------------------------------------------------- 
+fm.19 <- NMix(abund.formula = ~ scale(woody_Pdens) + herb_prp, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 20: woody_ShpInx +  herb_prp
+# ------------------------------------------------------- 
+fm.20 <- NMix(abund.formula = ~ woody_ShpInx + herb_prp, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+
+# -------------------------------------------------------
+# Abundance Fit 21: scale(woody_lrgPInx) + herb_prp
+# ------------------------------------------------------- 
+fm.21 <- NMix(abund.formula = ~ scale(woody_lrgPInx) + herb_prp, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 22: scale(woody_AggInx) + herb_prp
+# ------------------------------------------------------- 
+fm.22 <- NMix(abund.formula = ~ scale(woody_AggInx) + herb_prp, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 23: scale(woody_EdgDens) + herb_prp
+# ------------------------------------------------------- 
+fm.23 <- NMix(abund.formula = ~ scale(woody_EdgDens) + herb_prp, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 24: woody_prp +	herb_Parea
+# ------------------------------------------------------- 
+fm.24 <- NMix(abund.formula = ~ woody_prp +	herb_Parea, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 25: 
+# ------------------------------------------------------- 
+fm.25 <- NMix(abund.formula = ~ woody_Parea +	herb_Parea, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 26: woody_ClmIdx	+	herb_Parea
+# ------------------------------------------------------- 
+fm.26 <- NMix(abund.formula = ~ woody_ClmIdx	+	herb_Parea, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 27: scale(woody_Pdens)	+	herb_Parea
+# ------------------------------------------------------- 
+fm.27 <- NMix(abund.formula = ~ scale(woody_Pdens)	+	herb_Parea, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 28: woody_ShpInx	+	herb_Parea
+# ------------------------------------------------------- 
+fm.28 <- NMix(abund.formula = ~ woody_ShpInx	+	herb_Parea, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+
+# -------------------------------------------------------
+# Abundance Fit 29: scale(woody_lrgPInx)	+	herb_Parea
+# ------------------------------------------------------- 
+fm.29 <- NMix(abund.formula = ~ scale(woody_lrgPInx)	+	herb_Parea, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 30: scale(woody_AggInx)	+	herb_Parea
+# ------------------------------------------------------- 
+fm.30 <- NMix(abund.formula = ~ scale(woody_AggInx)	+	herb_Parea, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 31: scale(woody_EdgDens)	+	herb_Parea
+# ------------------------------------------------------- 
+fm.31 <- NMix(abund.formula = ~ scale(woody_EdgDens)	+	herb_Parea, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 32: woody_prp	+	herb_ClmIdx
+# ------------------------------------------------------- 
+fm.32 <- NMix(abund.formula = ~ woody_prp	+	herb_ClmIdx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 33: woody_Parea	+	herb_ClmIdx
+# ------------------------------------------------------- 
+fm.33 <- NMix(abund.formula = ~ woody_Parea	+	herb_ClmIdx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 34: woody_ClmIdx	+	herb_ClmIdx
+# ------------------------------------------------------- 
+fm.34 <- NMix(abund.formula = ~ woody_ClmIdx	+	herb_ClmIdx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+
+# -------------------------------------------------------
+# Abundance Fit 35: scale(woody_Pdens)	+	herb_ClmIdx
+# ------------------------------------------------------- 
+fm.35 <- NMix(abund.formula = ~ scale(woody_Pdens)	+	herb_ClmIdx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 36: woody_ShpInx	+	herb_ClmIdx
+# ------------------------------------------------------- 
+fm.36 <- NMix(abund.formula = ~ woody_ShpInx	+	herb_ClmIdx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+
+# -------------------------------------------------------
+# Abundance Fit 37: scale(woody_lrgPInx)	+	herb_ClmIdx
+# ------------------------------------------------------- 
+fm.37 <- NMix(abund.formula = ~ scale(woody_lrgPInx)	+	herb_ClmIdx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 38: scale(woody_AggInx)	+	herb_ClmIdx
+# ------------------------------------------------------- 
+fm.38 <- NMix(abund.formula = ~ scale(woody_AggInx)	+	herb_ClmIdx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 39: scale(woody_EdgDens)	+	herb_ClmIdx
+# ------------------------------------------------------- 
+fm.39 <- NMix(abund.formula = ~ scale(woody_EdgDens)	+	herb_ClmIdx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 40: woody_prp	+	scale(herb_Pdens)
+# ------------------------------------------------------- 
+fm.40 <- NMix(abund.formula = ~ woody_prp	+	scale(herb_Pdens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 41: woody_Parea	+	scale(herb_Pdens)
+# ------------------------------------------------------- 
+fm.41 <- NMix(abund.formula = ~ woody_Parea	+	scale(herb_Pdens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 42: woody_ClmIdx	+	scale(herb_Pdens)
+# ------------------------------------------------------- 
+fm.42 <- NMix(abund.formula = ~ woody_ClmIdx	+	scale(herb_Pdens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 43: scale(woody_Pdens)	+	scale(herb_Pdens)
+# ------------------------------------------------------- 
+fm.43 <- NMix(abund.formula = ~ scale(woody_Pdens)	+	scale(herb_Pdens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 44: woody_ShpInx	+	scale(herb_Pdens)
+# ------------------------------------------------------- 
+fm.44 <- NMix(abund.formula = ~ woody_ShpInx	+	scale(herb_Pdens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+
+# -------------------------------------------------------
+# Abundance Fit 45: scale(woody_lrgPInx)	+	scale(herb_Pdens)
+# ------------------------------------------------------- 
+fm.45 <- NMix(abund.formula = ~ scale(woody_lrgPInx)	+	scale(herb_Pdens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 46: scale(woody_AggInx)	+	scale(herb_Pdens)
+# ------------------------------------------------------- 
+fm.46 <- NMix(abund.formula = ~ scale(woody_AggInx)	+	scale(herb_Pdens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 47: scale(woody_EdgDens)	+	scale(herb_Pdens)
+# ------------------------------------------------------- 
+fm.47 <- NMix(abund.formula = ~ scale(woody_EdgDens)	+	scale(herb_Pdens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 48: woody_prp	+	herb_ShpInx
+# ------------------------------------------------------- 
+fm.48 <- NMix(abund.formula = ~ woody_prp	+	herb_ShpInx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 49: woody_Parea	+	herb_ShpInx
+# ------------------------------------------------------- 
+fm.49 <- NMix(abund.formula = ~ woody_Parea	+	herb_ShpInx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 50:  woody_ClmIdx	+	herb_ShpInx
+# ------------------------------------------------------- 
+fm.50 <- NMix(abund.formula = ~ woody_ClmIdx	+	herb_ShpInx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 51:  scale(woody_Pdens)	+	herb_ShpInx
+# ------------------------------------------------------- 
+fm.51 <- NMix(abund.formula = ~ scale(woody_Pdens)	+	herb_ShpInx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 52:  woody_ShpInx	+	herb_ShpInx
+
+# ------------------------------------------------------- 
+fm.52 <- NMix(abund.formula = ~  woody_ShpInx	+	herb_ShpInx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 53:  scale(woody_lrgPInx)	+	herb_ShpInx
+# ------------------------------------------------------- 
+fm.53 <- NMix(abund.formula = ~  scale(woody_lrgPInx)	+	herb_ShpInx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 54:  scale(woody_AggInx)	+	herb_ShpInx
+# ------------------------------------------------------- 
+fm.54 <- NMix(abund.formula = ~ scale(woody_AggInx)	+	herb_ShpInx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 55: scale(woody_EdgDens)	+	herb_ShpInx
+# ------------------------------------------------------- 
+fm.55 <- NMix(abund.formula = ~  scale(woody_EdgDens)	+	herb_ShpInx, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 56:  woody_prp	+	scale(herb_lrgPInx)
+# ------------------------------------------------------- 
+fm.56 <- NMix(abund.formula = ~  woody_prp	+	scale(herb_lrgPInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 57:  woody_Parea	+	scale(herb_lrgPInx)
+# ------------------------------------------------------- 
+fm.57 <- NMix(abund.formula = ~  woody_Parea	+	scale(herb_lrgPInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 58: woody_ClmIdx	+	scale(herb_lrgPInx)
+# ------------------------------------------------------- 
+fm.58 <- NMix(abund.formula = ~  woody_ClmIdx	+	scale(herb_lrgPInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+
+# -------------------------------------------------------
+# Abundance Fit 59:  scale(woody_Pdens)	+	scale(herb_lrgPInx)
+# ------------------------------------------------------- 
+fm.59 <- NMix(abund.formula = ~  scale(woody_Pdens)	+	scale(herb_lrgPInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 60: woody_ShpInx	+	scale(herb_lrgPInx)
+# ------------------------------------------------------- 
+fm.60 <- NMix(abund.formula = ~  woody_ShpInx	+	scale(herb_lrgPInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 61: scale(woody_lrgPInx)	+	scale(herb_lrgPInx)
+# ------------------------------------------------------- 
+fm.61 <- NMix(abund.formula = ~  scale(woody_lrgPInx)	+	scale(herb_lrgPInx),
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 62:  scale(woody_AggInx)	+	scale(herb_lrgPInx)
+# ------------------------------------------------------- 
+fm.62 <- NMix(abund.formula = ~ scale(woody_AggInx)	+	scale(herb_lrgPInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 63:  scale(woody_EdgDens)	+	scale(herb_lrgPInx)
+# ------------------------------------------------------- 
+fm.63 <- NMix(abund.formula = ~  scale(woody_EdgDens)	+	scale(herb_lrgPInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 64:  woody_prp	+	scale(herb_AggInx)
+# ------------------------------------------------------- 
+fm.64 <- NMix(abund.formula = ~  woody_prp	+	scale(herb_AggInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+
+# -------------------------------------------------------
+# Abundance Fit 65: woody_Parea	+	scale(herb_AggInx)
+# ------------------------------------------------------- 
+fm.65 <- NMix(abund.formula = ~  woody_Parea	+	scale(herb_AggInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 66:  woody_ClmIdx	+	scale(herb_AggInx)
+# ------------------------------------------------------- 
+fm.66 <- NMix(abund.formula = ~ woody_ClmIdx	+	scale(herb_AggInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+
+# -------------------------------------------------------
+# Abundance Fit 67:  scale(woody_Pdens)	+	scale(herb_AggInx)
+# ------------------------------------------------------- 
+fm.67 <- NMix(abund.formula = ~  scale(woody_Pdens)	+	scale(herb_AggInx),
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 68:  woody_ShpInx	+	scale(herb_AggInx)
+# ------------------------------------------------------- 
+fm.68 <- NMix(abund.formula = ~  woody_ShpInx	+	scale(herb_AggInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 69:  scale(woody_lrgPInx)	+	scale(herb_AggInx)
+# ------------------------------------------------------- 
+fm.69 <- NMix(abund.formula = ~  scale(woody_lrgPInx)	+	scale(herb_AggInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 70:  scale(woody_AggInx)	+	scale(herb_AggInx)
+# ------------------------------------------------------- 
+fm.70 <- NMix(abund.formula = ~ scale(woody_AggInx)	+	scale(herb_AggInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 71:  scale(woody_EdgDens)	+	scale(herb_AggInx)
+# ------------------------------------------------------- 
+fm.71 <- NMix(abund.formula = ~  scale(woody_EdgDens)	+	scale(herb_AggInx), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 72:  woody_prp	+	scale(herb_EdgDens)	
+# ------------------------------------------------------- 
+fm.72 <- NMix(abund.formula = ~  woody_prp	+	scale(herb_EdgDens)	, 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 73:  woody_Parea	+	scale(herb_EdgDens)
+# ------------------------------------------------------- 
+fm.73 <- NMix(abund.formula = ~  woody_Parea	+	scale(herb_EdgDens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 74:  woody_ClmIdx	+	scale(herb_EdgDens)
+# ------------------------------------------------------- 
+fm.74 <- NMix(abund.formula = ~  woody_ClmIdx	+	scale(herb_EdgDens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+
+# -------------------------------------------------------
+# Abundance Fit 75:  scale(woody_Pdens)	+	scale(herb_EdgDens)
+# ------------------------------------------------------- 
+fm.75 <- NMix(abund.formula = ~  scale(woody_Pdens)	+	scale(herb_EdgDens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 76:  woody_ShpInx	+	scale(herb_EdgDens)
+# ------------------------------------------------------- 
+fm.76 <- NMix(abund.formula = ~ woody_ShpInx	+	scale(herb_EdgDens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 77:  scale(woody_lrgPInx)	+	scale(herb_EdgDens)
+# ------------------------------------------------------- 
+fm.77 <- NMix(abund.formula = ~  scale(woody_lrgPInx)	+	scale(herb_EdgDens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 78: scale(woody_AggInx)	+	scale(herb_EdgDens)
+# ------------------------------------------------------- 
+fm.78 <- NMix(abund.formula = ~  scale(woody_AggInx)	+	scale(herb_EdgDens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+# -------------------------------------------------------
+# Abundance Fit 79:  scale(woody_EdgDens)	+	scale(herb_EdgDens)
+# ------------------------------------------------------- 
+fm.79 <- NMix(abund.formula = ~  scale(woody_EdgDens)	+	scale(herb_EdgDens), 
+              det.formula = ~ obsvr, 
+              data = pc_spA_Nmix,
+              family = 'Poisson',
+              inits = inits, 
+              priors = priors,
+              tuning = tuning,
+              accept.rate = 0.43,
+              n.batch = n.batch,
+              batch.length = batch.length,
+              n.burn = n.burn,
+              n.thin = n.thin, 
+              n.chains = n.chains,
+              n.omp.threads = 1,
+              n.report = 5000,
+              verbose = TRUE)
+
+
+
+
 
 # -------------------------------------------------------
 # Checking Convergence
@@ -537,65 +2036,70 @@ plot(fm.0, 'alpha', density = FALSE) # Detection parameters
 fm.0$rhat # Rhat values of 1.0 to 1.1 indicate good mixing
 dev.off() # clear plots
 
-# Abundance Fit 1: Herbaceous Proportion
+# Abundance Fit 1 
 plot(fm.1, 'beta', density = FALSE)  
 plot(fm.1, 'alpha', density = FALSE)  
 fm.1$rhat
 dev.off()
 
-# Abundance Fit 2: Mean Woody Patch Area
+# Abundance Fit 2 
 plot(fm.2, 'beta', density = FALSE)  
 plot(fm.2, 'alpha', density = FALSE)  
 fm.2$rhat
 dev.off()
 
-# Abundance Fit 3: Woody Clumpy Index
+# Abundance Fit 3 
 plot(fm.3, 'beta', density = FALSE)  
 plot(fm.3, 'alpha', density = FALSE)  
 fm.3$rhat
 dev.off()
 
-# Abundance Fit 4: Herbaceous Proportion + Woody Patch
+# Abundance Fit 4 
 plot(fm.4, 'beta', density = FALSE)  
 plot(fm.4, 'alpha', density = FALSE)  
 fm.4$rhat
 dev.off()
 
-# Abundance Fit 5: Herbaceous Proportion + Woody Clumpy
+# Abundance Fit 5 
 plot(fm.5, 'beta', density = FALSE)  
 plot(fm.5, 'alpha', density = FALSE)  
 fm.5$rhat
 dev.off()
 
+# Abundance Fit 6 
+plot(fm.6, 'beta', density = FALSE)  
+plot(fm.6, 'alpha', density = FALSE)  
+fm.6$rhat
+dev.off()
+
+# Abundance Fit 7 
+plot(fm.7, 'beta', density = FALSE)  
+plot(fm.7, 'alpha', density = FALSE)  
+fm.7$rhat
+dev.off()
+
+# Abundance Fit 8 
+plot(fm.8, 'beta', density = FALSE)  
+plot(fm.8, 'alpha', density = FALSE)  
+fm.8$rhat
+dev.off()
 
 # -------------------------------------------------------
 # Ranking Abundance Models
 # -------------------------------------------------------
 
-# Calculating WAIC
-waic_fm.0 <- waicAbund(fm.0)
-waic_fm.1 <- waicAbund(fm.1)
-waic_fm.2 <- waicAbund(fm.2)
-waic_fm.3 <- waicAbund(fm.3)  
-waic_fm.4 <- waicAbund(fm.4)
-waic_fm.5 <- waicAbund(fm.5)  
+# Calculating WAIC for models fm.0 to fm.79
+waic_values <- numeric(80)  # Create an empty numeric vector for WAIC values
+fitnames <- character(80)   # Create an empty character vector for model names
 
-
-# Extract the WAIC values for each model
-waic_values <- c(waic_fm.0["WAIC"],
-                    waic_fm.1["WAIC"],
-                    waic_fm.2["WAIC"],
-                    waic_fm.3["WAIC"],
-                    waic_fm.4["WAIC"],
-                    waic_fm.5["WAIC"])
-
-# Create a named vector with model names
-fitnames <- c("fm.0", 
-               "fm.1", 
-               "fm.2",
-               "fm.3", 
-               "fm.4",
-               "fm.5")
+for (i in 0:79) {
+  model_name <- paste0("fm.", i)
+  waic_var_name <- paste0("waic_fm.", i)
+  
+  assign(waic_var_name, waicAbund(get(model_name)))  # Calculate WAIC
+  waic_values[i + 1] <- get(waic_var_name)["WAIC"]  # Store WAIC value
+  fitnames[i + 1] <- model_name  # Store model name
+}
 
 
 # Combine model names and WAIC values into a data frame for ranking
@@ -607,12 +2111,12 @@ model_waic_df <- model_waic_df[order(model_waic_df$WAIC), ]
 # Print the ranked models
 print(model_waic_df)
 
-# Model 5: Herbaceous Proportion + Woody Clumpy is the best abundance model
-summary(fm.5)
+# Best Model 
+summary(fm.3)
 
 # Check model posterior predictive check
-ppc_fm.5 <- ppcAbund(fm.5, fit.stat = 'freeman-tukey', group = 1)
-summary(ppc_fm.5)
+ppc_fm.3 <- ppcAbund(fm.3, fit.stat = 'freeman-tukey', group = 1)
+summary(ppc_fm.3)
 
 # Bayesian p-value = 0.8226, using group of site
 
@@ -623,8 +2127,8 @@ summary(ppc_fm.5)
 # -------------------------------------------------------
 
 # Mean abundance per point
-print(mean(fm.4$N.samples)) # Latent Abundance
-print(mean(fm.4$mu.samples)) # Expected abundance
+print(mean(fm.3$N.samples)) # Latent Abundance
+print(mean(fm.3$mu.samples)) # Expected abundance
 
 # Area in hectares
 area <- pi*(200^2)/10000
