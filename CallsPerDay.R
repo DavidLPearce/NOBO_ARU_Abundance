@@ -6,7 +6,7 @@
  
 # Load packages
 library(tidyverse)
-library(zoo)
+#library(zoo)
 
 # Set seed, scientific notation options, and working directory
 set.seed(123)
@@ -53,32 +53,6 @@ print(call_sum)
 call_sum <- call_sum %>%
   filter(Date >= as.Date("2024-05-01") & Date <= as.Date("2024-07-31"))
 
-# Plot the barplot
-ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
-  geom_bar(stat = "identity", fill = "grey", color = "black") +
-  # geom_vline(xintercept = as.numeric(as.Date("2024-06-01")), 
-  #            linetype = "dashed", color = "black", size = 1) +  # Dotted line for June 1st
-  # geom_vline(xintercept = as.numeric(as.Date("2024-07-31")), 
-  #            linetype = "dashed", color = "black", size = 1) +  # Dotted line for July 31st
-  labs(
-    title = "",
-    x = "Date",
-    y = "Number of Calls"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  scale_x_date(date_breaks = "1 month", date_labels = "%b %d")
-
-# -------------------------
-# Moving window
-# --------------------------
-
-
-
-# Calculate the 7-day moving average
-# call_sum <- call_sum %>%
-#   mutate(Moving_Avg = zoo::rollmean(Total_Calls, k = 7, fill = NA, align = "center")) # Requires zoo package
-
 # Create breaks and labels
 breaks <- as.Date(c("2024-05-01", "2024-06-01", "2024-07-01", "2024-07-31"))
 labels <- format(breaks, "%B %d")
@@ -86,7 +60,6 @@ labels <- format(breaks, "%B %d")
 # Plot 
 ggplot(call_sum, aes(x = Date)) +
   geom_line(aes(y = Total_Calls), color = "black", size = 1, alpha = 0.7) +  # Original calls
-  # geom_line(aes(y = Moving_Avg), color = "red", size = 1.2) +                # 7-day moving average
   # geom_vline(xintercept = as.numeric(as.Date("2024-05-27")),
   #            linetype = "dashed", color = "blue", size = 1) +  # May 27th
   # geom_vline(xintercept = as.numeric(as.Date("2024-06-23")),
@@ -112,44 +85,49 @@ ggplot(call_sum, aes(x = Date)) +
 
 
 
-
-
 # -------------------------
-# Within 30 recording
+# Calls by min
 # --------------------------
 
-# subsets to just counts and time and format time to Hour and Min
-bnet_dat_min <- bnet_dat[,c('Time','Count')] %>%
-  mutate(
-    Time = format(as.POSIXct(Time, format = "%H:%M:%S"), format = "%H:%M")
-  )
-    
-# Summarize the number of calls per minute
-calls_per_min <- bnet_dat_min %>%
-  group_by(Time) %>%
-  summarize(Total_Calls = sum(Count), .groups = "drop")
+# Make sure your Date_Time is in POSIXct format
+bnet_dat$Date_Time <- as.POSIXct(bnet_dat$Date_Time, format = "%Y-%m-%d %H:%M:%S")
 
+# Extract the time at minute level (ignoring seconds)
+bnet_dat_min <- bnet_dat %>%
+  mutate(Time_Min = format(Date_Time, "%H:%M")) %>%  # Extract hour:minute
+  group_by(Time_Min) %>%  # Group by the minute
+  summarize(Total_Count = sum(Count), .groups = "drop")  # Summarize counts per minute
 
-# Make sure time is formatted as POSIXct and add a dummy date
-calls_per_min$Time <- as.POSIXct(paste("2024-01-01", calls_per_min$Time), format = "%Y-%m-%d %H:%M")
+# Convert Time_Min to a proper factor to maintain the order of time
+bnet_dat_min$Time_Min <- factor(bnet_dat_min$Time_Min, levels = unique(bnet_dat_min$Time_Min))
+
+# Create a vector of labels for every 5 minutes
+label_intervals <- seq(1, nrow(bnet_dat_min), by = 5)  # Get every 5th row
+labels <- bnet_dat_min$Time_Min[label_intervals]
+
 
 # Plot
-ggplot(calls_per_min, aes(x = Time, y = Total_Calls, group = 1)) +
-  geom_line(color = "black", size = 1) +  # Line plot for calls per minute
-  scale_x_datetime(  # Use scale_x_datetime for continuous time data
-    breaks = seq(from = min(calls_per_min$Time), to = max(calls_per_min$Time), by = "5 mins"),
-    labels = scales::date_format("%H:%M")  # Format to show hours and minutes
-  ) + 
+ggplot(bnet_dat_min, aes(x = Time_Min, y = Total_Count, group = 1)) +
+  geom_line(color = "Black", size = 1) +  # Line plot for detections per minute
+  scale_x_discrete(
+    breaks = bnet_dat_min$Time_Min[label_intervals],  # Show every 5th label
+    labels = labels  # Use the custom labels
+  ) +
+  scale_y_continuous(
+    limits = c(0, 350),  # Set y-axis limits from 0 to 350
+    breaks = seq(0, 350, by = 50)  # Set y-axis breaks at every 50 units
+  ) +
   labs(
     title = "Calls Per Minute",
-    x = "Time",
+    x = "Time ",
     y = "Total Calls"
   ) +
   theme_minimal() +
-  theme(axis.text.x = element_text(hjust = 0.5),
-        axis.text.y = element_text(hjust = 1),
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+        axis.text.y = element_text(hjust = 0.5),
         axis.ticks.x = element_line(size = 1),
         axis.ticks.y = element_line(size = 1),
-        panel.grid.major = element_blank(), 
-        panel.grid.minor = element_blank(),   
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
         axis.line = element_line(color = "black", size = 1))
+
