@@ -110,93 +110,9 @@ str(data)
 # -------------------------------------------------------
 
 
-# -------------------------------------------------------
-# Covariate Model
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0 / (1-p0))    # same as logit(p0)
-  # alpha1 ~ dnorm(0, 0.01)
-  # alpha2 ~ dnorm(0,0.01)
-  beta0 ~ dnorm(0,0.01)
-  beta1 ~ dnorm(0,0.01)
-  beta2 ~ dnorm(0,0.01)
-  psi <- sum(lambda[]) / M   # psi is a derived parameter
-
-  # log-linear model for abundance
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0 + beta1 * herbPdens[s] + beta2 * woodyParea[s]
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-
-    # Observation model: p 
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-    }
-  }
-}
-",fill=TRUE,file="cov_mod.txt")
-# ------------------------- End Model ------------------------------
-
-# Parameters monitored
-params.cov <- c("lambda",
-                "p0", 
-                "alpha0", 
-                #"alpha1", 
-                "beta0", 
-                "beta1",
-                "beta2",
-                "psi")
-
-# Initial values
-inits.cov <- function(){
-      list (p0 = runif(1), 
-            alpha1 = runif(1), 
-            alpha2 = rnorm(1),
-            beta0 = runif(1),
-            beta1 = rnorm(1),
-            beta2 = rnorm(1),
-            z = c( rep(1,nind), rep(0, (M-nind)))
-)}# end inits
-
-fm.cov <- jags(data = data, 
-               parameters.to.save = params.cov, 
-               inits = inits.cov, 
-               model.file = "cov_mod.txt",
-               n.iter = 500000,
-               n.burnin = 5000,
-               n.chains = 3, 
-               n.thin = 10,
-               parallel = TRUE,
-               n.cores = 8,
-               DIC = TRUE)  
-
-
-# Rhat
-fm.cov$Rhat
-
-# Trace plots
-mcmcplot(fm.cov$samples)
-
-# Model summary
-print(fm.cov, digits = 3)
-
-
-
-
 
 # -------------------------------------------------------
-# Covariate Model with Survey Random Effect
+# Model with Covariates and Survey Random Effect
 # -------------------------------------------------------
 cat("
 model {
@@ -211,8 +127,8 @@ model {
   psi <- sum(lambda[])/M
 
   # Precision for survey-level random effect
-  tau_survey ~ dgamma(0.1, 0.1)  
-  sigma_survey <- 1/sqrt(tau_survey)
+  tau ~ dgamma(0.1, 0.1)  
+  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
 
   # Log-linear model for abundance
   for(s in 1:nsites){
@@ -222,7 +138,7 @@ model {
 
   # Survey-level random effect
   for(j in 1:J){  
-    survey_effect[j] ~ dnorm(0, tau_survey)  
+    J.raneff[j] ~ dnorm(0, tau)  
   }
 
   # Model for individual encounter histories
@@ -232,14 +148,16 @@ model {
     
     # Observation model: p depends on survey-specific effect
     for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + survey_effect[j] 
+      logit(p[i,j]) <- alpha0 + J.raneff[j] 
       pz[i,j] <- p[i,j] * z[i]
       y[i,j] ~ dbern(pz[i,j])
     }
   }
 }
 ", fill=TRUE, file="raneff_cov_mod.txt")
-# ------------------------- End Model ------------------------------
+# ------------End Model-------------
+
+
 
 # Parameters monitored
 params.rcov <- c("lambda",
@@ -249,12 +167,13 @@ params.rcov <- c("lambda",
               "beta0", 
               "beta1",
               "beta2",
-              "psi", 
-              "tau_survey",
-              "sigma_survey")
+              "psi",
+              "J.raneff",
+              "tau",
+              "sigma")
 
 
-# Initial values: add tau
+# Initial values
 inits.rcov <- function() {
   list (p0 = runif(1),
         alpha1 = 0,
@@ -306,7 +225,7 @@ mcmcplot(fm.rcov$samples)
 
 
 # Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.covs$samples))
+combined_chains <- as.mcmc(do.call(rbind, fm.rcov$samples))
 
 # Extract lambda estimates (assuming "lambda[1]", "lambda[2]", etc., are in the output)
 lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
