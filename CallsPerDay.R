@@ -123,7 +123,7 @@ ggplot(bnet_dat_min, aes(x = Time_Min, y = Total_Count, group = 1)) +
     y = "Total Calls"
   ) +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+  theme(axis.text.x = element_text(hjust = 0.5),  # Rotate x-axis labels
         axis.text.y = element_text(hjust = 0.5),
         axis.ticks.x = element_line(size = 1),
         axis.ticks.y = element_line(size = 1),
