@@ -49,8 +49,8 @@ pc_dat$DOY <- yday(pc_dat$Date)
 # Remove NAs
 pc_dat_NAom <- na.omit(pc_dat)
 
-# creating a matrix that is 4 Surveys * 3 Distance bins wide and 10 rows long
-det_mat <- matrix(0, nrow = 10, ncol = 12)
+# creating a matrix that is 4 Surveys * 4 Distance bins wide and 10 rows long
+det_mat <- matrix(0, nrow = 10, ncol = 16)
 
 # adding a column to state a NOBO was detected, a count column
 pc_dat_NAom$count <- 1
@@ -108,23 +108,23 @@ Observer_numeric <- matrix(as.numeric(as.factor(obsvr_mat)),
                            ncol = ncol(obsvr_mat))
 
 # Create a 3D array
-y3d <- array(NA,dim=c(nrow(det_mat), 3, 4) ) # Length of site (10), width of distance bins (3), depth of surveys (4)
+y3d <- array(NA,dim=c(nrow(det_mat), 4, 4) ) # Length of site (10), width of distance bins (4), depth of surveys (4)
 
 # Fill array
-y3d[,,1] <- det_mat[,1:3]    
-y3d[,,2] <- det_mat[,4:6]  
-y3d[,,3] <- det_mat[,7:9]   
-y3d[,,4] <- det_mat[,10:12]
+y3d[,,1] <- det_mat[,1:4]    
+y3d[,,2] <- det_mat[,5:8]  
+y3d[,,3] <- det_mat[,9:12]   
+y3d[,,4] <- det_mat[,13:16]
 
 # Constances 
 K <- 4                          # Number of primary occasions
 nsites <- nrow(det_mat)         # Number of sites
-nD <- 3                         # Number of distance classes
-midpt <- c(25, 75, 125)         # Class midpoint distance
+nD <- 4                         # Number of distance classes
 delta <- 50                     # Class width
 B <- 200                        # Maximum distance
+midpt <- seq(delta/2, B, delta) # Class midpoint distance
 nobs <- apply(y3d, c(1,3), sum) # Total detections per site and occasion
-
+area <- pi*(200^2)/10000        # Area surveyed in hectares
 
 # Bundle data for nimble
 data <- list(y3d = y3d, 
@@ -136,8 +136,8 @@ data <- list(y3d = y3d,
              B = B,
              nobs = nobs, 
              area = area,
-             HerbPRP = scale(site_covs[,'herb_prp']),
-             WoodyPatch = scale(site_covs[,'woody_mean_p_Area']),
+             HerbPRP = as.vector(site_covs[,'herb_prp']),
+             WoodyPatch = as.vector(scale(site_covs[,'woody_Parea'])),
              Observer = Observer_numeric,
              Temp = scale(temp_mat),
              Wind = wind_mat,
@@ -255,7 +255,7 @@ availparams.0 <- c("r",
 
 # Run nimble 
 availfm.0 <- nimbleMCMC(code = availmodel.0,
-                        constants = data,
+                        data  = data,
                         inits = availinits.0,
                         monitors = availparams.0,
                         thin = 10,
