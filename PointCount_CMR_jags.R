@@ -13,6 +13,7 @@ library(tidyverse)
 library(jagsUI)
 library(coda)
 library(mcmcplots)
+library(ggfortify)
 
 # Set seed, scientific notation options, and working directory
 set.seed(123)
@@ -109,6 +110,10 @@ str(data)
 #
 # -------------------------------------------------------
 
+# Distributions
+# ggdistribution(dunif, seq(0, 1, 0.001), min = 0, max = 1) # p0
+# ggdistribution(dnorm, seq(0, 0.01, 0.0001)) # alpha1, beta0, beta1, beta2 
+# ggdistribution(dgamma, seq(0, 5, 0.01), shape = 0.1, rate = 0.1) # tau
 
 
 # -------------------------------------------------------
@@ -146,13 +151,22 @@ model {
     group[i] ~ dcat(probs[])  # Group == site membership
     z[i] ~ dbern(psi)         # Data augmentation variables
     
-    # Observation model: p depends on survey-specific effect
+    # Observation model (detection)
     for(j in 1:J){
       logit(p[i,j]) <- alpha0 + J.raneff[j] 
       pz[i,j] <- p[i,j] * z[i]
       y[i,j] ~ dbern(pz[i,j])
+      
+    # Posterior predictive checks
+    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
+    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
+    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
     }
   }
+  # Bayesian p-value
+  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
+  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
+  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
 }
 ", fill=TRUE, file="raneff_cov_mod.txt")
 # ------------End Model-------------
@@ -170,7 +184,8 @@ params.rcov <- c("lambda",
               "psi",
               "J.raneff",
               "tau",
-              "sigma")
+              "sigma",
+              "p_Bayes")
 
 
 # Initial values
@@ -211,8 +226,8 @@ print(fm.rcov, digits = 3)
 # Trace plots
 mcmcplot(fm.rcov$samples)
 
-
-
+# Bayesian P value
+cat("Bayesian p-value =", fm.rcov$summary["p_Bayes",1], "\n")
 
 
 
