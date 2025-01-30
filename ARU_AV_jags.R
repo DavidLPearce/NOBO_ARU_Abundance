@@ -65,85 +65,86 @@ bnet_dat_all <- read.csv("./Data/Acoustic_Data/ARU_BirdNET_alldates.csv")
 
 # -------------------------------------------------------
 #
-#                                   Data Wrangling
+#    Data Wrangling
 #
 # -------------------------------------------------------
 
 
-# Subset to same dates as point count data
+# Subset to 14 days starting at May 26 and ending on July 17. Dates are every 4 days.
 bnet_dat <- bnet_dat_all %>%
-  filter(Date %in% c("2024-04-28", "2024-05-19", "2024-06-18", "2024-07-12"))
+  filter(Date %in% c("2024-05-26", "2024-05-30", "2024-06-03",  "2024-06-07",
+                     "2024-06-11", "2024-06-15", "2024-06-19", "2024-06-23",
+                     "2024-06-27", "2024-07-01", "2024-07-05", "2024-07-09",
+                     "2024-07-13",  "2024-07-17"))
+                     
+# Dates and their corresponding occasion numbers
+date_order <- c("2024-05-26", "2024-05-30", "2024-06-03", "2024-06-07",
+                "2024-06-11", "2024-06-15", "2024-06-19", "2024-06-23",
+                "2024-06-27", "2024-07-01", "2024-07-05", "2024-07-09",
+                "2024-07-13", "2024-07-17")
 
-## Organize into a site x occasion matrix of counts of calls
-# Define the full list of site numbers
-all_sites <- tibble(Site_Number = 1:27)
+# Adding occasion column
+bnet_dat <- bnet_dat %>%
+  mutate(Occasion = match(Date, date_order))
 
-# Count observations by Site_Number and Date ***************** add in NA for missing survey dates
-countobs <- bnet_dat %>%
-  group_by(Site_Number, Date) %>%
-  summarise(Count = n(), .groups = "drop")
+# Adding a row count
+bnet_dat$Count <- 1
 
-# Ensure all site numbers and dates are represented
-v <- countobs %>%
-  complete(Site_Number = all_sites$Site_Number, Date, fill = list(Count = 0)) %>%
-  pivot_wider(names_from = Date, values_from = Count, values_fill = 0)
 
-# Formatting to numeric
-v <- v %>%
-  mutate(across(-1, as.numeric))
+# Initialize the matrix
+v <- matrix(0, nrow = 27, ncol = 14)        
 
-# View the result
-print(v, n = 27)  
+# Extract count data
+for (i in 1:nrow(bnet_dat)) {
+  
+  # Extracting plot ID
+  site <- bnet_dat$Site_Number[i]
+  
+  # Extracting Occasion
+  occasion <- bnet_dat$Occasion[i]
+  
+  # Fill in the matrix with the number of individuals
+  v[site, occasion] =  v[site, occasion] + bnet_dat$Count[i]
+  
+} # end loop 
+
+# take a look
+print(v)
+                             
+# ARU at site 24 stopped recording on 6/20. Making Columns 8:14 NA
+v[24,8:14] <- NA
+print(v)                                 
 
 # Get the site numbers with at least one call
-sites.a <- v %>%
-  rowwise() %>%
-  mutate(Any_Call = sum(c_across(where(is.numeric))) > 0) %>%
-  filter(Any_Call) %>%
-  pull(Site_Number)
+sites.a <- which(apply(v, 2, function(col) any(col > 0)))
+print(sites.a)
 
-# Format the output as a vector of site numbers
-print(sites.a) 
 
 # Creating a binary detection matrix, values >= 1 become 1, and 0 stays 0
-y <- v %>%
+v_df <- as.data.frame(v)
+y <- v_df %>%
   mutate(across(where(is.numeric), ~ if_else(. >= 1, 1, 0)))
-
-# Removing first row and defining as a matrix
-y <- y[,-1]
 y <- as.matrix(y)
 rownames(y) <- NULL  
 colnames(y) <- NULL 
-
-# View the result
 print(y)
-
-# Sites are organized correctly, removing site_number columnm defining as a matrix and setting to default row/col names
-v <- v[,-1]
-v <- as.matrix(v)
-rownames(v) <- NULL  
-colnames(v) <- NULL  
-write.csv(v, "v.csv")
-
-# View the result
-print(v) # used as v = acoustic vocalization data from clustering algorithm
 
 # Total number of sites
 R <- as.integer(27) 
 
 # Number of repeat visits
-J <- rep(4, R)  
+J <- rep(14, R)  
 
 
 
 # ---------------------------------------
-# Manually validated info ****** made up
+# Manually validated info ****** made up ----- Fix this 
 # ---------------------------------------
 
-#sum(det_mat, na.rm = TRUE)
-
-#calls2eval<- sample(177, size = (108*.3), replace = FALSE)
-#write.csv(det_mat, "det_mat.csv")
+# sum(v, na.rm = TRUE)
+# 27*14
+# calls2eval<- sample(860, size = (378*.3), replace = FALSE)
+# write.csv(v, "v.csv")
 
 # Need to redo this - i think not all sites were validated 
 n <- read.csv("./totalval_fake.csv") # n = total number of manually validated acoustic vocalizations 
@@ -207,28 +208,10 @@ for (i in 1:R) {
 J.val <- apply(v[sites.a, ], 1, function(a){sum(!is.na(a))})
 
 
-# Times validation occured for sites that were validated
-# val.times  <- matrix(NA, R.val, max(J))
-# tmp <- apply(v[sites.a, ], 1, function(a) list(which(!is.na(a))))
-# i = 1
-# for (i in 1:R.val) {
-#   val.times[i, 1:length(tmp[[i]])] <- tmp[[i]]
-# }
 
 # All times are valid (no NAs from survey failure)
 val.times <- matrix(rep(1:4, times = nrow(v)), nrow = nrow(v), byrow = TRUE)
 
-
-
-# i=1
-# j=1
-# 
-# for (i in 1:R.val) {
-#   for (j in 1:J.val[i]) {
-#     K[i, j] ~ dbin(tp[sites.a[i], j], v[sites.a[i], val.times[i, j]])
-#     k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
-#   } # j
-# } # i
 
 # For day random effect on cue production rate
 days <- matrix(rep(1:4, times = nrow(v)), nrow = nrow(v), byrow = TRUE)
