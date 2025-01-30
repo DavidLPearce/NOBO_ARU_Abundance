@@ -195,7 +195,7 @@ model {
   sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
   p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
 }
-", fill=TRUE, file="CMR_mod0.txt")
+", fill=TRUE, file="./jags_models/CMR_mod0.txt")
 # ------------End Model-------------
 
 
@@ -266,7 +266,7 @@ model {
   # Prior distributions
   p0 ~ dunif(0,1)
   alpha0 <- log(p0/(1-p0))
-  #alpha1 ~ dnorm(0, 0.01)
+  alpha1 ~ dnorm(0, 0.01)
   beta0 ~ dnorm(0, 0.01)
   beta1 ~ dnorm(0, 0.01)
   beta2 ~ dnorm(0, 0.01)
@@ -309,7 +309,7 @@ model {
   sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
   p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
 }
-", fill=TRUE, file="CMR_mod1.txt")
+", fill=TRUE, file="./jags_models/CMR_mod1.txt")
 # ------------End Model-------------
 
 
@@ -380,7 +380,7 @@ model {
   # Prior distributions
   p0 ~ dunif(0,1)
   alpha0 <- log(p0/(1-p0))
-  #alpha1 ~ dnorm(0, 0.01)
+  alpha1 ~ dnorm(0, 0.01)
   beta0 ~ dnorm(0, 0.01)
   beta1 ~ dnorm(0, 0.01)
   beta2 ~ dnorm(0, 0.01)
@@ -423,7 +423,7 @@ model {
   sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
   p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
 }
-", fill=TRUE, file="CMR_mod2.txt")
+", fill=TRUE, file="./jags_models/CMR_mod2.txt")
 # ------------End Model-------------
 
 
@@ -496,7 +496,7 @@ model {
   # Prior distributions
   p0 ~ dunif(0,1)
   alpha0 <- log(p0/(1-p0))
-  #alpha1 ~ dnorm(0, 0.01)
+  alpha1 ~ dnorm(0, 0.01)
   beta0 ~ dnorm(0, 0.01)
   beta1 ~ dnorm(0, 0.01)
   beta2 ~ dnorm(0, 0.01)
@@ -539,7 +539,7 @@ model {
   sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
   p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
 }
-", fill=TRUE, file="CMR_mod3.txt")
+", fill=TRUE, file="./jags_models/CMR_mod3.txt")
 # ------------End Model-------------
 
 
@@ -610,7 +610,7 @@ model {
   # Prior distributions
   p0 ~ dunif(0,1)
   alpha0 <- log(p0/(1-p0))
-  #alpha1 ~ dnorm(0, 0.01)
+  alpha1 ~ dnorm(0, 0.01)
   beta0 ~ dnorm(0, 0.01)
   beta1 ~ dnorm(0, 0.01)
   beta2 ~ dnorm(0, 0.01)
@@ -653,7 +653,7 @@ model {
   sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
   p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
 }
-", fill=TRUE, file="CMR_mod4.txt")
+", fill=TRUE, file="./jags_models/CMR_mod4.txt")
 # ------------End Model-------------
 
 
@@ -723,7 +723,7 @@ model {
   # Prior distributions
   p0 ~ dunif(0,1)
   alpha0 <- log(p0/(1-p0))
-  #alpha1 ~ dnorm(0, 0.01)
+  alpha1 ~ dnorm(0, 0.01)
   beta0 ~ dnorm(0, 0.01)
   beta1 ~ dnorm(0, 0.01)
   beta2 ~ dnorm(0, 0.01)
@@ -766,7 +766,7 @@ model {
   sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
   p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
 }
-", fill=TRUE, file="CMR_mod5.txt")
+", fill=TRUE, file="./jags_models/CMR_mod5.txt")
 # ------------End Model-------------
 
 
@@ -827,7 +827,14 @@ mcmcplot(fm.5$samples)
 cat("Bayesian p-value =", fm.5$summary["p_Bayes",1], "\n")
 
 
+###
 
+fm.0$DIC
+fm.1$DIC
+fm.2$DIC
+fm.3$DIC
+fm.4$DIC
+fm.5$DIC
 
 
 # -------------------------------------------------------
@@ -838,7 +845,7 @@ cat("Bayesian p-value =", fm.5$summary["p_Bayes",1], "\n")
 
 
 # Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.rcov$samples))
+combined_chains <- as.mcmc(do.call(rbind, fm.4$samples))
 
 # Extract lambda estimates
 lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
@@ -876,7 +883,7 @@ ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
   labs(
     title = "",
     x = "Model",
-    y = "Density (N/hectare") +
+    y = "Density (N/hectare)") +
   scale_y_continuous(limits = c(0, 10),
                      breaks = seq(0, 10, by = 5),
                      labels = scales::comma) +
