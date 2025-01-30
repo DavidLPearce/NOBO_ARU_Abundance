@@ -49,21 +49,39 @@ call_sum <- bnet_dat %>%
   summarize(Total_Calls = sum(Count), .groups = "drop")
 print(call_sum)
 
+
 # Subset the data to start from May 1st and end on July 31st
 call_sum <- call_sum %>%
-  filter(Date >= as.Date("2024-05-01") & Date <= as.Date("2024-07-31"))
+  filter(Date >= as.Date("2024-05-1") & Date <= as.Date("2024-07-31"))
 
+# 14 day subset, every 4 days
+call_14day <- call_sum[which(call_sum$Date == "2024-05-26" | call_sum$Date == "2024-05-30" |
+                             call_sum$Date == "2024-06-03" | call_sum$Date == "2024-06-07" |
+                             call_sum$Date == "2024-06-11" | call_sum$Date == "2024-06-15" |
+                             call_sum$Date == "2024-06-19" | call_sum$Date == "2024-06-23" |
+                             call_sum$Date == "2024-06-27" | call_sum$Date == "2024-07-01" |
+                             call_sum$Date == "2024-07-05" | call_sum$Date == "2024-07-09" |
+                             call_sum$Date == "2024-07-13" | call_sum$Date == "2024-07-17" ),]
+
+# 7 day subset, sample from 14 day dates
+dates14day <- c("2024-05-26","2024-05-30","2024-06-03","2024-06-07","2024-06-11",
+                "2024-06-15", "2024-06-19", "2024-06-23", "2024-06-27", "2024-07-01",
+                "2024-07-05", "2024-07-09", "2024-07-13", "2024-07-17") 
+
+dates7day <- sample(dates14day, size = 7, replace = FALSE)
+call_7day <- call_sum[call_sum$Date %in% dates7day, ]
+
+# 4 day subset, sample from 14 day dates
+dates4day <- sample(dates14day, size = 4, replace = FALSE)
+call_4day <- call_sum[call_sum$Date %in% dates4day, ]
+  
 # Create breaks and labels
-breaks <- as.Date(c("2024-05-01", "2024-06-01", "2024-07-01", "2024-07-31"))
-labels <- format(breaks, "%B %d")
+# breaks <- as.Date(c("2024-05-01", "2024-06-01", "2024-07-01", "2024-07-31"))
+# labels <- format(breaks, "%B %d")
 
-# Plot 
+# Line 
 ggplot(call_sum, aes(x = Date)) +
   geom_line(aes(y = Total_Calls), color = "black", size = 1, alpha = 0.7) +  # Original calls
-  # geom_vline(xintercept = as.numeric(as.Date("2024-05-27")),
-  #            linetype = "dashed", color = "blue", size = 1) +  # May 27th
-  # geom_vline(xintercept = as.numeric(as.Date("2024-06-23")),
-  #            linetype = "dashed", color = "blue", size = 1) +  # June 23rd
   labs(
     title = "Calls Per Day",
     x = "Month",
@@ -82,6 +100,142 @@ ggplot(call_sum, aes(x = Date)) +
     date_breaks = "1 month",        # Set the breaks to be monthly
     date_labels = "%B"              # Format to show only month abbreviation (e.g., May, Jun)
   )
+
+# -------------------------------------------------
+# Histogram
+# -------------------------------------------------
+ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
+  geom_col(fill = "black", alpha = 0.7) +  
+  labs(
+    title = "Calls Per Day",
+    x = "Date",
+    y = "Number of Calls"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45,hjust = 1),
+        axis.text.y = element_text(hjust = 0.5),
+        axis.ticks.x = element_line(size = 1),
+        axis.ticks.y = element_line(size = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black", size = 1)
+  ) +
+  scale_x_date(
+    date_breaks = "3 day",
+    date_labels = "%b%d"
+  )
+
+# -------------------------------------------------
+# Histogram + 14 day
+# -------------------------------------------------
+ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
+  geom_col(fill = "black", alpha = 0.7) +  
+  # 14-day 
+  geom_vline(data = call_14day, aes(xintercept = as.numeric(Date)), color = "grey", linetype = "solid", size = 1) +
+  labs(
+    title = "Calls Per Day",
+    x = "Date",
+    y = "Number of Calls"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45,hjust = 1),
+        axis.text.y = element_text(hjust = 0.5),
+        axis.ticks.x = element_line(size = 1),
+        axis.ticks.y = element_line(size = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black", size = 1)
+  ) +
+  scale_x_date(
+    date_breaks = "3 day",
+    date_labels = "%b%d"
+  )  
+
+# -------------------------------------------------
+# Histogram + 14 day + 7 day
+# -------------------------------------------------
+ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
+  geom_col(fill = "black", alpha = 0.7) +  
+  # 14-day 
+  geom_vline(data = call_14day, aes(xintercept = as.numeric(Date)), color = "grey", linetype = "solid", size = 1) +
+  # 7-day 
+  geom_vline(data = call_7day, aes(xintercept = as.numeric(Date)), color = "blue", linetype = "dashed", size = 1) +
+  labs(
+    title = "Calls Per Day",
+    x = "Date",
+    y = "Number of Calls"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45,hjust = 1),
+        axis.text.y = element_text(hjust = 0.5),
+        axis.ticks.x = element_line(size = 1),
+        axis.ticks.y = element_line(size = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black", size = 1)
+  ) +
+  scale_x_date(
+    date_breaks = "3 day",
+    date_labels = "%b%d"
+  )  
+
+# -------------------------------------------------
+# Histogram + 14 day + 4 day
+# -------------------------------------------------
+ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
+  geom_col(fill = "black", alpha = 0.7) +  
+  # 14-day 
+  geom_vline(data = call_14day, aes(xintercept = as.numeric(Date)), color = "grey", linetype = "solid", size = 1) +
+  # 4-day 
+    geom_vline(data = call_4day, aes(xintercept = as.numeric(Date)), color = "red", linetype = "dotted", size = 1) +
+  labs(
+    title = "Calls Per Day",
+    x = "Date",
+    y = "Number of Calls"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45,hjust = 1),
+        axis.text.y = element_text(hjust = 0.5),
+        axis.ticks.x = element_line(size = 1),
+        axis.ticks.y = element_line(size = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black", size = 1)
+  ) +
+  scale_x_date(
+    date_breaks = "3 day",
+    date_labels = "%b%d"
+  )  
+
+# -------------------------------------------------
+# Histogram + 14 day + 7 day + 4 day
+# -------------------------------------------------
+ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
+  geom_col(fill = "black", alpha = 0.7) +  
+  # 14-day 
+  geom_vline(data = call_14day, aes(xintercept = as.numeric(Date)), color = "grey", linetype = "solid", size = 1) +
+  # 7-day 
+  geom_vline(data = call_7day, aes(xintercept = as.numeric(Date)), color = "blue", linetype = "dashed", size = 1) +
+  # 4-day 
+  geom_vline(data = call_4day, aes(xintercept = as.numeric(Date)), color = "red", linetype = "dotted", size = 1) +
+  labs(
+    title = "Calls Per Day",
+    x = "Date",
+    y = "Number of Calls"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45,hjust = 1),
+        axis.text.y = element_text(hjust = 0.5),
+        axis.ticks.x = element_line(size = 1),
+        axis.ticks.y = element_line(size = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black", size = 1)
+  ) +
+  scale_x_date(
+    date_breaks = "3 day",
+    date_labels = "%b%d"
+  )  
 
 
 
