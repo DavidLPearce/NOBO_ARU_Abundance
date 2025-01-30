@@ -80,26 +80,26 @@ call_4day <- call_sum[call_sum$Date %in% dates4day, ]
 # labels <- format(breaks, "%B %d")
 
 # Line 
-ggplot(call_sum, aes(x = Date)) +
-  geom_line(aes(y = Total_Calls), color = "black", size = 1, alpha = 0.7) +  # Original calls
-  labs(
-    title = "Calls Per Day",
-    x = "Month",
-    y = "Calls Per Day"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(hjust = 0.5),
-        axis.text.y = element_text(hjust = 0.5),
-        axis.ticks.x = element_line(size = 1),
-        axis.ticks.y = element_line(size = 1),
-        panel.grid.major = element_blank(),  # Remove major grid lines
-        panel.grid.minor = element_blank(),  # Remove minor grid lines
-        axis.line = element_line(color = "black", size = 1)
-        ) +
-  scale_x_date(
-    date_breaks = "1 month",        # Set the breaks to be monthly
-    date_labels = "%B"              # Format to show only month abbreviation (e.g., May, Jun)
-  )
+# ggplot(call_sum, aes(x = Date)) +
+#   geom_line(aes(y = Total_Calls), color = "black", size = 1, alpha = 0.7) +  # Original calls
+#   labs(
+#     title = "Calls Per Day",
+#     x = "Month",
+#     y = "Calls Per Day"
+#   ) +
+#   theme_minimal() +
+#   theme(axis.text.x = element_text(hjust = 0.5),
+#         axis.text.y = element_text(hjust = 0.5),
+#         axis.ticks.x = element_line(size = 1),
+#         axis.ticks.y = element_line(size = 1),
+#         panel.grid.major = element_blank(),  # Remove major grid lines
+#         panel.grid.minor = element_blank(),  # Remove minor grid lines
+#         axis.line = element_line(color = "black", size = 1)
+#         ) +
+#   scale_x_date(
+#     date_breaks = "1 month",        # Set the breaks to be monthly
+#     date_labels = "%B"              # Format to show only month abbreviation (e.g., May, Jun)
+#   )
 
 # -------------------------------------------------
 # Histogram
