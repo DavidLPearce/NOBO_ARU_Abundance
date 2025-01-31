@@ -74,17 +74,16 @@ site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
 
 
 # Subset to 14 days starting at May 26 and ending on July 17. Dates are every 4 days.
-bnet_dat <- bnet_dat_all %>%
-  filter(Date %in% c("2024-05-26", "2024-05-30", "2024-06-03",  "2024-06-07",
-                     "2024-06-11", "2024-06-15", "2024-06-19", "2024-06-23",
-                     "2024-06-27", "2024-07-01", "2024-07-05", "2024-07-09",
-                     "2024-07-13",  "2024-07-17"))
-                     
-# Dates and their corresponding occasion numbers
-date_order <- c("2024-05-26", "2024-05-30", "2024-06-03", "2024-06-07",
+date_order <- c("2024-05-26", "2024-05-30", "2024-06-03", "2024-06-07", # in ascending order
                 "2024-06-11", "2024-06-15", "2024-06-19", "2024-06-23",
                 "2024-06-27", "2024-07-01", "2024-07-05", "2024-07-09",
                 "2024-07-13", "2024-07-17")
+
+bnet_dat <- bnet_dat_all %>%
+  filter(Date %in% date_order)
+                     
+# Dates and their corresponding occasion numbers
+
 
 # Adding occasion column
 bnet_dat <- bnet_dat %>%
@@ -220,7 +219,7 @@ J.A <- max(J)
 
 
 # Bundle data 
-bugs.data.A <- list(R = R, 
+Bnet14.data <- list(R = R, 
                     J = J, 
                     v = v, 
                     y = y, 
@@ -240,7 +239,8 @@ bugs.data.A <- list(R = R,
                     herbPdens = herbPdens,
                     woodyParea = woodyParea)
 
-str(bugs.data.A)
+# Check structure
+str(Bnet14.data)
 
 
 
@@ -338,7 +338,7 @@ cat(" model {
 
 
 # Parameters monitored
-params.A <- c('alpha.0', 
+params.ARU <- c('alpha.0', 
               'alpha.1', 
               'beta.0',
               'beta.1',
@@ -352,20 +352,19 @@ params.A <- c('alpha.0',
               'lambda')
 
 # Initial Values 
-N.init <- rep(1, R)
-inits <- function() {
-  list(
-    N = N.init, 
-    beta.0 = rnorm(1),
-    beta.1 = rnorm(1), 
-    beta.2 = rnorm(1),
-    omega = runif(1, 0, 10), 
-    tau.day = runif(1, 0.1, 1),
-    tau = runif(1, 0.1, 1),
-    tau.p = runif(1, 0.1, 1),
-    tau.day.p = runif(1, 0.1, 1),
-    alpha.1 = runif(1, 0, 1), 
-    a.phi = runif(1, 0, 5)
+inits.ARU <- function() {
+              list(
+                N = rep(1, R), 
+                beta.0 = rnorm(1),
+                beta.1 = rnorm(1), 
+                beta.2 = rnorm(1),
+                omega = runif(1, 0, 10), 
+                tau.day = runif(1, 0.1, 1),
+                tau = runif(1, 0.1, 1),
+                tau.p = runif(1, 0.1, 1),
+                tau.day.p = runif(1, 0.1, 1),
+                alpha.1 = runif(1, 0, 1), 
+                a.phi = runif(1, 0, 5)
   )
 }#end inits
 
@@ -373,25 +372,25 @@ inits <- function() {
 
 
 # Fit Model
-fm.0 <- jags(data = bugs.data.A, 
-                    inits = inits, 
-                    parameters.to.save = params.A, 
+fm.0 <- jags(data = Bnet14.data, 
+                    inits = inits.ARU, 
+                    parameters.to.save = params.ARU, 
                     model.file = "./jags_models/ARU_mod.txt", 
                     n.iter = 200000, 
                     n.burnin = 60000, 
                     n.chains = 3,
                     n.thin = 50,
-                    n.adapt = 5000, 
                     parallel = TRUE,
                     n.cores = 8,
                     DIC = TRUE) 
                     
 
-# Rhat
-fm.0$Rhat
 
 # Model summary
 print(fm.0, digits = 3)
+
+# Rhat
+fm.0$Rhat
 
 # Trace plots
 mcmcplot(fm.0$samples)
@@ -410,7 +409,7 @@ cat("False positives =", fm.0$summary["omega",1], "\n")
 
 
 # Combine chains
-combined_chains <- as.mcmc(do.call(rbind, out.model.A$samples))
+combined_chains <- as.mcmc(do.call(rbind, fm.0$samples))
 
 # Extract lambda estimates
 lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
