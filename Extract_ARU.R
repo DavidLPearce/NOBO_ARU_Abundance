@@ -8,6 +8,7 @@
 # install.packages("sf")
 # install.packages("raster")
 # install.packages("ggplot2")
+# install.packages("viridis")
 # install.packages("terra")
 # install.packages("lidR")
 # install.packages("RCSF")
@@ -19,6 +20,7 @@ library(sf)
 library(sp)
 library(raster)
 library(ggplot2)
+library(viridis)
 library(terra)
 library(lidR)
 library(RCSF)
@@ -52,17 +54,15 @@ print(site_dat)
 # Extracting each class to a new raster
 woody_class <- lulc_rast == 0   # Woody
 herb_class <- lulc_rast == 1    # Herbaceous
-baregnd_class <- lulc_rast == 2 # Bare Ground
-water_class <- lulc_rast == 3   # Water
-dev_class <- lulc_rast == 4     # Developed
+brgnd_class <- lulc_rast == 2   # Bare Ground 
+# Water = 3
+# Developed = 4
 
 # Convert to SpatRaster
 lulc_rast <- rast(lulc_rast)
 woody_class <- rast(woody_class) 
 herb_class <- rast(herb_class)
-baregnd_class <- rast(baregnd_class)
-water_class <- rast(water_class)
-dev_class <- rast(dev_class)
+brgnd_class <- rast(brgnd_class)
 
 # # Plots
 # plot(woody_class, main = "Woody")
@@ -78,8 +78,9 @@ dev_class <- rast(dev_class)
 #
 # ------------------------------------------------------------------------------
 
-
-
+# ------------------------
+#    Extract Covs
+# ------------------------
 
 # Initialize the progress bar
 pb <- progress_bar$new(
@@ -89,26 +90,28 @@ pb <- progress_bar$new(
   width = 100
 )
 
- 
-# ------------------------
-#    Loop to extract
-# ------------------------
+# row = 24
+
+
+# Loop
 for (row in 1:NROW(site_dat)) {
+  
+  ## list_lsm() list of available metrics ##
   
   # Subset the site
   site_sub <- site_dat[row, ]
   
-  # ------------------------------
-  # 
-  #   Raster Landscape Metrics
-  #
-  # ------------------------------
-  
-  ## list_lsm() list of available metrics ##
+  SiteID <- site_sub$SiteID
   
   # Setting projection
   site_sub_coords <- SpatialPoints(coords = site_sub[, c("Long", "Lat")],
                                    proj4string = CRS("+proj=longlat +datum=WGS84"))
+  
+  # ------------------------
+  #
+  #         LULC
+  #
+  # ------------------------
   
   # Create a buffer around the site
   site_buffer <- terra::buffer(site_sub_coords, width = 200)
@@ -118,11 +121,35 @@ for (row in 1:NROW(site_dat)) {
   # Extract and crop the raster for the buffer
   lulc_clip <- terra::crop(lulc_rast, site_buffer_terra)
   lulc_clip <- terra::mask(lulc_clip, site_buffer_terra)
-  # plot(lulc_clip, main = row)
-  
+ 
   # Subset to class
   woody_clip <- lulc_clip == 0
-  herb_clip <- lulc_clip == 1 
+  herb_clip <- lulc_clip == 1
+  brgnd_clip <- lulc_clip == 2
+  
+  # Plot & Export
+  output_dir <- "./Figures/LULC/ARU/"
+  lulc_Plotfile <- paste0(output_dir, SiteID, "_LULC.png")
+  lulc_df <- as.data.frame(lulc_clip, xy = TRUE)
+  lulc_plot <- ggplot(lulc_df) +
+                geom_raster(aes(x = x, y = y, fill = factor(Classvalue))) +
+                scale_fill_manual(name = "Land Cover Type", 
+                                  values =  c("1" = "forestgreen", 
+                                              "2" = "lightgreen", 
+                                              "3" = "saddlebrown"), 
+                                  labels = c("1" = "Woody", 
+                                             "2" = "Herbaceous", 
+                                             "3" = "Bareground")) +
+                coord_fixed() +
+                labs(title = paste("LULC", SiteID)) +
+                theme_minimal() +
+                theme(axis.title = element_blank(), 
+                      axis.text = element_blank(),  
+                      axis.ticks = element_blank(),
+                      panel.background = element_rect(fill = "white", color = NA), 
+                      plot.background = element_rect(fill = "white", color = NA))  
+  ggsave(filename = lulc_Plotfile, plot = lulc_plot, width = 8, height = 6, dpi = 300)
+
   
   # ------------------------------
   # Proportion of Class
@@ -130,8 +157,10 @@ for (row in 1:NROW(site_dat)) {
   # Extract raster cover type within buffer
   woody_prp <- terra::extract(woody_class, site_buffer_terra, fun = mean, na.rm = TRUE)
   herb_prp <- terra::extract(herb_class, site_buffer_terra, fun = mean, na.rm = TRUE)
+  brgnd_prp <- terra::extract(brgnd_class, site_buffer_terra, fun = mean, na.rm = TRUE)
   site_dat[row, "woody_prp"] <- woody_prp[1, 'layer']          
   site_dat[row, "herb_prp"] <- herb_prp[1, 'layer']              
+  site_dat[row, "open_prp"] <- herb_prp[1, 'layer'] + brgnd_prp[1, 'layer'] 
   
   
   # ------------------------------
@@ -227,14 +256,17 @@ for (row in 1:NROW(site_dat)) {
   herb_rast <- raster(herb_clip)
   woody_clumps <- clump(woody_rast, directions = 8) # Id clumps
   herb_clumps <- clump(herb_rast, directions = 8)  
-  # plot(woody_clumps, col=terrain.colors(100))
-  # plot(herb_clumps, col=terrain.colors(100))
-  
+ 
+  # Plot and Export Woody Patches
+  output_dir <- "./Figures/LULC/ARU/"
+  woodyclumps_Plotfile <- paste0(output_dir, SiteID, "_WoodyClumps.png")
+  png(woodyclumps_Plotfile, width = 8, height = 6, units = "in", res = 300)  # Set resolution to 300 DPI
+  plot(woody_clumps, main = "Woody Clumps", col = turbo(cellStats(woody_clumps, stat = "max"), direction = 1))
+  dev.off()
+
   # Number of patches
-  woodyNpatches <- lsm_c_np(woody_clumps)
-  herbNpatches <- lsm_c_np(herb_clumps) 
-  site_dat[row, "woody_Npatches"] <- nrow(woodyNpatches)
-  site_dat[row, "herb_Npatches"] <- nrow(herbNpatches)
+  site_dat[row, "woody_Npatches"] <- cellStats(woody_clumps, stat = "max")
+  site_dat[row, "herb_Npatches"] <- cellStats(herb_clumps, stat = "max")
   
   # ------------------------------
   # Focal Statistics 
@@ -248,11 +280,11 @@ for (row in 1:NROW(site_dat)) {
   site_dat[row, "woody_mnFocal5mRadi"] <- mean_woody_focal5m[1,1]
   
   
-  # ------------------------------
-  # 
-  #   LiDAR Metrics
+  # ------------------------
   #
-  # ------------------------------
+  #         LiDAR
+  #
+  # ------------------------
   
   # Convert to SpatVector
   site_sub_vect <- vect(site_sub_coords)
@@ -312,7 +344,7 @@ for (row in 1:NROW(site_dat)) {
   
   # Create model
   dtm <- lidR::rasterize_terrain(sub_las_200m, res = 0.7, algorithm = knnidw(k = 10))
-  mn_elev <- terra::global(dtm, fun = "mean", na.rm = TRUE)# Calculate mean
+  mn_elev <- terra::global(dtm, fun = "mean", na.rm = TRUE) # Calculate mean
   site_dat[row, "mnElev"] <-  mn_elev[,1]
   # plot(dtm)
   
@@ -331,22 +363,36 @@ for (row in 1:NROW(site_dat)) {
   
   # Create model using normalized point cloud
   chm <- rasterize_canopy(sub_las_norm, res = 0.7, pitfree(subcircle = 0.2))
-  # plot(chm)
   
+  # Plot and Export
+  chm_df <- as.data.frame(chm, xy = TRUE)
+  output_dir <- "./Figures/LULC/ARU/"
+  chm_Plotfile <- paste0(output_dir, SiteID, "_CHM.png")
+  chm_plot <- ggplot(chm_df) +
+    geom_raster(aes(x = x, y = y, fill = Z)) +  # 'value' is the raster values column
+    scale_fill_viridis_c(option = "H") +  # You can adjust the color scale here
+    coord_fixed() +
+    labs(title = paste("CHM", SiteID)) +
+    theme_minimal() +
+    theme(axis.title = element_blank(), 
+          axis.text = element_blank(),  
+          axis.ticks = element_blank(),
+          panel.background = element_rect(fill = "white", color = NA), 
+          plot.background = element_rect(fill = "white", color = NA))
+  ggsave(filename = chm_Plotfile, plot = chm_plot, width = 8, height = 6, dpi = 300)
+
   # ------------------------------
   # Focal Statistics
   # ------------------------------
   
   # Brush between 0.5 and 2 meters, heights above and below are in separate classes
   optim_chm <- classify(chm, c(0, 0.5, 2, Inf), c(0, 1, 0))
-  #plot(optim_chm)
+  # plot(optim_chm)
   
   kernel5m <- focalMat(chm, d = 5, type = "circle")  
   optim_focal5m <- focal(optim_chm, w = kernel5m, fun = sum, na.rm = TRUE)
   mean_optim_focal5m <- global(optim_focal5m$focal_sum, fun = "mean", na.rm = TRUE)
   site_dat[row, "optim_mnFocal5mRadi"] <- mean_optim_focal5m[1,1]
-  
-  
   
   # ------------------------------
   # Update the progress bar
@@ -361,10 +407,9 @@ for (row in 1:NROW(site_dat)) {
 str(site_dat)
 print(site_dat)
 
+
 # Export data
 write.csv(site_dat, "./Data/Acoustic_Data/ARU_siteCovs.csv") # .csv
-
-
 
 
 # End Script
