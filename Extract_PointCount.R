@@ -34,6 +34,12 @@ setwd(".")
 # Read in raster data
 lulc_rast <- stack("D:/LaCopita_GIS_Data/LaCopitaLULC/LaCopitaLULC_60cm_SVM/LULC_60cm_SVM_Raster/LaCopitaLULC_60cm_SVM.tif")
 
+# Read in LiDAR data
+las_folder <- "D:/LaCopita_GIS_Data/LIDAR2018_70cm/LaCopita_LiDAR_tiles/LAS"# Set directory to las files
+lasFiles <- readLAScatalog(las_folder, filter = "-keep_class 2 3 4 5")# Read in las files
+summary(lasFiles)
+
+
 # Read in site locations
 site_dat <- read.csv("./Data/Point_Count_Data/NOBO_PointCount_Locations.csv")
 
