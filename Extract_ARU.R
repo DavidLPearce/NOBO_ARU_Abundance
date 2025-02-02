@@ -95,11 +95,8 @@ pb <- progress_bar$new(
 # ------------------------
 for (row in 1:NROW(site_dat)) {
   
-  row = 5
-  
   # Subset the site
   site_sub <- site_dat[row, ]
-  
   
   # ------------------------------
   # 
@@ -121,12 +118,12 @@ for (row in 1:NROW(site_dat)) {
   # Extract and crop the raster for the buffer
   lulc_clip <- terra::crop(lulc_rast, site_buffer_terra)
   lulc_clip <- terra::mask(lulc_clip, site_buffer_terra)
-  plot(lulc_clip)
+  # plot(lulc_clip, main = row)
   
   # Subset to class
   woody_clip <- lulc_clip == 0
   herb_clip <- lulc_clip == 1 
-
+  
   # ------------------------------
   # Proportion of Class
   # ------------------------------
@@ -135,7 +132,7 @@ for (row in 1:NROW(site_dat)) {
   herb_prp <- terra::extract(herb_class, site_buffer_terra, fun = mean, na.rm = TRUE)
   site_dat[row, "woody_prp"] <- woody_prp[1, 'layer']          
   site_dat[row, "herb_prp"] <- herb_prp[1, 'layer']              
-
+  
   
   # ------------------------------
   # Mean Patch Area
@@ -148,8 +145,8 @@ for (row in 1:NROW(site_dat)) {
   herb_p_area_mean <- mean(herb_p_area$value, na.rm = TRUE) 
   site_dat[row, "woody_mnParea"] <- woody_p_area_mean    
   site_dat[row, "herb_mnParea"] <- herb_p_area_mean
-
- 
+  
+  
   # ------------------------------
   # Clumpy Index
   # ------------------------------
@@ -161,7 +158,7 @@ for (row in 1:NROW(site_dat)) {
   site_dat[row, "woody_ClmIdx"] <- woody_c_clumpy[1, 'value'] 
   site_dat[row, "herb_ClmIdx"] <- herb_c_clumpy[1, 'value']
   
-
+  
   # ------------------------------
   # Mean Shape Index
   # ------------------------------
@@ -171,7 +168,7 @@ for (row in 1:NROW(site_dat)) {
   herb_shape_mn <- landscapemetrics::calculate_lsm(herb_clip, what = "lsm_l_shape_mn") # Herbaceous
   site_dat[row, "woody_ShpInx"] <- woody_shape_mn[1, 'value']   
   site_dat[row, "herb_ShpInx"] <- herb_shape_mn[1, 'value']  
-
+  
   
   # ------------------------------
   # Largest Patch Index
@@ -183,7 +180,7 @@ for (row in 1:NROW(site_dat)) {
   herb_c_lpi <- c_lpi[which(c_lpi$class == 1),] # Herbaceous
   site_dat[row, "woody_lrgPInx"] <- woody_c_lpi[1, 'value']   
   site_dat[row, "herb_lrgPInx"] <- herb_c_lpi[1, 'value']  
-
+  
   
   # ------------------------------
   # Aggregation Index
@@ -195,7 +192,7 @@ for (row in 1:NROW(site_dat)) {
   herb_c_ai <- c_ai[which(c_ai$class == 1),] # Herbaceous
   site_dat[row, "woody_AggInx"] <- woody_c_ai[1, 'value']     
   site_dat[row, "herb_AggInx"] <- herb_c_ai[1, 'value']  
-
+  
   
   # ------------------------------
   # Edge Density 
@@ -224,7 +221,7 @@ for (row in 1:NROW(site_dat)) {
   # ------------------------------
   # Clumpy Patches
   # ------------------------------
-
+  
   # Classify patches
   woody_rast <- raster(woody_clip)
   herb_rast <- raster(herb_clip)
@@ -232,7 +229,7 @@ for (row in 1:NROW(site_dat)) {
   herb_clumps <- clump(herb_rast, directions = 8)  
   # plot(woody_clumps, col=terrain.colors(100))
   # plot(herb_clumps, col=terrain.colors(100))
-
+  
   # Number of patches
   woodyNpatches <- lsm_c_np(woody_clumps)
   herbNpatches <- lsm_c_np(herb_clumps) 
@@ -246,11 +243,11 @@ for (row in 1:NROW(site_dat)) {
   # Define the woody class. Woody = 1, others = 0
   woody_FocClass <- classify(lulc_clip, c(0,1,2,3), c(1,0,0,0))
   kernel5m <- focalMat(lulc_clip, d = 5, type = "circle")  
-  woody_focal5m <- focal(woody_FocClass, w = kernel, fun = sum, na.rm = TRUE)
+  woody_focal5m <- focal(woody_FocClass, w = kernel5m, fun = sum, na.rm = TRUE)
   mean_woody_focal5m <- global(woody_focal5m$focal_sum, fun = "mean", na.rm = TRUE)
   site_dat[row, "woody_mnFocal5mRadi"] <- mean_woody_focal5m[1,1]
-
-
+  
+  
   # ------------------------------
   # 
   #   LiDAR Metrics
@@ -267,9 +264,11 @@ for (row in 1:NROW(site_dat)) {
   site_sub_coords_utm <- as(site_sub_vect_utm, "Spatial")
   
   # Clipping LiDAR data
-  sub_las <- clip_roi(lasFiles, site_sub_coords_utm, radius = 200)
-  #plot(sub_las, color = "Classification", bg = "black", size = 5)
-
+  sub_las_50m <- clip_roi(lasFiles, site_sub_coords_utm, radius = 50)
+  sub_las_200m <- clip_roi(lasFiles, site_sub_coords_utm, radius = 200)
+  #plot(sub_las_50m, color = "Classification", bg = "black", size = 5)
+  #plot(sub_las_200m, color = "Classification", bg = "black", size = 5)
+  
   # ------------------------------
   # Classifying Ground
   # ------------------------------
@@ -283,14 +282,14 @@ for (row in 1:NROW(site_dat)) {
   # 
   # # Take a look
   # plot(sub_las_mycsf, color = "Classification", bg = "black", size = 5)
-
-
+  
+  
   # ------------------------------
   # Proportion Vegetation
   # ------------------------------
   
   # Putting extracted data into a table
-  LiDAR_table <- table(sub_las$Classification)
+  LiDAR_table <- table(sub_las_50m$Classification)
   
   # Calculate the total count for each habitat type
   total_count <- sum(LiDAR_table)
@@ -302,17 +301,17 @@ for (row in 1:NROW(site_dat)) {
   LiDAR_subset <- LiDAR_table[LiDAR_table$Var1 %in% c(3, 4), ]
   
   # Calculate the proportions of med + high vegetation
-  vegdens <- (sum(LiDAR_subset$Freq) / total_count)
+  vegdens50m <- (sum(LiDAR_subset$Freq) / total_count)
   
   # Veg Density (prp LiDAR Veg points)
-  site_dat[row, "vegDens"] <- vegdens 
+  site_dat[row, "vegDens50m"] <- vegdens50m 
   
   # ------------------------------
   # Digital Elevation/Terrain Model
   # ------------------------------
   
   # Create model
-  dtm <- lidR::rasterize_terrain(sub_las, res = 0.7, algorithm = knnidw(k = 10))
+  dtm <- lidR::rasterize_terrain(sub_las_200m, res = 0.7, algorithm = knnidw(k = 10))
   mn_elev <- terra::global(dtm, fun = "mean", na.rm = TRUE)# Calculate mean
   site_dat[row, "mnElev"] <-  mn_elev[,1]
   # plot(dtm)
@@ -323,7 +322,7 @@ for (row in 1:NROW(site_dat)) {
   # ------------------------------
   
   # Normalize the point cloud (subtracts ground elevation)
-  sub_las_norm <- normalize_height(sub_las, dtm)
+  sub_las_norm <- normalize_height(sub_las_200m, dtm)
   
   
   # ------------------------------
@@ -340,21 +339,22 @@ for (row in 1:NROW(site_dat)) {
   
   # Brush between 0.5 and 2 meters, heights above and below are in separate classes
   optim_chm <- classify(chm, c(0, 0.5, 2, Inf), c(0, 1, 0))
-  plot(optim_chm)
-
+  #plot(optim_chm)
+  
   kernel5m <- focalMat(chm, d = 5, type = "circle")  
-  optim_focal5m <- focal(optim_chm, w = kernel, fun = sum, na.rm = TRUE)
+  optim_focal5m <- focal(optim_chm, w = kernel5m, fun = sum, na.rm = TRUE)
   mean_optim_focal5m <- global(optim_focal5m$focal_sum, fun = "mean", na.rm = TRUE)
   site_dat[row, "optim_mnFocal5mRadi"] <- mean_optim_focal5m[1,1]
-
-
+  
+  
   
   # ------------------------------
   # Update the progress bar
   # ------------------------------
   pb$tick()
   
-} # end extraction loop  
+} # -------------------- End Extraction Loop -----------------------------
+
 
 
 # Take a look
