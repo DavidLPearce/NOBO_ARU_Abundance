@@ -8,22 +8,32 @@
 # install.packages("sf")
 # install.packages("raster")
 # install.packages("ggplot2")
+# install.packages("viridis")
 # install.packages("terra")
+# install.packages("lidR")
+# install.packages("RCSF")
 # install.packages("landscapemetrics")
 # install.packages("progress")
+# install.packages("psych")
 
 # Load packages
 library(sf)
+library(sp)
 library(raster)
 library(ggplot2)
+library(viridis)
 library(terra)
+library(lidR)
+library(RCSF)
 library(landscapemetrics)
 library(progress)
+library(psych)
 
 # Set seed, scientific notation, and workplace
 set.seed(123)
 options(scipen = 9999)
 setwd(".")
+
 
 # ------------------------------------------------------------------------------
 #
@@ -43,28 +53,26 @@ summary(lasFiles)
 # Read in site locations
 site_dat <- read.csv("./Data/Point_Count_Data/NOBO_PointCount_Locations.csv")
 
-
 # Extracting each class to a new raster
 woody_class <- lulc_rast == 0   # Woody
 herb_class <- lulc_rast == 1    # Herbaceous
-baregnd_class <- lulc_rast == 2 # Bare Ground
-water_class <- lulc_rast == 3   # Water
-dev_class <- lulc_rast == 4     # Developed
+brgnd_class <- lulc_rast == 2   # Bare Ground 
+# Water = 3
+# Developed = 4
 
 # Convert to SpatRaster
 lulc_rast <- rast(lulc_rast)
 woody_class <- rast(woody_class) 
 herb_class <- rast(herb_class)
-baregnd_class <- rast(baregnd_class)
-water_class <- rast(water_class)
-dev_class <- rast(dev_class)
+brgnd_class <- rast(brgnd_class)
 
-# Plots
+# # Plots
 # plot(woody_class, main = "Woody")
 # plot(herb_class, main = "Herbaceous")
 # plot(baregnd_class, main = "Bare Ground")
 # plot(water_class, main = "Water")
 # plot(dev_class, main = "Developed")
+
 
 
 # ------------------------------------------------------------------------------
@@ -96,7 +104,7 @@ for (row in 1:NROW(site_dat)) {
   # Subset the site
   site_sub <- site_dat[row, ]
   
-  SiteID <- site_sub$SiteID
+  SiteID <- site_sub$PointNum
   
   # Setting projection
   site_sub_coords <- SpatialPoints(coords = site_sub[, c("Long", "Lat")],
@@ -405,6 +413,42 @@ print(site_dat)
 
 # Export data
 write.csv(site_dat, "./Data/Point_Count_Data/PointCount_siteCovs.csv")# .csv
+
+
+# ------------------------------
+# Check Correlations
+# ------------------------------
+
+#site_covs <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
+
+# Checking correlation
+pairs.panels(site_covs[-c((1:4))],
+             gap = 0,
+             bg = c("blue", "red"),
+             pch = 21, main = "Point Count Site Covs Correlations")
+
+cor_mat <- cor(site_covs[-c((1:4))])
+write.csv(cor_mat, "PC_Site_Covs_Correlations.csv")
+
+
+# Filter to less than 30% correlated
+low_corr <- which(abs(cor_mat) < 0.3, arr.ind = TRUE)
+
+# Remove redundant and diagonal elements
+low_corr <- low_corr[low_corr[, 1] > low_corr[, 2], ]
+
+# Filter to keep only pairs where one variable starts with "woody_" and the other with "herb_"
+woody_herb_pairs <- low_corr[
+  (grepl("^woody_", rownames(cor_mat)[low_corr[, 1]]) & grepl("^herb_", colnames(cor_mat)[low_corr[, 2]])) |
+    (grepl("^herb_", rownames(cor_mat)[low_corr[, 1]]) & grepl("^woody_", colnames(cor_mat)[low_corr[, 2]])), 
+]
+
+# Create formatted output of low correlation pairs
+low_corr_pairs <- apply(woody_herb_pairs, 1, function(idx) 
+  paste(rownames(cor_mat)[idx[1]], colnames(cor_mat)[idx[2]], sep = " - ")
+)
+
+low_corr_pairs
 
 
   
