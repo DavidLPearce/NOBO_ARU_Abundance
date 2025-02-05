@@ -5,8 +5,10 @@
 # -------------------------------------------------------
 
 # Install packages (if needed)
-# install.packages("nimble")
+# install.packages("tidyverse")
+# install.packages("jagsUI")
 # install.packages("coda")
+# install.packages("mcmcplots")
 
 # Load library
 library(tidyverse)
@@ -15,10 +17,20 @@ library(coda)
 library(mcmcplots)
 
 
+# Check JAGs Version
+# Latest version as of (5 Feb 2025) JAGS 4.3.1.  
+# Download here: https://sourceforge.net/projects/mcmc-jags/
+rjags::jags.version() 
+
 # Set seed, scientific notation options, and working directory
 set.seed(123)
 options(scipen = 9999)
 setwd(".")
+
+# Setting up cores
+Ncores <- parallel::detectCores()
+print(Ncores) # number of available cores
+workers <- Ncores * 0.5 # may need to change, for low background use 80% num, for medium use 50%
 
 # -------------------------------------------------------
 #
@@ -93,32 +105,32 @@ site <- c(site, rep(NA, M-nind))
 # Take a look
 print(site)
 
-# Extract site covariates
-herbPdens = as.vector(scale(site_covs[,c("herb_Pdens")])) 
-woodymnParea = as.vector(site_covs[,c("woody_mnParea")]) 
-mnElev = as.vector(scale(site_covs[,c("mnElev")])) 
-woody_Npatches  = as.vector(scale(site_covs[,c("woody_Npatches")])) 
-woody_mnFocal5mRadi = as.vector(site_covs[,c("woody_mnFocal5mRadi")]) 
-optim_mnFocal5mRadi = as.vector(site_covs[,c("optim_mnFocal5mRadi")])  
- 
-
-# Extract detection covariates
-obsvr <- as.matrix(as.numeric(as.factor(pc_dat[,"Observer"])))  # Convert names to numeric indices
-temp <- as.matrix(as.numeric(pc_dat[,"Temp.deg.F"]))
-wind <- as.matrix(as.numeric(as.factor(pc_dat[,"Wind.Beau.Code"]))) 
-sky <- as.matrix(as.numeric(as.factor(pc_dat[,"Sky.Beau.Code"])))
-doy <- as.matrix(pc_dat[,"DOYscaled"])
-
-# Transforming VegDens to stacked
-merged_df <- merge(site_covs, pc_CMR, by = "PointNum")
-vegDens = as.matrix(merged_df[,c("vegDens50m")]) # --- match into detection matrix currently by site. needs to be by detection (dim)
+# Extract and scale site covariates for X.abund
+X.abund <- site_covs[,-c(1:4,25)] 
+X.abund$woody_lrgPInx <- scale(X.abund$woody_lrgPInx)
+X.abund$herb_lrgPInx  <- scale(X.abund$herb_lrgPInx)
+X.abund$woody_AggInx <- scale(X.abund$woody_AggInx)
+X.abund$herb_AggInx  <- scale(X.abund$herb_AggInx)
+X.abund$woody_EdgDens <- scale(X.abund$woody_EdgDens)
+X.abund$herb_EdgDens  <- scale(X.abund$herb_EdgDens)
+X.abund$woody_Pdens <- scale(X.abund$woody_Pdens)
+X.abund$herb_Pdens  <- scale(X.abund$herb_Pdens)
+X.abund$woody_Npatches <- scale(X.abund$woody_Npatches)
+X.abund$herb_Npatches  <- scale(X.abund$herb_Npatches)
+X.abund$mnElev  <- scale(X.abund$mnElev)
+print(X.abund)
 
 
-head(obsvr)
-head(temp)
-head(wind)
-head(sky)
-head(doy)
+
+# Extract and scale site covariates for X.det
+X.det <- pc_dat[,c(2,7:9,18)]
+X.det$Observer <- as.numeric(as.factor(X.det$Observer))
+X.det$Temp.deg.F <- as.numeric(X.det$Temp.deg.F)
+X.det$Wind.Beau.Code <- as.numeric(as.factor(X.det$Wind.Beau.Code)) 
+X.det$Sky.Beau.Code <- as.numeric(as.factor(X.det$Sky.Beau.Code))
+merged_df <- merge(site_covs, pc_CMR, by = "PointNum") # VegDens to stacked 
+X.det$vegDens = as.matrix(merged_df[,c("vegDens50m")]) 
+print(X.det)
 
 
 # Bundle data for JAGs
@@ -126,26 +138,14 @@ data <- list(J = J,
              M = M,
              nsites = nsites,
              y = y,
-             herbPdens = herbPdens,
-             woodymnParea = woodymnParea,
-             mnElev = mnElev,
-             woody_Npatches = woody_Npatches,
-             woody_mnFocal5mRadi = woody_Npatches,
-             optim_mnFocal5mRadi =optim_mnFocal5mRadi,
-             obsvr = obsvr,
-             temp = temp,
-             wind = wind,
-             sky = sky,
-             doy = doy,
-             vegDens = vegDens,
+             X.abund = X.abund,
+             X.det = X.det,
              group = site)
  
 # Take a look
 str(data)
 
  
-
-
 # ------------------------------------------------------------------------------
 #
 #                             Model Fitting
@@ -158,634 +158,30 @@ str(data)
 # ggdistribution(dnorm, seq(0, 0.01, 0.0001)) # alpha's and beta's 
 # ggdistribution(dgamma, seq(0, 5, 0.01), shape = 0.1, rate = 0.1) # tau
 
-
-# -------------------------------------------------------
-#
-#                  Detection Models 
-#
-# -------------------------------------------------------
-
-
-
-
-# -------------------------------------------------------
-# Detection Model 0: Null Model
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  beta0 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0  
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + S.raneff[group[i]] 
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file="./jags_models/CMR_detmod0.txt")
-# ------------End Model-------------
-
-
 # Parameters monitored
-detparams.0 <- c("lambda",
-              "p0", 
-              "alpha0", 
-              "beta0", 
-              "psi",
-              "S.raneff",
-              "tau",
-              "sigma",
-              "p_Bayes")
+params <- c("lambda",
+            "p0", 
+            "alpha0", 
+            "alpha1", 
+            "beta0", 
+            "beta1",
+            "beta2",
+            "beta3", 
+            "psi",
+            "S.raneff",
+            "tau",
+            "sigma",
+            "p_Bayes")
 
 
 # Initial values
-detinits.0 <- function() {
-  list (p0 = runif(1),
-        beta0 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-detfm.0 <- jags(data = data, 
-             parameters.to.save = detparams.0,
-             inits = detinits.0, 
-             model.file = "./jags_models/CMR_detmod0.txt",
-             n.iter = 250000,
-             n.burnin = 15000,
-             n.chains = 3, 
-             n.thin = 10,
-             parallel = TRUE,
-             n.cores = 8,
-             DIC = TRUE)  
-
-
-
-# Rhat
-detfm.0$Rhat
-
-# Model summary
-print(detfm.0, digits = 3)
-
-# Trace plots
-mcmcplot(detfm.0$samples)
-
-# Bayesian P value
-cat("Bayesian p-value =", detfm.0$summary["p_Bayes",1], "\n")
-
-
-
-
-
-# -------------------------------------------------------
-# Detection Model 1: Observer
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0 
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 * obsvr[group[i],1]  + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/CMR_detmod1.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-detparams.1 <- c("lambda",
-              "p0", 
-              "alpha0", 
-              "alpha1", 
-              "beta0", 
-              "psi",
-              "S.raneff",
-              "tau",
-              "sigma",
-              "p_Bayes")
-
-
-# Initial values
-detinits.1 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-detfm.1 <- jags(data = data, 
-             parameters.to.save = detparams.1,
-             inits = detinits.1, 
-             model.file = "./jags_models/CMR_detmod1.txt",
-             n.iter = 250000,
-             n.burnin = 15000,
-             n.chains = 3, 
-             n.thin = 10,
-             parallel = TRUE,
-             n.cores = 8,
-             DIC = TRUE)  
-
-
-
-# Rhat
-detfm.1$Rhat
-
-# Model summary
-print(detfm.1, digits = 3)
-
-# Trace plots
-mcmcplot(detfm.1$samples)
-
-# Bayesian P value
-cat("Bayesian p-value =", detfm.1$summary["p_Bayes",1], "\n")
-
-
-
-# -------------------------------------------------------
-# Detection Model 2: Temperature
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0  
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 * temp[group[i],1]  + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/CMR_detmod2.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-detparams.2 <- c("lambda",
-              "p0", 
-              "alpha0", 
-              "alpha1", 
-              "beta0", 
-              "psi",
-              "S.raneff",
-              "tau",
-              "sigma",
-              "p_Bayes")
-
-
-# Initial values
-detinits.2 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-detfm.2 <- jags(data = data, 
-             parameters.to.save = detparams.2,
-             inits = detinits.2, 
-             model.file = "./jags_models/CMR_detmod2.txt",
-             n.iter = 250000,
-             n.burnin = 15000,
-             n.chains = 3, 
-             n.thin = 10,
-             parallel = TRUE,
-             n.cores = 8,
-             DIC = TRUE)  
-
-
-
-# Rhat
-detfm.2$Rhat
-
-# Model summary
-print(detfm.2, digits = 3)
-
-# Trace plots
-mcmcplot(detfm.2$samples)
-
-# Bayesian P value
-cat("Bayesian p-value =", detfm.2$summary["p_Bayes",1], "\n")
-
-
-
-
-
-# -------------------------------------------------------
-# Detection Model 3: Wind
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0 
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 * wind[group[i],1]  + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/CMR_detmod3.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-detparams.3 <- c("lambda",
-              "p0", 
-              "alpha0", 
-              "alpha1", 
-              "beta0", 
-              "psi",
-              "S.raneff",
-              "tau",
-              "sigma",
-              "p_Bayes")
-
-
-# Initial values
-detinits.3 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-detfm.3 <- jags(data = data, 
-             parameters.to.save = detparams.3,
-             inits = detinits.3, 
-             model.file = "./jags_models/CMR_detmod3.txt",
-             n.iter = 250000,
-             n.burnin = 15000,
-             n.chains = 3, 
-             n.thin = 10,
-             parallel = TRUE,
-             n.cores = 8,
-             DIC = TRUE)  
-
-
-
-# Rhat
-detfm.3$Rhat
-
-# Model summary
-print(detfm.3, digits = 3)
-
-# Trace plots
-mcmcplot(detfm.3$samples)
-
-# Bayesian P value
-cat("Bayesian p-value =", detfm.3$summary["p_Bayes",1], "\n")
-
-
-
-# -------------------------------------------------------
-# Detection Model 4: Sky
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0 
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 * sky[group[i],1]  + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/detCMR_mod4.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-detparams.4 <- c("lambda",
-              "p0", 
-              "alpha0", 
-              "alpha1", 
-              "beta0", 
-              "psi",
-              "S.raneff",
-              "tau",
-              "sigma",
-              "p_Bayes")
-
-
-# Initial values
-detinits.4 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-detfm.4 <- jags(data = data, 
-             parameters.to.save = detparams.4,
-             inits = detinits.4, 
-             model.file = "./jags_models/detCMR_mod4.txt",
-             n.iter = 250000,
-             n.burnin = 15000,
-             n.chains = 3, 
-             n.thin = 10,
-             parallel = TRUE,
-             n.cores = 8,
-             DIC = TRUE)  
-
-
-
-# Rhat
-detfm.4$Rhat
-
-# Model summary
-print(detfm.4, digits = 4)
-
-# Trace plots
-mcmcplot(detfm.4$samples)
-
-# Bayesian P value
-cat("Bayesian p-value =", detfm.4$summary["p_Bayes",1], "\n")
-
-
-# -------------------------------------------------------
-# Detection Model 5: Day of Year
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  beta1 ~ dnorm(0, 0.01)
-  beta2 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0  
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 * doy[group[i],1]  + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/CMR_detmod5.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-detparams.5 <- c("lambda",
-              "p0", 
-              "alpha0", 
-              "alpha1", 
-              "beta0", 
-              "beta1",
-              "beta2",
-              "psi",
-              "S.raneff",
-              "tau",
-              "sigma",
-              "p_Bayes")
-
-
-# Initial values
-detinits.5 <- function() {
+ inits  <- function() {
   list (p0 = runif(1),
         alpha1 = 0,
         beta0 = 0,
         beta1 = 0,
         beta2 = 0,
+        beta3 = 0,
         tau = 1,
         z = c( rep(1,nind), rep(0, (M-nind)))
   )}# end inits
@@ -793,317 +189,9 @@ detinits.5 <- function() {
 
 
 
-# Fit Model
-detfm.5 <- jags(data = data, 
-             parameters.to.save = detparams.5,
-             inits = detinits.5, 
-             model.file = "./jags_models/CMR_detmod5.txt",
-             n.iter = 250000,
-             n.burnin = 15000,
-             n.chains = 3, 
-             n.thin = 10,
-             parallel = TRUE,
-             n.cores = 8,
-             DIC = TRUE)  
-
-
-
-# Rhat
-detfm.5$Rhat
-
-# Model summary
-print(detfm.5, digits = 4)
-
-# Trace plots
-mcmcplot(detfm.5$samples)
-
-# Bayesian P value
-cat("Bayesian p-value =", detfm.5$summary["p_Bayes",1], "\n")
-
-
 
 # -------------------------------------------------------
-# Detection Model 6: Vegetation Density
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  beta1 ~ dnorm(0, 0.01)
-  beta2 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0  
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 * vegDens[group[i],1]  + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/CMR_detmod6.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-detparams.6 <- c("lambda",
-                 "p0", 
-                 "alpha0", 
-                 "alpha1", 
-                 "beta0", 
-                 "beta1",
-                 "beta2",
-                 "psi",
-                 "S.raneff",
-                 "tau",
-                 "sigma",
-                 "p_Bayes")
-
-
-# Initial values
-detinits.6 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        beta1 = 0,
-        beta2 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-detfm.6 <- jags(data = data, 
-                parameters.to.save = detparams.6,
-                inits = detinits.6, 
-                model.file = "./jags_models/CMR_detmod6.txt",
-                n.iter = 250000,
-                n.burnin = 15000,
-                n.chains = 3, 
-                n.thin = 10,
-                parallel = TRUE,
-                n.cores = 8,
-                DIC = TRUE)  
-
-
-
-# Rhat
-detfm.6$Rhat
-
-# Model summary
-print(detfm.6, digits = 4)
-
-# Trace plots
-mcmcplot(detfm.6$samples)
-
-# Bayesian P value
-cat("Bayesian p-value =", detfm.6$summary["p_Bayes",1], "\n")
-
-
-# -------------------------------------------------------
-# Detection Model 7: Wind + Vegetation Density
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  alpha2 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  beta1 ~ dnorm(0, 0.01)
-  beta2 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0  
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 * vegDens[group[i],1] + alpha2 * wind[group[i],1]  + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/CMR_detmod7.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-detparams.7 <- c("lambda",
-                 "p0", 
-                 "alpha0", 
-                 "alpha1",
-                 "alpha2",
-                 "beta0", 
-                 "beta1",
-                 "beta2",
-                 "psi",
-                 "S.raneff",
-                 "tau",
-                 "sigma",
-                 "p_Bayes")
-
-
-# Initial values
-detinits.7 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        alpha2 = 0,
-        beta0 = 0,
-        beta1 = 0,
-        beta2 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-detfm.7 <- jags(data = data, 
-                parameters.to.save = detparams.7,
-                inits = detinits.7, 
-                model.file = "./jags_models/CMR_detmod7.txt",
-                n.iter = 250000,
-                n.burnin = 15000,
-                n.chains = 3, 
-                n.thin = 10,
-                parallel = TRUE,
-                n.cores = 8,
-                DIC = TRUE)  
-
-
-
-# Rhat
-detfm.7$Rhat
-
-# Model summary
-print(detfm.7, digits = 4)
-
-# Trace plots
-mcmcplot(detfm.7$samples)
-
-# Bayesian P value
-cat("Bayesian p-value =", detfm.7$summary["p_Bayes",1], "\n")
-
-
-
-
-# -------------------------------------------------------
-# Detection Model Ranking
-# -------------------------------------------------------
-
-# Bayesian P value
-cat("Bayesian p-value =", detfm.0$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", detfm.1$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", detfm.2$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", detfm.3$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", detfm.4$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", detfm.5$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", detfm.6$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", detfm.7$summary["p_Bayes",1], "\n")
-
-# Combine the DIC values
-detDIC_values <- c(detfm.0$DIC, 
-                   detfm.1$DIC, 
-                   detfm.2$DIC, 
-                   detfm.3$DIC, 
-                   detfm.4$DIC, 
-                   detfm.5$DIC,
-                   detfm.6$DIC,
-                   detfm.7$DIC)
-
-detDIC_df <- data.frame(Model = c("detfm.0", 
-                                  "detfm.1", 
-                                  "detfm.2", 
-                                  "detfm.3", 
-                                  "detfm.4", 
-                                  "detfm.5",
-                                  "detfm.6",
-                                  "detfm.7",),
-                        DIC = detDIC_values)
-
-# Rank the values from lowest to highest
-detDIC_df <- detDIC_df[order(detDIC_df$DIC), ]
-print(detDIC_df)
-
-
-
-# -------------------------------------------------------
-#
-#                  Abundance Models 
-#
-# -------------------------------------------------------
-
-
-
-
-# -------------------------------------------------------
-# Abundance Model 0: Null Model
+# Model 0: Null Model
 # -------------------------------------------------------
 cat("
 model {
@@ -1137,7 +225,7 @@ model {
     
     # Detection model
     for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 *  wind[group[i],1] + S.raneff[group[i]]
+      logit(p[i,j]) <- alpha0 + alpha1 *  X.det[group[i],3] + S.raneff[group[i]]
       pz[i,j] <- p[i,j] * z[i]
       y[i,j] ~ dbern(pz[i,j])
       
@@ -1152,46 +240,22 @@ model {
   sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
   p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
 }
-", fill=TRUE, file = "./jags_models/CMR_abundmod0.txt")
+", fill=TRUE, file = "./jags_models/CMR_fm0.txt")
 # ------------End Model-------------
-
-
-# Parameters monitored
-abundparams.0 <- c("lambda",
-              "p0", 
-              "alpha0", 
-              "alpha1", 
-              "beta0", 
-              "psi",
-              "S.raneff",
-              "tau",
-              "sigma",
-              "p_Bayes")
-
-
-# Initial values
-abundinits.0 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
 
 
 
 # Fit Model
-abundfm.0 <- jags(data = data, 
-             parameters.to.save = abundparams.0,
-             inits = abundinits.0, 
-             model.file = "./jags_models/CMR_abundmod0.txt",
-             n.iter = 250000,
-             n.burnin = 15000,
+fm.0 <- jags(data = data, 
+             parameters.to.save = params,
+             inits = inits, 
+             model.file = "./jags_models/CMR_fm0.txt",
+             n.iter = 300000,
+             n.burnin = 20000,
              n.chains = 3, 
              n.thin = 10,
              parallel = TRUE,
-             n.cores = 8,
+             n.cores = workers,
              DIC = TRUE)  
 
 
@@ -1209,827 +273,96 @@ mcmcplot(abundfm.0$samples)
 cat("Bayesian p-value =", abundfm.0$summary["p_Bayes",1], "\n")
 
 
-# -------------------------------------------------------
-# Abundance Model 1: herbPdens
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  beta1 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0 + beta1 * herbPdens[s]  
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 *  wind[group[i],1]  + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/CMR_abundmod1.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-abundparams.1 <- c("lambda",
-              "p0", 
-              "alpha0", 
-              "alpha1", 
-              "beta0", 
-              "beta1",
-              "psi",
-              "S.raneff",
-              "tau",
-              "sigma",
-              "p_Bayes")
-
-
-# Initial values
-abundinits.1 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        beta1 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-abundfm.1 <- jags(data = data, 
-             parameters.to.save = abundparams.1,
-             inits = abundinits.1, 
-             model.file = "./jags_models/CMR_abundmod1.txt",
-             n.iter = 250000,
-             n.burnin = 15000,
-             n.chains = 3, 
-             n.thin = 10,
-             parallel = TRUE,
-             n.cores = 8,
-             DIC = TRUE)  
-
-
-
-# Rhat
-abundfm.1$Rhat
-
-# Model summary
-print(abundfm.1, digits = 4)
-
-# Trace plots
-mcmcplot(abundfm.1$samples)
-
-# Bayesian P value
-cat("Bayesian p-value =", abundfm.1$summary["p_Bayes",1], "\n")
-
-
 
 # -------------------------------------------------------
-# Abundance Model 2: herbPdens + woodymnParea
+#  Model fit and convergence
 # -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  beta1 ~ dnorm(0, 0.01)
-  beta2 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0 + beta1 * herbPdens[s] + beta2 * woodymnParea[s]
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 *  wind[group[i],1] + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/CMR_abundmod2.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-abundparams.2 <- c("lambda",
-                   "p0", 
-                   "alpha0", 
-                   "alpha1", 
-                   "beta0", 
-                   "beta1",
-                   "beta2",
-                   "psi",
-                   "S.raneff",
-                   "tau",
-                   "sigma",
-                   "p_Bayes")
-
-
-# Initial values
-abundinits.2 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        beta1 = 0,
-        beta2 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-abundfm.2 <- jags(data = data, 
-                  parameters.to.save = abundparams.2,
-                  inits = abundinits.2, 
-                  model.file = "./jags_models/CMR_abundmod2.txt",
-                  n.iter = 250000,
-                  n.burnin = 15000,
-                  n.chains = 3, 
-                  n.thin = 10,
-                  parallel = TRUE,
-                  n.cores = 8,
-                  DIC = TRUE)  
-
-
-
-# Rhat
-abundfm.2$Rhat
-
-# Model summary
-print(abundfm.2, digits = 4)
-
-# Trace plots
-mcmcplot(abundfm.2$samples)
-
-# Bayesian P value
-cat("Bayesian p-value =", abundfm.2$summary["p_Bayes",1], "\n")
-
-
-# -------------------------------------------------------
-# Abundance Model 3: herbPdens + woodymnParea + mnElev
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  beta1 ~ dnorm(0, 0.01)
-  beta2 ~ dnorm(0, 0.01)
-  beta3 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0 + beta1 * herbPdens[s] + beta2 * woodymnParea[s] + beta3 * mnElev[s]
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 * wind[group[i],1]  + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/CMR_abundmod3.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-abundparams.3 <- c("lambda",
-                   "p0", 
-                   "alpha0", 
-                   "alpha1", 
-                   "beta0", 
-                   "beta1",
-                   "beta2",
-                   "beta3",
-                   "psi",
-                   "S.raneff",
-                   "tau",
-                   "sigma",
-                   "p_Bayes")
-
-
-# Initial values
-abundinits.3 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        beta1 = 0,
-        beta2 = 0,
-        beta3 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-abundfm.3 <- jags(data = data, 
-                  parameters.to.save = abundparams.3,
-                  inits = abundinits.3, 
-                  model.file = "./jags_models/CMR_abundmod3.txt",
-                  n.iter = 250000,
-                  n.burnin = 15000,
-                  n.chains = 3, 
-                  n.thin = 10,
-                  parallel = TRUE,
-                  n.cores = 8,
-                  DIC = TRUE)  
-
-
-
-# Rhat
-abundfm.3$Rhat
-
-# Model summary
-print(abundfm.3, digits = 4)
-
-# Trace plots
-mcmcplot(abundfm.3$samples)
-
-# Bayesian P value
-cat("Bayesian p-value =", abundfm.3$summary["p_Bayes",1], "\n")
-
-
-
-# -------------------------------------------------------
-# Abundance Model 4: herbPdens + woody_Npatches
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  beta1 ~ dnorm(0, 0.01)
-  beta2 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0 + beta1 * herbPdens[s] + beta2 * woody_Npatches[s]
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 * wind[group[i],1]  + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/CMR_abundmod4.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-abundparams.4 <- c("lambda",
-                   "p0", 
-                   "alpha0", 
-                   "alpha1", 
-                   "beta0", 
-                   "beta1",
-                   "beta2",
-                   "psi",
-                   "S.raneff",
-                   "tau",
-                   "sigma",
-                   "p_Bayes")
-
-
-# Initial values
-abundinits.4 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        beta1 = 0,
-        beta2 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-abundfm.4 <- jags(data = data, 
-                  parameters.to.save = abundparams.4,
-                  inits = abundinits.4, 
-                  model.file = "./jags_models/CMR_abundmod4.txt",
-                  n.iter = 250000,
-                  n.burnin = 15000,
-                  n.chains = 3, 
-                  n.thin = 10,
-                  parallel = TRUE,
-                  n.cores = 8,
-                  DIC = TRUE)  
-
-
-
-# Rhat
 abundfm.4$Rhat
+abundfm.5$Rhat
+abundfm.6$Rhat
+abundfm.7$Rhat
+abundfm.8$Rhat
+abundfm.9$Rhat
+abundfm.10$Rhat
+abundfm.11$Rhat
+abundfm.12$Rhat
+abundfm.13$Rhat
+abundfm.14$Rhat
+
 
 # Model summary
 print(abundfm.4, digits = 4)
+print(abundfm.5, digits = 4)
+print(abundfm.6, digits = 4)
+print(abundfm.7, digits = 4)
+print(abundfm.8, digits = 4)
+print(abundfm.9, digits = 4)
+print(abundfm.10, digits = 4)
+print(abundfm.11, digits = 4)
+print(abundfm.12, digits = 4)
+print(abundfm.13, digits = 4)
+print(abundfm.14, digits = 4)
 
-# Trace plots
-mcmcplot(abundfm.4$samples)
 
 # Bayesian P value
 cat("Bayesian p-value =", abundfm.4$summary["p_Bayes",1], "\n")
-
-
-
-
-# -------------------------------------------------------
-# Abundance Model 5: herbPdens + woody_mnFocal5mRadi
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  beta1 ~ dnorm(0, 0.01)
-  beta2 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0 + beta1 * herbPdens[s] + beta2 * woody_mnFocal5mRadi[s]
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 * wind[group[i],1]  + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/CMR_abundmod5.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-abundparams.5 <- c("lambda",
-                   "p0", 
-                   "alpha0", 
-                   "alpha1", 
-                   "beta0", 
-                   "beta1",
-                   "beta2",
-                   "psi",
-                   "S.raneff",
-                   "tau",
-                   "sigma",
-                   "p_Bayes")
-
-
-# Initial values
-abundinits.5 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        beta1 = 0,
-        beta2 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-abundfm.5 <- jags(data = data, 
-                  parameters.to.save = abundparams.5,
-                  inits = abundinits.5, 
-                  model.file = "./jags_models/CMR_abundmod5.txt",
-                  n.iter = 250000,
-                  n.burnin = 15000,
-                  n.chains = 3, 
-                  n.thin = 10,
-                  parallel = TRUE,
-                  n.cores = 8,
-                  DIC = TRUE)  
-
-
-
-# Rhat
-abundfm.5$Rhat
-
-# Model summary
-print(abundfm.5, digits = 4)
-
-# Trace plots
-mcmcplot(abundfm.5$samples)
-
-# Bayesian P value
 cat("Bayesian p-value =", abundfm.5$summary["p_Bayes",1], "\n")
-
-
-
-
-# -------------------------------------------------------
-# Abundance Model 6: herbPdens + optim_mnFocal5mRadi
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  beta1 ~ dnorm(0, 0.01)
-  beta2 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0 + beta1 * herbPdens[s] + beta2 * optim_mnFocal5mRadi[s]
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 * wind[group[i],1]  + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/CMR_abundmod6.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-abundparams.6 <- c("lambda",
-                   "p0", 
-                   "alpha0", 
-                   "alpha1", 
-                   "beta0", 
-                   "beta1",
-                   "beta2",
-                   "psi",
-                   "S.raneff",
-                   "tau",
-                   "sigma",
-                   "p_Bayes")
-
-
-# Initial values
-abundinits.6 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        beta1 = 0,
-        beta2 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-abundfm.6 <- jags(data = data, 
-                  parameters.to.save = abundparams.6,
-                  inits = abundinits.6, 
-                  model.file = "./jags_models/CMR_abundmod6.txt",
-                  n.iter = 250000,
-                  n.burnin = 15000,
-                  n.chains = 3, 
-                  n.thin = 10,
-                  parallel = TRUE,
-                  n.cores = 8,
-                  DIC = TRUE)  
-
-
-
-# Rhat
-abundfm.6$Rhat
-
-# Model summary
-print(abundfm.6, digits = 4)
-
-# Trace plots
-mcmcplot(abundfm.6$samples)
-
-# Bayesian P value
 cat("Bayesian p-value =", abundfm.6$summary["p_Bayes",1], "\n")
-
-
-
-
-
-# -------------------------------------------------------
-# Abundance Model 7: herbPdens  + mnElev
-# -------------------------------------------------------
-cat("
-model {
-
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0, 0.01)
-  beta1 ~ dnorm(0, 0.01)
-  beta2 ~ dnorm(0, 0.01)
-  psi <- sum(lambda[])/M
-
-  # Precision for survey-level random effect
-  tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0 + beta1 * herbPdens[s] + beta2 * mnElev[s]
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
-
-  # Site-level random effect
-  for(s in 1:nsites){  
-    S.raneff[s] ~ dnorm(0, tau)  
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    group[i] ~ dcat(probs[])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Detection model
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 * wind[group[i],1]  + S.raneff[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    # Posterior predictive checks
-    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
-    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
-    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
-    }
-  }
-  # Bayesian p-value
-  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
-  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
-  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
-}
-", fill=TRUE, file = "./jags_models/CMR_abundmod7.txt")
-# ------------End Model-------------
-
-
-# Parameters monitored
-abundparams.7 <- c("lambda",
-                   "p0", 
-                   "alpha0", 
-                   "alpha1", 
-                   "beta0", 
-                   "beta1",
-                   "beta2",
-                   "psi",
-                   "S.raneff",
-                   "tau",
-                   "sigma",
-                   "p_Bayes")
-
-
-# Initial values
-abundinits.7 <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        beta1 = 0,
-        beta2 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
-
-
-
-
-# Fit Model
-abundfm.7 <- jags(data = data, 
-                  parameters.to.save = abundparams.7,
-                  inits = abundinits.7, 
-                  model.file = "./jags_models/CMR_abundmod7.txt",
-                  n.iter = 250000,
-                  n.burnin = 15000,
-                  n.chains = 3, 
-                  n.thin = 10,
-                  parallel = TRUE,
-                  n.cores = 8,
-                  DIC = TRUE)  
-
-
-
-# Rhat
-abundfm.7$Rhat
-
-# Model summary
-print(abundfm.7, digits = 4)
-
-# Trace plots
-mcmcplot(abundfm.7$samples)
-
-# Bayesian P value
 cat("Bayesian p-value =", abundfm.7$summary["p_Bayes",1], "\n")
-
-
+cat("Bayesian p-value =", abundfm.8$summary["p_Bayes",1], "\n")
+cat("Bayesian p-value =", abundfm.9$summary["p_Bayes",1], "\n")
+cat("Bayesian p-value =", abundfm.10$summary["p_Bayes",1], "\n")
+cat("Bayesian p-value =", abundfm.11$summary["p_Bayes",1], "\n")
+cat("Bayesian p-value =", abundfm.12$summary["p_Bayes",1], "\n")
+cat("Bayesian p-value =", abundfm.13$summary["p_Bayes",1], "\n")
+cat("Bayesian p-value =", abundfm.14$summary["p_Bayes",1], "\n")
+cat("Bayesian p-value =", abundfm.15$summary["p_Bayes",1], "\n")
+cat("Bayesian p-value =", abundfm.16$summary["p_Bayes",1], "\n")
+cat("Bayesian p-value =", abundfm.17$summary["p_Bayes",1], "\n")
 
 # -------------------------------------------------------
 # Abundance Model Ranking
 # -------------------------------------------------------
 
 # Combine the DIC values
-abundDIC_values <- c(abundfm.0$DIC, 
-                     abundfm.1$DIC, 
-                     abundfm.2$DIC, 
-                     abundfm.3$DIC, 
-                     abundfm.4$DIC, 
-                     abundfm.5$DIC,
-                     abundfm.6$DIC)
+abundDIC_values <- c(#abundfm.0$DIC, 
+                     #abundfm.1$DIC, 
+                     #abundfm.2$DIC, 
+                     #abundfm.3$DIC, 
+                     # abundfm.4$DIC, 
+                     # abundfm.5$DIC,
+                     # abundfm.6$DIC,
+                     # abundfm.7$DIC, 
+                     # abundfm.8$DIC,
+                     # abundfm.9$DIC,
+                     # abundfm.10$DIC,
+                     abundfm.11$DIC, 
+                     abundfm.12$DIC,
+                     abundfm.13$DIC,
+                     abundfm.14$DIC,
+                     abundfm.15$DIC,
+                     abundfm.16$DIC,
+                     abundfm.17$DIC)
+                     
 
-abundDIC_df <- data.frame(Model = c("abundfm.0", 
-                                    "abundfm.1", 
-                                    "abundfm.2", 
-                                    "abundfm.3", 
-                                    "abundfm.4", 
-                                    "abundfm.5",
-                                    "abundfm.6"),
+abundDIC_df <- data.frame(Model = c(#"abundfm.0", 
+                                    #"abundfm.1", 
+                                    #"abundfm.2", 
+                                    #"abundfm.3", 
+                                    # "abundfm.4", 
+                                    # "abundfm.5",
+                                    # "abundfm.6",
+                                    # "abundfm.7", 
+                                    # "abundfm.8",
+                                    # "abundfm.9",
+                                    # "abundfm.10",
+                                    "abundfm.11", 
+                                    "abundfm.12",
+                                    "abundfm.13",
+                                    "abundfm.14",
+                                    "abundfm.15",
+                                    "abundfm.16",
+                                    "abundfm.17"),
                           DIC = abundDIC_values)
 
 # Rank the values from lowest to highest
