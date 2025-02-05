@@ -184,7 +184,7 @@ params <- c("lambda",
         beta3 = 0,
         tau = 1,
         z = c( rep(1,nind), rep(0, (M-nind)))
-  )}# end inits
+)}
 
 
 
@@ -201,6 +201,9 @@ model {
   alpha0 <- log(p0/(1-p0))
   alpha1 ~ dnorm(0, 0.01)
   beta0 ~ dnorm(0, 0.01)
+  beta1 ~ dnorm(0, 0.01)
+  beta2 ~ dnorm(0, 0.01)
+  beta3 ~ dnorm(0, 0.01)
   psi <- sum(lambda[])/M
 
   # Precision for survey-level random effect
@@ -243,8 +246,6 @@ model {
 ", fill=TRUE, file = "./jags_models/CMR_fm0.txt")
 # ------------End Model-------------
 
-
-
 # Fit Model
 fm.0 <- jags(data = data, 
              parameters.to.save = params,
@@ -258,116 +259,56 @@ fm.0 <- jags(data = data,
              n.cores = workers,
              DIC = TRUE)  
 
+# Save Environment
+save.image(file = "CMR_JAGs.RData")
+ 
 
-
-# Rhat
-abundfm.0$Rhat
-
-# Model summary
-print(abundfm.0, digits = 4)
-
-# Trace plots
-mcmcplot(abundfm.0$samples)
-
-# Bayesian P value
-cat("Bayesian p-value =", abundfm.0$summary["p_Bayes",1], "\n")
 
 
 
 # -------------------------------------------------------
-#  Model fit and convergence
-# -------------------------------------------------------
-abundfm.4$Rhat
-abundfm.5$Rhat
-abundfm.6$Rhat
-abundfm.7$Rhat
-abundfm.8$Rhat
-abundfm.9$Rhat
-abundfm.10$Rhat
-abundfm.11$Rhat
-abundfm.12$Rhat
-abundfm.13$Rhat
-abundfm.14$Rhat
-
-
-# Model summary
-print(abundfm.4, digits = 4)
-print(abundfm.5, digits = 4)
-print(abundfm.6, digits = 4)
-print(abundfm.7, digits = 4)
-print(abundfm.8, digits = 4)
-print(abundfm.9, digits = 4)
-print(abundfm.10, digits = 4)
-print(abundfm.11, digits = 4)
-print(abundfm.12, digits = 4)
-print(abundfm.13, digits = 4)
-print(abundfm.14, digits = 4)
-
-
-# Bayesian P value
-cat("Bayesian p-value =", abundfm.4$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", abundfm.5$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", abundfm.6$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", abundfm.7$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", abundfm.8$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", abundfm.9$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", abundfm.10$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", abundfm.11$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", abundfm.12$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", abundfm.13$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", abundfm.14$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", abundfm.15$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", abundfm.16$summary["p_Bayes",1], "\n")
-cat("Bayesian p-value =", abundfm.17$summary["p_Bayes",1], "\n")
-
-# -------------------------------------------------------
-# Abundance Model Ranking
+# Ranking Models
 # -------------------------------------------------------
 
-# Combine the DIC values
-abundDIC_values <- c(#abundfm.0$DIC, 
-                     #abundfm.1$DIC, 
-                     #abundfm.2$DIC, 
-                     #abundfm.3$DIC, 
-                     # abundfm.4$DIC, 
-                     # abundfm.5$DIC,
-                     # abundfm.6$DIC,
-                     # abundfm.7$DIC, 
-                     # abundfm.8$DIC,
-                     # abundfm.9$DIC,
-                     # abundfm.10$DIC,
-                     abundfm.11$DIC, 
-                     abundfm.12$DIC,
-                     abundfm.13$DIC,
-                     abundfm.14$DIC,
-                     abundfm.15$DIC,
-                     abundfm.16$DIC,
-                     abundfm.17$DIC)
+# Total number of models? fm.0 > fm.? = 
+total_fits <- 20 # change as needed
+dic_values <- numeric(totmods)  # For DIC values
+fitnames <- character(totmods)   # For model names
+
+
+for (i in 0:(total_fits - 1)) {
+  model_name <- paste0("fm.", i)
+  dic_var_name <- paste0("dic_fm.", i)
+  
+  assign(dic_var_name, get(model_name)$DIC)  # Extract DIC
+  dic_values[i + 1] <- get(dic_var_name)  # Store DIC value
+  fitnames[i + 1] <- model_name  # Store model name
+}
                      
+# Combine into data frame
+DIC_df <- data.frame(Model = fitnames, DIC = dic_values)
+                               
+# Order by DIC (ascending order)
+DIC_df <- DIC_df[order(DIC_df$DIC),]
 
-abundDIC_df <- data.frame(Model = c(#"abundfm.0", 
-                                    #"abundfm.1", 
-                                    #"abundfm.2", 
-                                    #"abundfm.3", 
-                                    # "abundfm.4", 
-                                    # "abundfm.5",
-                                    # "abundfm.6",
-                                    # "abundfm.7", 
-                                    # "abundfm.8",
-                                    # "abundfm.9",
-                                    # "abundfm.10",
-                                    "abundfm.11", 
-                                    "abundfm.12",
-                                    "abundfm.13",
-                                    "abundfm.14",
-                                    "abundfm.15",
-                                    "abundfm.16",
-                                    "abundfm.17"),
-                          DIC = abundDIC_values)
+# Best DIC? Lowest is better
+print(DIC_df)
 
-# Rank the values from lowest to highest
-abundDIC_df <- abundDIC_df[order(abundDIC_df$DIC), ]
-print(abundDIC_df)
+# Best model?
+bm <- fm.?  
+  
+# Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+cat("Bayesian p-value =", bm$summary["p_Bayes",1], "\n")
+
+# Check convergence
+bm$Rhat # Rhat: less than 1.1 means good convergence
+mcmcplot(bm$samples)# Visually inspect trace plots
+
+# Model summary
+summary(bm$samples)
+
+
+
 
 # -------------------------------------------------------
 #
@@ -375,9 +316,8 @@ print(abundDIC_df)
 #
 # -------------------------------------------------------
 
-
 # Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.4$samples))
+combined_chains <- as.mcmc(do.call(rbind, bm$samples))
 
 # Extract lambda estimates
 lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
@@ -396,18 +336,17 @@ dens_df <- as.data.frame(lambda_tot/area)
 colnames(dens_df)[1] <- "Density"
 dens_df[,2] <- "PC CMR"
 colnames(dens_df)[2] <- "Model"
-dens_df <- dens_df[, c("Model", "Density")]# Switch the order of columns
+dens_df <- dens_df[, c("Model", "Density")] # Switch the order of columns
 head(dens_df)
 
 # Calculate the 95% Credible Interval
 ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
 
-
 # Subset the data frame to 95% CI
 dens_df <- subset(dens_df, Density >= ci_bounds[1] & Density <= ci_bounds[2])
 
 
-# Plot
+# Violin plot
 ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
   geom_violin() +
   geom_boxplot(aes(x = Model, y = Density),
@@ -439,28 +378,14 @@ print(mean_dens)
 print(LCI_dens)
 print(HCI_dens)
 
-# total abundance
+# Total abundance
 mean_dens * 1096.698
 LCI_dens * 1096.698
 HCI_dens * 1096.698
 
 
-# Export Density data frame
-saveRDS(dens_df, "./Data/Fitted_Models/PC_CMR_Dens.rds")
+# Save Environment
+save.image(file = "CMR_JAGs.RData")
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# End Script
