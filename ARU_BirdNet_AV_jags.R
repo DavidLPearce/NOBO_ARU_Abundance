@@ -60,7 +60,7 @@ setwd(".")
 # -------------------------------------------------------
 
 # BirdNet detections
-bnet_dat_all <- read.csv("./Data/Acoustic_Data/ARU_BirdNET_alldates.csv")
+bnet_dat_all <- read.csv("C:/Users/davep/OneDrive - Texas A&M University/Rprojects/CH2_NOBO_Abundance/Data/Acoustic_Data/NOBO_BirdNETall_2024.csv")
 
 # Site covariates
 site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
@@ -79,10 +79,30 @@ date_order <- c("2024-05-26", "2024-05-30", "2024-06-03", "2024-06-07", # in asc
                 "2024-06-27", "2024-07-01", "2024-07-05", "2024-07-09",
                 "2024-07-13", "2024-07-17")
 
-bnet_dat <- bnet_dat_all %>%
-  filter(Date %in% date_order)
-                     
 # Dates and their corresponding occasion numbers
+bnet_dat <- bnet_dat_all %>% filter(Date %in% date_order)
+head(bnet_dat)
+
+# Convert your Time column to POSIXct
+bnet_dat$Time <- as.POSIXct(bnet_dat$Time, format="%H:%M:%S", tz="UTC")
+
+# Define the recording start time (6:25:00)
+recording_start_time <- as.POSIXct("06:25:00", format="%H:%M:%S", tz="UTC")
+
+# Calculate the difference in seconds between the Time and the recording start time
+bnet_dat$Time_Into_Recording_Sec <- as.numeric(difftime(bnet_dat$Time, recording_start_time, units = "secs"))
+
+# Convert seconds into minutes and seconds
+bnet_dat$Time_Into_Recording_Min_Sec <- format(
+  as.POSIXct(bnet_dat$Time_Into_Recording_Sec, origin="1970-01-01", tz="UTC"), 
+  "%M:%S"
+)
+
+# Check the result
+head(bnet_dat)
+
+
+write.csv(bnet_dat,"NOBO_BirdNET_14day2024.csv")
 
 
 # Adding occasion column
