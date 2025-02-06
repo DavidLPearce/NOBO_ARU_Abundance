@@ -5,11 +5,11 @@
 # -------------------------------------------------------
 
 # Install packages (if needed)
-# install.packages("tidyverse")
-# install.packages("jagsUI")
-# install.packages("coda")
-# install.packages("mcmcplots")
-# install.packages("loo")
+install.packages("tidyverse")
+install.packages("jagsUI")
+install.packages("coda")
+install.packages("mcmcplots")
+install.packages("loo")
 
 # Load library
 library(tidyverse)
@@ -40,10 +40,10 @@ workers <- Ncores * 0.5 # may need to change, for low background use 80% num, fo
 # -------------------------------------------------------
 
 # Load in capture data
-pc_dat <- read.csv("./Data/Point_Count_Data/NOBO_PC_Summer2024data.csv")
+pc_dat <- read.csv("./NOBO_PC_Summer2024data.csv")
 
 # Load in site covariates
-site_covs <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
+site_covs <- read.csv("./PointCount_siteCovs.csv")
 
 # -------------------------------------------------------
 #
@@ -121,9 +121,6 @@ X.abund$herb_Npatches  <- scale(X.abund$herb_Npatches)
 X.abund$mnElev  <- scale(X.abund$mnElev)
 print(X.abund)
 
-
-
-
 # Extract and scale site covariates for X.det
 X.det <- pc_dat[,c(2,7:9,18)]
 X.det$Observer <- as.numeric(as.factor(X.det$Observer))
@@ -194,8 +191,8 @@ params <- c("lambda",
 )}
 
 # MCMC 
-n.iter = 300000
-n.burnin = 20000
+n.iter = 100#300000
+n.burnin =0 #20000
 n.chains = 3 
 n.thin = 10
 
@@ -3540,7 +3537,7 @@ save.image(file = "./CMR_JAGs.RData")
 # -------------------------------------------------------
 
 # Total number of models - 44 + 1 (fm.0)
-total_fits <- 45  # Adjust as needed
+total_fits <- 3#45  # Adjust as needed
 waic_values <- numeric(total_fits)  # For WAIC values
 fitnames <- character(total_fits)   # For model names
 for (i in 0:(total_fits - 1)) {
@@ -3568,7 +3565,7 @@ WAIC_df <- WAIC_df[order(WAIC_df$WAIC),]
 print(WAIC_df)
 
 # Best model?
-bm <- fm.22  
+bm <- get(WAIC_df[1,1]) 
   
 # Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
 cat("Bayesian p-value =", bm$summary["p_Bayes",1], "\n")
