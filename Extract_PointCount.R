@@ -107,7 +107,7 @@ for (row in 1:NROW(site_dat)) {
   # Subset the site
   site_sub <- site_dat[row, ]
   
-  SiteID <- site_sub$PointNum
+  SiteID <- site_sub[,1]
   
   # Setting projection
   site_sub_coords <- SpatialPoints(coords = site_sub[, c("Long", "Lat")],

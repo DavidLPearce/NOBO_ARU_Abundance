@@ -93,7 +93,7 @@ pb <- progress_bar$new(
   width = 100
 )
 
-# row = 2
+# row = 1
 
 # Loop
 for (row in 1:NROW(site_dat)) {
@@ -103,7 +103,7 @@ for (row in 1:NROW(site_dat)) {
   # Subset the site
   site_sub <- site_dat[row, ]
   
-  SiteID <- site_sub$SiteID
+  SiteID <- site_sub[,1]
   
   # Setting projection
   site_sub_coords <- SpatialPoints(coords = site_sub[, c("Long", "Lat")],
@@ -272,8 +272,10 @@ for (row in 1:NROW(site_dat)) {
   # Focal Statistics 
   # ------------------------------
   
-  # Define the woody class. Woody = 1, others = 0
-  woody_FocClass <- classify(lulc_clip, c(0,1,2,3), c(1,0,0,0))
+  # Create classification matrix: from, to, new value
+  woody_FocClass <- (lulc_clip == 0)  # Create a mask where woody = 1, others = 0
+  woody_FocClass <- as.numeric(woody_FocClass)  # Convert TRUE/FALSE to 1/0
+  # plot(woody_FocClass) # check
   
   # 30m circle
   kernel30m <- focalMat(lulc_clip, d = 15, type = "circle")  
@@ -299,7 +301,7 @@ for (row in 1:NROW(site_dat)) {
   
   # Clipping LiDAR data
   sub_las_50m <- clip_roi(lasFiles, site_sub_coords_utm, radius = 50)
- sub_las_200m <- clip_roi(lasFiles, site_sub_coords_utm, radius = 200)
+  sub_las_200m <- clip_roi(lasFiles, site_sub_coords_utm, radius = 200)
   #plot(sub_las_50m, color = "Classification", bg = "black", size = 5)
   #plot(sub_las_200m, color = "Classification", bg = "black", size = 5)
   
@@ -308,15 +310,14 @@ for (row in 1:NROW(site_dat)) {
   # ------------------------------
   
   # # Custom Cloth Simulation Function
-  # sub_las_mycsf <- classify_ground(sub_las,
-  #                        csf(sloop_smooth = TRUE,
-  #                            class_threshold = 1,
-  #                            cloth_resolution = 1,
-  #                            time_step = 1))
-  # 
-  # # Take a look
-  # plot(sub_las_mycsf, color = "Classification", bg = "black", size = 5)
+  sub_las_mycsf <- classify_ground(sub_las_200m,
+                                   csf(sloop_smooth = TRUE,
+                                       class_threshold = 1,
+                                       cloth_resolution = 1,
+                                       time_step = 1))
   
+  # Take a look
+  #plot(sub_las_mycsf, color = "Classification", bg = "black", size = 5)
   
   # ------------------------------
   # Proportion Vegetation
@@ -388,13 +389,9 @@ for (row in 1:NROW(site_dat)) {
   
   # Brush between 0.5 and 2 meters, heights above and below are in separate classes
   optim_chm <- classify(chm, c(0, 0.5, 2, Inf), c(0, 1, 0))
-  
-  # Optim height = 1, all else = 0
-  reclass_mat <- matrix(c(0, 0.5, 0,    # (0, 0.5] -> 0
-                          0.5, 2, 1,    # (0.5, 2] -> 1
-                          2, Inf, 0),   # (2, Inf] -> 0
-                        ncol = 3, byrow = TRUE)
-  optim_chm <- classify(optim_chm, reclass_mat)
+  optim_chm <- (optim_chm == 1)  # This returns a boolean mask
+  optim_chm <- as.numeric(optim_chm)  # Convert TRUE/FALSE to 1/0
+  #plot(optim_chm)
   
   # Convert CHM raster to a dataframe
   optim_chm_df <- as.data.frame(optim_chm, xy = TRUE)
@@ -408,8 +405,6 @@ for (row in 1:NROW(site_dat)) {
   lulc_clip__utm <- resample(lulc_clip_utm, optim_chm, method = "near")
   lulc_utm_df <- as.data.frame(lulc_clip__utm, xy = TRUE)
   
-  
-  
   # Plot LULC with optimal CHM overlay
   overlayPlotfile <- paste0(output_dir, SiteID, "_Overlay.png")
   overlayPlot <- ggplot() +
@@ -421,9 +416,9 @@ for (row in 1:NROW(site_dat)) {
                       labels = c("1" = "Woody",
                                  "2" = "Herbaceous",
                                  "3" = "Bareground")) +
-    geom_tile(data = optim_chm_df, aes(x = x, y = y), fill = "grey", alpha = 0.70) + 
+    geom_tile(data = optim_chm_df, aes(x = x, y = y), fill = "yellow", alpha = 0.50) + 
     coord_fixed() +
-    labs(title = paste("LULC and CHM (0.5-2m) Overlay for Site", SiteID )) +
+    labs(title = paste("LULC and CHM (0.5-2m [grey]) Overlay for Site", SiteID )) +
     theme_minimal() +
     theme(axis.title = element_blank(),
           axis.text = element_blank(),
