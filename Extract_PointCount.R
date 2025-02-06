@@ -53,6 +53,9 @@ summary(lasFiles)
 # Read in site locations
 site_dat <- read.csv("./Data/Point_Count_Data/NOBO_PointCount_Locations.csv")
 
+# Directory for plots
+output_dir <- "./Figures/LULC/PointCount/"
+
 # Extracting each class to a new raster
 woody_class <- lulc_rast == 0   # Woody
 herb_class <- lulc_rast == 1    # Herbaceous
@@ -94,7 +97,7 @@ pb <- progress_bar$new(
   width = 100
 )
 
-# row = 24
+# row = 2
 
 # Loop
 for (row in 1:NROW(site_dat)) {
@@ -131,26 +134,25 @@ for (row in 1:NROW(site_dat)) {
   brgnd_clip <- lulc_clip == 2
   
   # Plot & Export
-  output_dir <- "./Figures/LULC/PointCount/"
   lulc_Plotfile <- paste0(output_dir, SiteID, "_LULC.png")
   lulc_df <- as.data.frame(lulc_clip, xy = TRUE)
   lulc_plot <- ggplot(lulc_df) +
     geom_raster(aes(x = x, y = y, fill = factor(Classvalue))) +
-    scale_fill_manual(name = "Land Cover Type", 
-                      values =  c("1" = "forestgreen", 
-                                  "2" = "lightgreen", 
-                                  "3" = "saddlebrown"), 
-                      labels = c("1" = "Woody", 
-                                 "2" = "Herbaceous", 
+    scale_fill_manual(name = "Land Cover Type",
+                      values =  c("1" = "forestgreen",
+                                  "2" = "lightgreen",
+                                  "3" = "saddlebrown"),
+                      labels = c("1" = "Woody",
+                                 "2" = "Herbaceous",
                                  "3" = "Bareground")) +
     coord_fixed() +
-    labs(title = paste("LULC", SiteID)) +
+    labs(title = paste("LULC Site", SiteID)) +
     theme_minimal() +
-    theme(axis.title = element_blank(), 
-          axis.text = element_blank(),  
+    theme(axis.title = element_blank(),
+          axis.text = element_blank(),
           axis.ticks = element_blank(),
-          panel.background = element_rect(fill = "white", color = NA), 
-          plot.background = element_rect(fill = "white", color = NA))  
+          panel.background = element_rect(fill = "white", color = NA),
+          plot.background = element_rect(fill = "white", color = NA))
   ggsave(filename = lulc_Plotfile, plot = lulc_plot, width = 8, height = 6, dpi = 300)
   
   
@@ -265,7 +267,7 @@ for (row in 1:NROW(site_dat)) {
   png(woodyclumps_Plotfile, width = 8, height = 6, units = "in", res = 300)  # Set resolution to 300 DPI
   plot(woody_clumps, main = "Woody Clumps", col = turbo(cellStats(woody_clumps, stat = "max"), direction = 1))
   dev.off()
-  
+
   # Number of patches
   site_dat[row, "woody_Npatches"] <- cellStats(woody_clumps, stat = "max")
   site_dat[row, "herb_Npatches"] <- cellStats(herb_clumps, stat = "max")
@@ -276,10 +278,12 @@ for (row in 1:NROW(site_dat)) {
   
   # Define the woody class. Woody = 1, others = 0
   woody_FocClass <- classify(lulc_clip, c(0,1,2,3), c(1,0,0,0))
-  kernel5m <- focalMat(lulc_clip, d = 5, type = "circle")  
-  woody_focal5m <- focal(woody_FocClass, w = kernel5m, fun = sum, na.rm = TRUE)
-  mean_woody_focal5m <- global(woody_focal5m$focal_sum, fun = "mean", na.rm = TRUE)
-  site_dat[row, "woody_mnFocal5mRadi"] <- mean_woody_focal5m[1,1]
+  
+  # 30m circle
+  kernel30m <- focalMat(lulc_clip, d = 15, type = "circle")  
+  woody_focal30m <- focal(woody_FocClass, w = kernel30m, fun = sum, na.rm = TRUE)
+  mean_woody_focal30m <- global(woody_focal30m$focal_sum, fun = "mean", na.rm = TRUE)
+  site_dat[row, "woody_mnFocal30m"] <- mean_woody_focal30m[1,1]
   
   
   # ------------------------
@@ -365,7 +369,7 @@ for (row in 1:NROW(site_dat)) {
   
   # Create model using normalized point cloud
   chm <- rasterize_canopy(sub_las_norm, res = 0.7, pitfree(subcircle = 0.2))
-  
+   
   # Plot and Export
   chm_df <- as.data.frame(chm, xy = TRUE)
   chm_Plotfile <- paste0(output_dir, SiteID, "_CHM.png")
@@ -373,12 +377,12 @@ for (row in 1:NROW(site_dat)) {
     geom_raster(aes(x = x, y = y, fill = Z)) +  # 'value' is the raster values column
     scale_fill_viridis_c(option = "H") +  # You can adjust the color scale here
     coord_fixed() +
-    labs(title = paste("CHM", SiteID)) +
+    labs(title = paste("CHM Site", SiteID)) +
     theme_minimal() +
-    theme(axis.title = element_blank(), 
-          axis.text = element_blank(),  
+    theme(axis.title = element_blank(),
+          axis.text = element_blank(),
           axis.ticks = element_blank(),
-          panel.background = element_rect(fill = "white", color = NA), 
+          panel.background = element_rect(fill = "white", color = NA),
           plot.background = element_rect(fill = "white", color = NA))
   ggsave(filename = chm_Plotfile, plot = chm_plot, width = 8, height = 6, dpi = 300)
   
@@ -388,22 +392,64 @@ for (row in 1:NROW(site_dat)) {
   
   # Brush between 0.5 and 2 meters, heights above and below are in separate classes
   optim_chm <- classify(chm, c(0, 0.5, 2, Inf), c(0, 1, 0))
-  # plot(optim_chm)
   
-  kernel5m <- focalMat(chm, d = 5, type = "circle")  
-  optim_focal5m <- focal(optim_chm, w = kernel5m, fun = sum, na.rm = TRUE)
-  mean_optim_focal5m <- global(optim_focal5m$focal_sum, fun = "mean", na.rm = TRUE)
-  site_dat[row, "optim_mnFocal5mRadi"] <- mean_optim_focal5m[1,1]
+  # Optim height = 1, all else = 0
+  reclass_mat <- matrix(c(0, 0.5, 0,    # (0, 0.5] -> 0
+                          0.5, 2, 1,    # (0.5, 2] -> 1
+                          2, Inf, 0),   # (2, Inf] -> 0
+                           ncol = 3, byrow = TRUE)
+  optim_chm <- classify(optim_chm, reclass_mat)
+
+  # Convert CHM raster to a dataframe
+  optim_chm_df <- as.data.frame(optim_chm, xy = TRUE)
+  colnames(optim_chm_df) <- c("x", "y", "Class")
+  optim_chm_df <- optim_chm_df[which(optim_chm_df[,'Class'] == 1),]
   
+  # Reproject lulc_clip to the CRS of optim_chm
+  lulc_clip_utm <- project(lulc_clip, terra::crs(optim_chm))
+  
+  # Resample lulc_clip to match the resolution and extent of optim_chm
+  lulc_clip__utm <- resample(lulc_clip_utm, optim_chm, method = "near")
+  lulc_utm_df <- as.data.frame(lulc_clip__utm, xy = TRUE)
+  
+
+
+  # Plot LULC with optimal CHM overlay
+  overlayPlotfile <- paste0(output_dir, SiteID, "_Overlay.png")
+  overlayPlot <- ggplot() +
+    geom_raster(data = lulc_utm_df, aes(x = x, y = y, fill = factor(Classvalue))) +
+    scale_fill_manual(name = "Land Cover Type",
+                      values = c("1" = "forestgreen",
+                                 "2" = "lightgreen",
+                                 "3" = "saddlebrown"),
+                      labels = c("1" = "Woody",
+                                 "2" = "Herbaceous",
+                                 "3" = "Bareground")) +
+    geom_tile(data = optim_chm_df, aes(x = x, y = y), fill = "grey", alpha = 0.70) + 
+    coord_fixed() +
+    labs(title = paste("LULC and CHM (0.5-2m) Overlay for Site", SiteID )) +
+    theme_minimal() +
+    theme(axis.title = element_blank(),
+          axis.text = element_blank(),
+          axis.ticks = element_blank(),
+          panel.background = element_rect(fill = "white", color = NA),
+          plot.background = element_rect(fill = "white", color = NA))
+  # Export
+  ggsave(filename = overlayPlotfile, plot = overlayPlot, width = 8, height = 6, dpi = 300)
+  
+  
+  # 30m at Focal Statistics
+  kernel30m <- focalMat(chm, d = 15, type = "circle")  
+  optim_focal30m <- focal(optim_chm, w = kernel30m, fun = sum, na.rm = TRUE)
+  mean_optim_focal30m <- global(optim_focal30m$focal_sum, fun = "mean", na.rm = TRUE)
+  site_dat[row, "optim_mnFocal30m"] <- mean_optim_focal30m[1,1]
+
   # ------------------------------
   # Update the progress bar
   # ------------------------------
   pb$tick()
   
 } # -------------------- End Extraction Loop -----------------------------
-
-
-
 
 
 # Take a look
@@ -419,16 +465,30 @@ write.csv(site_dat, "./Data/Point_Count_Data/PointCount_siteCovs.csv")# .csv
 # Check Correlations
 # ------------------------------
 
-#site_covs <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
+#site_dat <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
 
 # Checking correlation
-pairs.panels(site_covs[-c((1:4))],
+pairs.panels(site_dat[-c((1:4))],
              gap = 0,
              bg = c("blue", "red"),
              pch = 21, main = "Point Count Site Covs Correlations")
 
-cor_mat <- cor(site_covs[-c((1:4))])
+cor_mat <- cor(site_dat[-c((1:4))])
 write.csv(cor_mat, "PC_Site_Covs_Correlations.csv")
+
+# Heat Map
+library(reshape2)
+
+# Assuming cor_mat is your correlation matrix
+cor_mat_melted <- melt(cor_mat)
+
+# Create the heatmap
+ggplot(cor_mat_melted, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1, 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Correlation Heatmap", x = "", y = "")
 
 
 # Filter to less than 30% correlated
@@ -448,7 +508,7 @@ low_corr_pairs <- apply(woody_herb_pairs, 1, function(idx)
   paste(rownames(cor_mat)[idx[1]], colnames(cor_mat)[idx[2]], sep = " - ")
 )
 
-low_corr_pairs
+print(low_corr_pairs)
 
 
   
