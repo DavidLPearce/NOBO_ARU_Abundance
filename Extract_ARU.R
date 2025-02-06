@@ -51,6 +51,9 @@ summary(lasFiles)
 site_dat <- read.csv("./Data/Acoustic_Data/ARU_sites.csv")
 print(site_dat)
 
+# Directory for plots
+output_dir <- "./Figures/LULC/ARU/"
+
 # Extracting each class to a new raster
 woody_class <- lulc_rast == 0   # Woody
 herb_class <- lulc_rast == 1    # Herbaceous
@@ -90,8 +93,7 @@ pb <- progress_bar$new(
   width = 100
 )
 
-# row = 24
-
+# row = 2
 
 # Loop
 for (row in 1:NROW(site_dat)) {
@@ -101,7 +103,7 @@ for (row in 1:NROW(site_dat)) {
   # Subset the site
   site_sub <- site_dat[row, ]
   
-  SiteID <- site_sub$SiteID
+  SiteID <- site_sub$PointNum
   
   # Setting projection
   site_sub_coords <- SpatialPoints(coords = site_sub[, c("Long", "Lat")],
@@ -121,35 +123,34 @@ for (row in 1:NROW(site_dat)) {
   # Extract and crop the raster for the buffer
   lulc_clip <- terra::crop(lulc_rast, site_buffer_terra)
   lulc_clip <- terra::mask(lulc_clip, site_buffer_terra)
- 
+  
   # Subset to class
   woody_clip <- lulc_clip == 0
   herb_clip <- lulc_clip == 1
   brgnd_clip <- lulc_clip == 2
   
   # Plot & Export
-  output_dir <- "./Figures/LULC/ARU/"
   lulc_Plotfile <- paste0(output_dir, SiteID, "_LULC.png")
   lulc_df <- as.data.frame(lulc_clip, xy = TRUE)
   lulc_plot <- ggplot(lulc_df) +
-                geom_raster(aes(x = x, y = y, fill = factor(Classvalue))) +
-                scale_fill_manual(name = "Land Cover Type", 
-                                  values =  c("1" = "forestgreen", 
-                                              "2" = "lightgreen", 
-                                              "3" = "saddlebrown"), 
-                                  labels = c("1" = "Woody", 
-                                             "2" = "Herbaceous", 
-                                             "3" = "Bareground")) +
-                coord_fixed() +
-                labs(title = paste("LULC", SiteID)) +
-                theme_minimal() +
-                theme(axis.title = element_blank(), 
-                      axis.text = element_blank(),  
-                      axis.ticks = element_blank(),
-                      panel.background = element_rect(fill = "white", color = NA), 
-                      plot.background = element_rect(fill = "white", color = NA))  
+    geom_raster(aes(x = x, y = y, fill = factor(Classvalue))) +
+    scale_fill_manual(name = "Land Cover Type",
+                      values =  c("1" = "forestgreen",
+                                  "2" = "lightgreen",
+                                  "3" = "saddlebrown"),
+                      labels = c("1" = "Woody",
+                                 "2" = "Herbaceous",
+                                 "3" = "Bareground")) +
+    coord_fixed() +
+    labs(title = paste("LULC Site", SiteID)) +
+    theme_minimal() +
+    theme(axis.title = element_blank(),
+          axis.text = element_blank(),
+          axis.ticks = element_blank(),
+          panel.background = element_rect(fill = "white", color = NA),
+          plot.background = element_rect(fill = "white", color = NA))
   ggsave(filename = lulc_Plotfile, plot = lulc_plot, width = 8, height = 6, dpi = 300)
-
+  
   
   # ------------------------------
   # Proportion of Class
@@ -256,14 +257,13 @@ for (row in 1:NROW(site_dat)) {
   herb_rast <- raster(herb_clip)
   woody_clumps <- clump(woody_rast, directions = 8) # Id clumps
   herb_clumps <- clump(herb_rast, directions = 8)  
- 
+  
   # Plot and Export Woody Patches
-  output_dir <- "./Figures/LULC/ARU/"
   woodyclumps_Plotfile <- paste0(output_dir, SiteID, "_WoodyClumps.png")
   png(woodyclumps_Plotfile, width = 8, height = 6, units = "in", res = 300)  # Set resolution to 300 DPI
   plot(woody_clumps, main = "Woody Clumps", col = turbo(cellStats(woody_clumps, stat = "max"), direction = 1))
   dev.off()
-
+  
   # Number of patches
   site_dat[row, "woody_Npatches"] <- cellStats(woody_clumps, stat = "max")
   site_dat[row, "herb_Npatches"] <- cellStats(herb_clumps, stat = "max")
@@ -274,10 +274,12 @@ for (row in 1:NROW(site_dat)) {
   
   # Define the woody class. Woody = 1, others = 0
   woody_FocClass <- classify(lulc_clip, c(0,1,2,3), c(1,0,0,0))
-  kernel5m <- focalMat(lulc_clip, d = 5, type = "circle")  
-  woody_focal5m <- focal(woody_FocClass, w = kernel5m, fun = sum, na.rm = TRUE)
-  mean_woody_focal5m <- global(woody_focal5m$focal_sum, fun = "mean", na.rm = TRUE)
-  site_dat[row, "woody_mnFocal5mRadi"] <- mean_woody_focal5m[1,1]
+  
+  # 30m circle
+  kernel30m <- focalMat(lulc_clip, d = 15, type = "circle")  
+  woody_focal30m <- focal(woody_FocClass, w = kernel30m, fun = sum, na.rm = TRUE)
+  mean_woody_focal30m <- global(woody_focal30m$focal_sum, fun = "mean", na.rm = TRUE)
+  site_dat[row, "woody_mnFocal30m"] <- mean_woody_focal30m[1,1]
   
   
   # ------------------------
@@ -366,33 +368,77 @@ for (row in 1:NROW(site_dat)) {
   
   # Plot and Export
   chm_df <- as.data.frame(chm, xy = TRUE)
-  output_dir <- "./Figures/LULC/ARU/"
   chm_Plotfile <- paste0(output_dir, SiteID, "_CHM.png")
   chm_plot <- ggplot(chm_df) +
     geom_raster(aes(x = x, y = y, fill = Z)) +  # 'value' is the raster values column
     scale_fill_viridis_c(option = "H") +  # You can adjust the color scale here
     coord_fixed() +
-    labs(title = paste("CHM", SiteID)) +
+    labs(title = paste("CHM Site", SiteID)) +
     theme_minimal() +
-    theme(axis.title = element_blank(), 
-          axis.text = element_blank(),  
+    theme(axis.title = element_blank(),
+          axis.text = element_blank(),
           axis.ticks = element_blank(),
-          panel.background = element_rect(fill = "white", color = NA), 
+          panel.background = element_rect(fill = "white", color = NA),
           plot.background = element_rect(fill = "white", color = NA))
   ggsave(filename = chm_Plotfile, plot = chm_plot, width = 8, height = 6, dpi = 300)
-
+  
   # ------------------------------
   # Focal Statistics
   # ------------------------------
   
   # Brush between 0.5 and 2 meters, heights above and below are in separate classes
   optim_chm <- classify(chm, c(0, 0.5, 2, Inf), c(0, 1, 0))
-  # plot(optim_chm)
   
-  kernel5m <- focalMat(chm, d = 5, type = "circle")  
-  optim_focal5m <- focal(optim_chm, w = kernel5m, fun = sum, na.rm = TRUE)
-  mean_optim_focal5m <- global(optim_focal5m$focal_sum, fun = "mean", na.rm = TRUE)
-  site_dat[row, "optim_mnFocal5mRadi"] <- mean_optim_focal5m[1,1]
+  # Optim height = 1, all else = 0
+  reclass_mat <- matrix(c(0, 0.5, 0,    # (0, 0.5] -> 0
+                          0.5, 2, 1,    # (0.5, 2] -> 1
+                          2, Inf, 0),   # (2, Inf] -> 0
+                        ncol = 3, byrow = TRUE)
+  optim_chm <- classify(optim_chm, reclass_mat)
+  
+  # Convert CHM raster to a dataframe
+  optim_chm_df <- as.data.frame(optim_chm, xy = TRUE)
+  colnames(optim_chm_df) <- c("x", "y", "Class")
+  optim_chm_df <- optim_chm_df[which(optim_chm_df[,'Class'] == 1),]
+  
+  # Reproject lulc_clip to the CRS of optim_chm
+  lulc_clip_utm <- project(lulc_clip, terra::crs(optim_chm))
+  
+  # Resample lulc_clip to match the resolution and extent of optim_chm
+  lulc_clip__utm <- resample(lulc_clip_utm, optim_chm, method = "near")
+  lulc_utm_df <- as.data.frame(lulc_clip__utm, xy = TRUE)
+  
+  
+  
+  # Plot LULC with optimal CHM overlay
+  overlayPlotfile <- paste0(output_dir, SiteID, "_Overlay.png")
+  overlayPlot <- ggplot() +
+    geom_raster(data = lulc_utm_df, aes(x = x, y = y, fill = factor(Classvalue))) +
+    scale_fill_manual(name = "Land Cover Type",
+                      values = c("1" = "forestgreen",
+                                 "2" = "lightgreen",
+                                 "3" = "saddlebrown"),
+                      labels = c("1" = "Woody",
+                                 "2" = "Herbaceous",
+                                 "3" = "Bareground")) +
+    geom_tile(data = optim_chm_df, aes(x = x, y = y), fill = "grey", alpha = 0.70) + 
+    coord_fixed() +
+    labs(title = paste("LULC and CHM (0.5-2m) Overlay for Site", SiteID )) +
+    theme_minimal() +
+    theme(axis.title = element_blank(),
+          axis.text = element_blank(),
+          axis.ticks = element_blank(),
+          panel.background = element_rect(fill = "white", color = NA),
+          plot.background = element_rect(fill = "white", color = NA))
+  # Export
+  ggsave(filename = overlayPlotfile, plot = overlayPlot, width = 8, height = 6, dpi = 300)
+  
+  
+  # 30m at Focal Statistics
+  kernel30m <- focalMat(chm, d = 15, type = "circle")  
+  optim_focal30m <- focal(optim_chm, w = kernel30m, fun = sum, na.rm = TRUE)
+  mean_optim_focal30m <- global(optim_focal30m$focal_sum, fun = "mean", na.rm = TRUE)
+  site_dat[row, "optim_mnFocal30m"] <- mean_optim_focal30m[1,1]
   
   # ------------------------------
   # Update the progress bar
@@ -400,7 +446,6 @@ for (row in 1:NROW(site_dat)) {
   pb$tick()
   
 } # -------------------- End Extraction Loop -----------------------------
-
 
 
 # Take a look
