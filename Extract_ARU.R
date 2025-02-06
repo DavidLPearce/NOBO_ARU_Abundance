@@ -103,7 +103,7 @@ for (row in 1:NROW(site_dat)) {
   # Subset the site
   site_sub <- site_dat[row, ]
   
-  SiteID <- site_sub$PointNum
+  SiteID <- site_sub$SiteID
   
   # Setting projection
   site_sub_coords <- SpatialPoints(coords = site_sub[, c("Long", "Lat")],
@@ -299,7 +299,7 @@ for (row in 1:NROW(site_dat)) {
   
   # Clipping LiDAR data
   sub_las_50m <- clip_roi(lasFiles, site_sub_coords_utm, radius = 50)
-  sub_las_200m <- clip_roi(lasFiles, site_sub_coords_utm, radius = 200)
+ sub_las_200m <- clip_roi(lasFiles, site_sub_coords_utm, radius = 200)
   #plot(sub_las_50m, color = "Classification", bg = "black", size = 5)
   #plot(sub_las_200m, color = "Classification", bg = "black", size = 5)
   
