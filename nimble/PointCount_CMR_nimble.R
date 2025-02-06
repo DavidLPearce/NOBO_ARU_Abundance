@@ -5,19 +5,29 @@
 # -------------------------------------------------------
 
 # Install packages (if needed)
+# install.packages("tidyverse")
 # install.packages("nimble")
 # install.packages("coda")
+# install.packages("mcmcplots")
+# install.packages("parallel")
 
 # Load library
 library(tidyverse)
 library(nimble)
 library(coda)
 library(mcmcplots)
+library(parallel)
 
 # Set seed, scientific notation options, and working directory
 set.seed(123)
 options(scipen = 9999)
 setwd(".")
+
+# Setting up cores
+Ncores <- detectCores()
+print(Ncores) # number of available cores
+workers <- Ncores * 0.5 # may need to change, for low background use 80% num, for medium use 50%
+
 
 # -------------------------------------------------------
 #
@@ -39,6 +49,11 @@ site_covs <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
 
 # Remove rows with NA values
 pc_dat <- na.omit(pc_dat)
+
+# Creating a day of year column
+pc_dat$Date <- mdy(pc_dat$Date)
+pc_dat$DOY <- yday(pc_dat$Date)
+pc_dat$DOYscaled <- ((pc_dat$DOY - 1) / 365)
 
 # Add a unique id column based on Point Count number, NOBO number, and Day of Year
 pc_dat$UniqueID <- paste(pc_dat$PointNum, pc_dat$Survey, pc_dat$NOBOnum,  sep = "_")
@@ -77,15 +92,41 @@ site <- c(site, rep(NA, M-nind))
 # Take a look
 print(site)
 
-# Extract observation covariates
-sitecovs = scale(site_covs[,c("woody_prp", 
-                              "herb_prp", 
-                              "woody_mean_p_Area")])
+# Extract and scale site covariates for X.abund
+X.abund <- site_covs[,-c(1:4,25)] 
+X.abund$woody_lrgPInx <- scale(X.abund$woody_lrgPInx)
+X.abund$herb_lrgPInx  <- scale(X.abund$herb_lrgPInx)
+X.abund$woody_AggInx <- scale(X.abund$woody_AggInx)
+X.abund$herb_AggInx  <- scale(X.abund$herb_AggInx)
+X.abund$woody_EdgDens <- scale(X.abund$woody_EdgDens)
+X.abund$herb_EdgDens  <- scale(X.abund$herb_EdgDens)
+X.abund$woody_Pdens <- scale(X.abund$woody_Pdens)
+X.abund$herb_Pdens  <- scale(X.abund$herb_Pdens)
+X.abund$woody_Npatches <- scale(X.abund$woody_Npatches)
+X.abund$herb_Npatches  <- scale(X.abund$herb_Npatches)
+X.abund$mnElev  <- scale(X.abund$mnElev)
+print(X.abund)
+
+
+
+# Extract and scale site covariates for X.det
+X.det <- pc_dat[,c(2,7:9,18)]
+X.det$Observer <- as.numeric(as.factor(X.det$Observer))
+X.det$Temp.deg.F <- as.numeric(X.det$Temp.deg.F)
+X.det$Wind.Beau.Code <- as.numeric(as.factor(X.det$Wind.Beau.Code)) 
+X.det$Sky.Beau.Code <- as.numeric(as.factor(X.det$Sky.Beau.Code))
+merged_df <- merge(site_covs, pc_CMR, by = "PointNum") # VegDens to stacked 
+X.det$vegDens = as.matrix(merged_df[,c("vegDens50m")]) 
+
+
+
+
                      
 
 # Bundle data for nimble
 data <- list(y = y, 
-             X = sitecovs,
+             X.abund = X.abund,
+             X.det = X.det,
              group = site)
 
 # Take a look
@@ -100,96 +141,114 @@ constants <- list(J = 4,
 str(constants)
 
 
-# -------------------------------------------------------
+# ------------------------------------------------------------------------------ 
 #
-#                   Model Fitting
+#                             Model Fitting
 #
-# -------------------------------------------------------
+# ------------------------------------------------------------------------------ 
+
+
+# Parameters monitored
+params <- c("lambda",
+            "p0", 
+            "alpha0", 
+            "alpha1", 
+            "beta0", 
+            "beta1",
+            "beta2",
+            "beta3",
+            "S.raneff",
+            "tau",
+            "psi")
+
+
+# Initial values
+# inits <- function() {
+#   list (p0 = runif(1),
+#         alpha1 = runif(1),
+#         beta0=runif(1),
+#         beta1=rnorm(1),
+#         beta2=rnorm(1),
+#         beta3=rnorm(1),
+#         z = c( rep(1,nind), rep(0, (M-nind))),
+#         # To avoid nimble warnings, initialize unobserved groups
+#         group = c(rep(NA,length(pc_dat$UniqueID)),
+#                   sample(1:nrow(data$X),
+#                          size = length(site) - length(pc_dat$UniqueID),
+#                          replace = TRUE)),
+#         lambda = runif(10, min = 0.1, max = 10)
+#   )}# end inits
+
+inits <- function() {
+  list (p0 = runif(1),
+        alpha1 = 0,
+        beta0 = 0,
+        beta1 = 0,
+        tau = 1,
+        z = c( rep(1,nind), rep(0, (M-nind)))
+  )}# end inits
 
 
 # -------------------------------------------------------
-#                 Covariate Model
+# Fit Model 0: Null Model
 # -------------------------------------------------------
-model.cov <- nimbleCode({
+model.0 <- nimbleCode({
 
   # Prior distributions
   p0 ~ dunif(0,1)
-  alpha0 <- log(p0 / (1-p0))    # same as logit(p0)
-  alpha1 ~ dnorm(0, 0.01)
+  alpha0 <- log(p0 / (1-p0)) # same as logit(p0)
+  # alpha1 ~ dnorm(0, 0.01)
   beta0 ~ dnorm(0,0.01)
-  beta1 ~ dnorm(0,0.01)
-  beta2 ~ dnorm(0,0.01)
+  # beta1 ~ dnorm(0,0.01)
+  # beta2 ~ dnorm(0,0.01)
+  # beta3 ~ dnorm(0,0.01)
   psi <- sum(lambda[1:nsites]) / M   # psi is a derived parameter
+  
+  # Precision for survey-level random effect
+  # tau ~ dgamma(0.1, 0.1)  
+  # sigma <- 1/sqrt(tau) # Standard deviation of survey effects
 
-  # log-linear model for abundance: Herbaceous Proportion + Woody Mean Patch Area
+  # log-linear model for abundance
   for(s in 1:nsites){
-    log(lambda[s]) <- beta0 + beta1*X[s,2] + beta2*X[s,3]
+    log(lambda[s]) <- beta0 
     probs[s] <- lambda[s] / sum(lambda[1:nsites])
   }
+  
+  # Site-level random effect
+  # for(s in 1:nsites){  
+  #   S.raneff[s] ~ dnorm(0, tau)  
+  # }
 
   # Model for individual encounter histories
   for(i in 1:M){
     group[i] ~ dcat(probs[1:nsites])  # Group == site membership
     z[i] ~ dbern(psi)         # Data augmentation variables
 
-    # Observation model: p depends on woody proportion
+    # Detection model:  Intercept + Wind + Site Random Effect
     for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1*X[group[i],1]
+      logit(p[i,j]) <- alpha0 #+ alpha1*X.det[group[i],3] #+ S.raneff[group[i]] 
       pz[i,j] <- p[i,j] * z[i]
       y[i,j] ~ dbern(pz[i,j])
     }
   }
-  # Derived quantities
-  Lam_mean <- mean(lambda[1:nsites])
-}
-) # End model statement
-# -------------------------------------------------------
-
-
-# Parameters monitored
-params.cov <- c("lambda",
-                "p0", 
-                "alpha0", 
-                "alpha1", 
-                "beta0", 
-                "beta1",
-                "beta2",
-                "psi", 
-                "lambda",
-                "Lam_mean")
-
-# Initial values
-inits.cov <- function() {
-  list (p0 = runif(1),
-        alpha1 = runif(1),
-        beta0=runif(1),
-        beta1=rnorm(1),
-        beta2=rnorm(1),
-        z = c( rep(1,nind), rep(0, (M-nind))),
-        # To avoid nimble warnings, initialize unobserved groups
-        group = c(rep(NA,length(pc_dat$UniqueID)),
-                  sample(1:nrow(data$X),
-                         size = length(site) - length(pc_dat$UniqueID), 
-                         replace = TRUE)),
-        lambda = runif(10, min = 0.1, max = 10)
-)}# end inits
+})
+# ------------End Model-------------
 
 
 # Fit Model
-fm.covs <- nimbleMCMC(code = model.cov,
-                  data = data,
-                  constants = constants,
-                  inits = inits.cov,
-                  monitors = params.cov,
-                  niter = 500000,
-                  nburnin = 50000,
-                  nchains = 3,
-                  thin = 10,
-                  samplesAsCodaMCMC = TRUE,
-                  WAIC = TRUE)
+fm.0 <- nimbleMCMC(code = model.0,
+                      data = data,
+                      constants = constants,
+                      inits = inits,
+                      monitors = params,
+                      niter = 300000,
+                      nburnin = 20000,
+                      nchains = 3,
+                      thin = 10,
+                      samplesAsCodaMCMC = TRUE,
+                      WAIC = TRUE)
 
-# Save fitted model
-saveRDS(fm.covs, "./Data/Fitted_Models/PC_CMR_fmcovs.rds")
+
 
 # Rhat
 #coda::gelman.diag(fm.covs$samples)
@@ -200,221 +259,4 @@ mcmcplot(fm.covs$samples)
 # Model Summary
 summary(fm.covs$samples)
 
-
-
-# -------------------------------------------------------
-#               Individual Heterogeneity Model
-# -------------------------------------------------------
-model.H <- nimbleCode( {
-  
-  # Prior distributions
-  p0 ~ dunif(0,1)
-  alpha0 <- log(p0 / (1-p0))    # same as logit(p0)
-  alpha1 ~ dnorm(0, 0.01)
-  beta0 ~ dnorm(0,0.01)
-  beta1 ~ dnorm(0,0.01)
-  beta2 ~ dnorm(0,0.01)
-  psi <- sum(lambda[1:nsites])/M
-  tau ~ dgamma(0.1,0.1)
-  sigma <- 1/sqrt(tau)
-  
-  # log-linear model for abundance: Herbaceous Proportion + Woody Mean Patch Area
-  for(s in 1:nsites){
-    log(lambda[s])<- beta0 + beta1*X[s,2] + beta2*X[s,3]
-    probs[s]<- lambda[s]/sum(lambda[1:nsites])
-  }
-  
-  # Model for individual encounter histories
-  for(i in 1:M){
-    eta[i] ~ dnorm(alpha0, tau)  # Individual random effect
-    group[i] ~ dcat(probs[1:nsites])  # Group == site membership
-    z[i] ~ dbern(psi)         # Data augmentation variables
-    
-    # Observation model: Woody Proportion + ind. heterogeneity 
-    for(j in 1:J){
-      logit(p[i,j]) <-  alpha1*X[group[i],1] + eta[i]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-    }   
-  }
-  # Derived quantities
-  Lam_mean <- mean(lambda[1:nsites])
-}
-) # End model statement
-# -------------------------------------------------------
-
-
-# Parameters monitored
-params.h <- c("lambda",
-              "p0", 
-              "alpha0", 
-              "alpha1",
-              "beta0", 
-              "beta1",
-              "beta2",
-              "psi", 
-              "sigma",
-              "Lam_mean")
-
-
-# Initial values: add tau
-inits.h <- function() {
-  list (p0 = runif(1),
-        alpha1 = 0,
-        beta0 = 0,
-        beta1 = 0,
-        beta2 = 0,
-        tau = 1,
-        z = c( rep(1,nind), rep(0, (M-nind))),
-        group = c(rep(NA,length(pc_dat$UniqueID)),
-                  sample(1:nrow(data$X), 
-                         size = length(site) - length(pc_dat$UniqueID), 
-                         replace = TRUE)),
-        lambda = runif(10, min = 0.1, max = 10)  # Adding initial values for lambda
-)}# end inits
-
-
-
-# Fit Model
-fm.h <- nimbleMCMC(code = model.H, 
-                   data = data, 
-                   constants = constants,
-                   inits = inits.h,
-                   monitors = params.h,
-                   niter = 500000,
-                   nburnin = 50000,
-                   nchains = 3,
-                   thin = 10,
-                   samplesAsCodaMCMC = TRUE,
-                   WAIC = TRUE)
-
-# Save fitted model
-saveRDS(fm.h, "./Data/Fitted_Models/PC_CMR_fmH.rds")
-
-# Rhat
-#coda::gelman.diag(fm.h$samples)
-
-# Trace plots
-mcmcplot(fm.h$samples)
-
-# Model Summary
-summary(fm.h$samples)
-
-
-
-# ---------------------------------------------------------- 
-# Ranking Detection Models using WAIC
-# ----------------------------------------------------------
-
-# Extract the WAIC values for each model
-waic_values <- c(fm.covs$WAIC$WAIC,
-                 fm.h$WAIC$WAIC)
-
-# Naming models
-fitnames <- c("fm.covs", 
-              "fm.h")
-
-
-# Combine model names and WAIC values into a data frame for ranking
-waic_df <- data.frame(Model = fitnames, WAIC = waic_values)
-
-# Rank models based on WAIC (lower WAIC is better)
-waic_df <- waic_df[order(waic_df$WAIC), ]
-
-# Print the ranked models
-print(waic_df)
-
-# ModelDetection model 2 is the best detection model
-summary(fm.covs$samples)
-
-
-
-#  -------------------------------------------------------
-#
-#   Saving Data
-#
-#  -------------------------------------------------------
-
-# Save environment
-#save.image(file = "PointCount_CMR_nimble.RData")
-
-#  -------------------------------------------------------
-#
-#   Estimating Abundance 
-#
-#  -------------------------------------------------------
-
-
-# Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.covs$samples))
-
-# Extract lambda estimates (assuming "lambda[1]", "lambda[2]", etc., are in the output)
-lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
-lambda_samples <- combined_chains[, lambda_columns]
-
-# mean abundance 
-lambda_tot <- rowSums(lambda_samples)
-
-# Area in hectares
-area <- pi*(200^2)/10000
-
-# Getting density
-dens_df <- as.data.frame(lambda_tot/area)
-
-# Summarize by row
-colnames(dens_df)[1] <- "Density"
-dens_df[,2] <- "PC CMR"
-colnames(dens_df)[2] <- "Model"
-dens_df <- dens_df[, c("Model", "Density")]# Switch the order of columns
-head(dens_df)
-
-# Calculate the 95% Credible Interval
-ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
-
-
-# Subset the data frame to 95% CI
-dens_df <- subset(dens_df, Density >= ci_bounds[1] & Density <= ci_bounds[2])
-
-
-# Plot
-ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
-  geom_violin() +
-  geom_boxplot(aes(x = Model, y = Density),
-               width = 0.2, position = position_dodge(width = 0.8)) +
-  labs(
-    title = "Latent Density",
-    x = "Model",
-    y = "Density") +
-  scale_y_continuous(limits = c(0, 10),
-                     breaks = seq(0, 10, by = 5),
-                     labels = scales::comma) +
-  theme_minimal() +
-  theme(
-    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
-    axis.text.y = element_text(size = 12),
-    plot.title = element_text(hjust = 0.5),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    legend.position = "none"
-  )
-
-
-# total density
-mean_dens <- mean(dens_df$Density)
-LCI_dens <- min(dens_df$Density)
-HCI_dens <- max(dens_df$Density)
-
-print(mean_dens)
-print(LCI_dens)
-print(HCI_dens)
-
-# total abundance
-mean_dens * 1096.698
-LCI_dens * 1096.698
-HCI_dens * 1096.698
-
-
-# Export Density data frame
-saveRDS(dens_df, "./Data/Fitted_Models/PC_CMR_Dens.rds")
-
-
+ 
