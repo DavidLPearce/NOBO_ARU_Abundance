@@ -9,13 +9,14 @@
 # install.packages("jagsUI")
 # install.packages("coda")
 # install.packages("mcmcplots")
+# install.packages("loo")
 
 # Load library
 library(tidyverse)
 library(jagsUI)
 library(coda)
 library(mcmcplots)
-
+library(loo)
 
 # Check JAGs Version
 # Latest version as of (5 Feb 2025) JAGS 4.3.1.  
@@ -29,8 +30,8 @@ setwd(".")
 
 # Setting up cores
 Ncores <- parallel::detectCores()
-print(Ncores) # number of available cores
-workers <- Ncores * 0.5 # may need to change, for low background use 80% num, for medium use 50%
+print(Ncores) # Number of available cores
+workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
 
 # -------------------------------------------------------
 #
@@ -39,10 +40,10 @@ workers <- Ncores * 0.5 # may need to change, for low background use 80% num, fo
 # -------------------------------------------------------
 
 # Load in capture data
-pc_dat <- read.csv("./Data/Point_Count_Data/NOBO_PC_Summer2024data.csv")
+pc_dat <- read.csv("./NOBO_PC_Summer2024data.csv")
 
 # Load in site covariates
-site_covs <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
+site_covs <- read.csv("./PointCount_siteCovs.csv")
 
 # -------------------------------------------------------
 #
@@ -122,6 +123,7 @@ print(X.abund)
 
 
 
+
 # Extract and scale site covariates for X.det
 X.det <- pc_dat[,c(2,7:9,18)]
 X.det$Observer <- as.numeric(as.factor(X.det$Observer))
@@ -142,7 +144,7 @@ data <- list(J = J,
              X.det = X.det,
              group = site)
  
-# Take a look
+# Check structure 
 str(data)
 
  
@@ -151,6 +153,10 @@ str(data)
 #                             Model Fitting
 #
 # ------------------------------------------------------------------------------
+
+# -------------------------------------------------------
+# Model Specifications
+# -------------------------------------------------------
 
 ## Distributions
 # library(ggfortify)
@@ -170,8 +176,9 @@ params <- c("lambda",
             "psi",
             "S.raneff",
             "tau",
-            "sigma",
-            "p_Bayes")
+             "p_Bayes",
+             "log_lik")
+            
 
 
 # Initial values
@@ -186,12 +193,15 @@ params <- c("lambda",
         z = c( rep(1,nind), rep(0, (M-nind)))
 )}
 
-
-
+# MCMC 
+n.iter = 100#300000
+n.burnin = 10#20000
+n.chains = 3 
+n.thin = 10
 
 
 # -------------------------------------------------------
-# Model 0: Null Model
+# Model 1: Woody Focal Stats
 # -------------------------------------------------------
 cat("
 model {
@@ -210,9 +220,9 @@ model {
   tau ~ dgamma(0.1, 0.1)  
   sigma <- 1/sqrt(tau) # Standard deviation of survey effects
 
-  # Abundance model
+  # Abundance model 
   for(s in 1:nsites){
-    log(lambda[s]) <- beta0 
+    log(lambda[s]) <- beta0 + beta1*X.abund[s,20] 
     probs[s] <- lambda[s] / sum(lambda[])
   }
 
@@ -226,7 +236,7 @@ model {
     group[i] ~ dcat(probs[])  # Group == site membership
     z[i] ~ dbern(psi)         # Data augmentation variables
     
-    # Detection model
+    # Detection model = intercept + wind + site random effect
     for(j in 1:J){
       logit(p[i,j]) <- alpha0 + alpha1 *  X.det[group[i],3] + S.raneff[group[i]]
       pz[i,j] <- p[i,j] * z[i]
@@ -236,6 +246,9 @@ model {
     y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
     discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
     discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
+    
+    # Log-Likelihood
+    log_lik[i,j] <- logdensity.bern(y[i,j], pz[i,j])
     }
   }
   # Bayesian p-value
@@ -243,149 +256,37 @@ model {
   sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
   p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
 }
-", fill=TRUE, file = "./jags_models/CMR_fm0.txt")
+", fill=TRUE, file = "./jags_models/CMR_mod1.txt")
 # ------------End Model-------------
 
 # Fit Model
-fm.0 <- jags(data = data, 
+fm.1 <- jags(data = data, 
              parameters.to.save = params,
              inits = inits, 
-             model.file = "./jags_models/CMR_fm0.txt",
-             n.iter = 300000,
-             n.burnin = 20000,
-             n.chains = 3, 
-             n.thin = 10,
+             model.file = "./CMR_mod1.txt",
+             n.iter = n.iter,
+             n.burnin = n.burnin,
+             n.chains = n.chains, 
+             n.thin = n.thin,
              parallel = TRUE,
              n.cores = workers,
              DIC = TRUE)  
 
-# Save Environment
-save.image(file = "CMR_JAGs.RData")
- 
+# Bayes p-value
+cat("Bayesian p-value =", fm.1$summary["p_Bayes",1], "\n") 
 
 
+# WAIC
+log_lik_array <- fm.1$sims.list$log_lik  # Extract log-likelihood samples
+log_lik_matrix <- apply(log_lik_array, c(1, 2), sum)  # Summing across J
+waic_result <- loo::waic(log_lik_matrix)
+print(waic_result)
+
+# Leave One Out
+loo_result <- loo::loo(log_lik_matrix)
+print(loo_result)
 
 
-# -------------------------------------------------------
-# Ranking Models
-# -------------------------------------------------------
-
-# Total number of models? fm.0 > fm.? = 
-total_fits <- 20 # change as needed
-dic_values <- numeric(totmods)  # For DIC values
-fitnames <- character(totmods)   # For model names
-
-
-for (i in 0:(total_fits - 1)) {
-  model_name <- paste0("fm.", i)
-  dic_var_name <- paste0("dic_fm.", i)
-  
-  assign(dic_var_name, get(model_name)$DIC)  # Extract DIC
-  dic_values[i + 1] <- get(dic_var_name)  # Store DIC value
-  fitnames[i + 1] <- model_name  # Store model name
-}
-                     
-# Combine into data frame
-DIC_df <- data.frame(Model = fitnames, DIC = dic_values)
-                               
-# Order by DIC (ascending order)
-DIC_df <- DIC_df[order(DIC_df$DIC),]
-
-# Best DIC? Lowest is better
-print(DIC_df)
-
-# Best model?
-bm <- fm.?  
-  
-# Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
-cat("Bayesian p-value =", bm$summary["p_Bayes",1], "\n")
-
-# Check convergence
-bm$Rhat # Rhat: less than 1.1 means good convergence
-mcmcplot(bm$samples)# Visually inspect trace plots
-
-# Model summary
-summary(bm$samples)
-
-
-
-
-# -------------------------------------------------------
-#
-#   Estimating Abundance 
-#
-# -------------------------------------------------------
-
-# Combine chains
-combined_chains <- as.mcmc(do.call(rbind, bm$samples))
-
-# Extract lambda estimates
-lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
-lambda_samples <- combined_chains[ ,lambda_columns]
-
-# mean abundance 
-lambda_tot <- rowSums(lambda_samples)
-
-# Area in hectares
-area <- pi*(200^2)/10000
-
-# Getting density
-dens_df <- as.data.frame(lambda_tot/area)
-
-# Summarize by row
-colnames(dens_df)[1] <- "Density"
-dens_df[,2] <- "PC CMR"
-colnames(dens_df)[2] <- "Model"
-dens_df <- dens_df[, c("Model", "Density")] # Switch the order of columns
-head(dens_df)
-
-# Calculate the 95% Credible Interval
-ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
-
-# Subset the data frame to 95% CI
-dens_df <- subset(dens_df, Density >= ci_bounds[1] & Density <= ci_bounds[2])
-
-
-# Violin plot
-ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
-  geom_violin() +
-  geom_boxplot(aes(x = Model, y = Density),
-               width = 0.2, position = position_dodge(width = 0.8)) +
-  labs(
-    title = "",
-    x = "Model",
-    y = "Density (N/hectare)") +
-  scale_y_continuous(limits = c(0, 10),
-                     breaks = seq(0, 10, by = 5),
-                     labels = scales::comma) +
-  theme_minimal() +
-  theme(
-    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
-    axis.text.y = element_text(size = 12),
-    plot.title = element_text(hjust = 0.5),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    legend.position = "none"
-  )
-
-
-# total density
-mean_dens <- mean(dens_df$Density)
-LCI_dens <- min(dens_df$Density)
-HCI_dens <- max(dens_df$Density)
-
-print(mean_dens)
-print(LCI_dens)
-print(HCI_dens)
-
-# Total abundance
-mean_dens * 1096.698
-LCI_dens * 1096.698
-HCI_dens * 1096.698
-
-
-# Save Environment
-save.image(file = "CMR_JAGs.RData")
 
 
 # End Script
