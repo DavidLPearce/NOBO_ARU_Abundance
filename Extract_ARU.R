@@ -418,7 +418,7 @@ for (row in 1:NROW(site_dat)) {
                                  "3" = "Bareground")) +
     geom_tile(data = optim_chm_df, aes(x = x, y = y), fill = "yellow", alpha = 0.50) + 
     coord_fixed() +
-    labs(title = paste("LULC and CHM (0.5-2m [grey]) Overlay for Site", SiteID )) +
+    labs(title = paste("LULC and CHM (0.5-2m [grey]) Overlay for", SiteID )) +
     theme_minimal() +
     theme(axis.title = element_blank(),
           axis.text = element_blank(),
