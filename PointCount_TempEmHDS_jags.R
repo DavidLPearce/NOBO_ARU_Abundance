@@ -38,6 +38,8 @@ pc_dat$Date <- as.POSIXct(pc_dat$Date, format = "%m/%d/%Y")
 
 # Create a day of year column
 pc_dat$DOY <- yday(pc_dat$Date)
+pc_dat$DOY <- yday(pc_dat$Date)
+pc_dat$DOYscaled <- ((pc_dat$DOY - 1) / 365)
 
 # Remove NAs
 pc_dat_NAom <- na.omit(pc_dat)
@@ -86,7 +88,7 @@ for (i in 1:nrow(pc_dat)) {
   temp_mat[point_num, occasion] <-  pc_dat$Temp.deg.F[i]
   wind_mat[point_num, occasion] <-  pc_dat$Wind.Beau.Code[i]
   sky_mat[point_num, occasion] <-  pc_dat$Sky.Beau.Code[i]
-  doy_mat[point_num, occasion] <-  pc_dat$DOY[i]
+  doy_mat[point_num, occasion] <-  pc_dat$DOYscaled[i]
   
 }# end loop
 
@@ -101,6 +103,39 @@ print(doy_mat)
 Observer_numeric <- matrix(as.numeric(as.factor(obsvr_mat)), 
                            nrow = nrow(obsvr_mat), 
                            ncol = ncol(obsvr_mat))
+
+
+# Extract and scale site covariates for X.det array
+X.det <- array(NA, dim = c(10,  # Number of sites
+                                 4,  # Number of surveys
+                                 5),                      # Number of covariates
+                     dimnames = list(NULL, NULL, c("Observer", "Temp", "Wind", "Sky", "DOY")))
+
+# Assign each covariate to the respective slice in the array
+X.det[, , "Observer"] <- as.matrix(Observer_numeric)
+X.det[, , "Temp"] <- as.matrix(scale(temp_mat))  # Scaled
+X.det[, , "Wind"] <- as.matrix(wind_mat)
+X.det[, , "Sky"] <- as.matrix(sky_mat)
+X.det[, , "DOY"] <- as.matrix(doy_mat)
+print(X.det)
+X.det[, , 1]  # Observer
+X.det[1, 2, 1] # Row 1, column 2, Observer
+                    
+                    
+# Extract and scale site covariates for X.abund
+X.abund <- site_covs[,-c(1:4,25)] 
+X.abund$woody_lrgPInx <- scale(X.abund$woody_lrgPInx)
+X.abund$herb_lrgPInx  <- scale(X.abund$herb_lrgPInx)
+X.abund$woody_AggInx <- scale(X.abund$woody_AggInx)
+X.abund$herb_AggInx  <- scale(X.abund$herb_AggInx)
+X.abund$woody_EdgDens <- scale(X.abund$woody_EdgDens)
+X.abund$herb_EdgDens  <- scale(X.abund$herb_EdgDens)
+X.abund$woody_Pdens <- scale(X.abund$woody_Pdens)
+X.abund$herb_Pdens  <- scale(X.abund$herb_Pdens)
+X.abund$woody_Npatches <- scale(X.abund$woody_Npatches)
+X.abund$herb_Npatches  <- scale(X.abund$herb_Npatches)
+X.abund$mnElev  <- scale(X.abund$mnElev)
+print(X.abund)
 
 # Create a 3D array
 y3d <- array(NA,dim=c(nrow(det_mat), 4, 4) ) # Length of site (10), width of distance bins (4), depth of surveys (4)
@@ -131,14 +166,8 @@ data <- list(y3d = y3d,
              B = B,
              nobs = nobs, 
              area = area,
-             HerbPRP = as.vector(site_covs[,'herb_prp']),
-             WoodyPatch = as.vector(scale(site_covs[,'woody_Parea'])),
-             Observer = Observer_numeric,
-             Temp = scale(temp_mat),
-             Wind = wind_mat,
-             Sky = sky_mat,
-             DOY = as.matrix(scale(doy_mat))
-             )
+             X.det = X.det,
+             X.abund = X.abund)
 
 # Look at structure
 str(data)
@@ -146,24 +175,73 @@ str(data)
 
 # ---------------------------------------------------------- 
 # 
-#       Temporary Emigration Hierarcical Distance Model
+#       Temporary Emigration Hierarchical Distance Model
 # 
 # ----------------------------------------------------------
+
+# -------------------------------------------------------
+# Model Specifications
+# -------------------------------------------------------
+
+## Distributions
+# library(ggfortify)
+# ggdistribution(dunif, seq(0, 1, 0.001), min = 0, max = 1) # p0
+# ggdistribution(dnorm, seq(0, 0.01, 0.0001)) # alpha's and beta's 
+# ggdistribution(dgamma, seq(0, 5, 0.01), shape = 0.1, rate = 0.1) # tau
+
+# Parameters monitored
+params <- c("r",
+            "sigma0",
+            "theta", 
+            "phi0", 
+            "beta0", 
+            "beta1", 
+            "beta2", 
+            "gamma1", 
+            "logit.gamma1",
+            "gamma2",
+            "log_lik",
+            "p_Bayes")
+
+
+
+# Initial values
+inits  <- function() {
+          list(
+            M = apply(y3d, 1, max) + 5,
+            Navail = apply(y3d, c(1, 3), sum),
+            sigma0 = 50,
+            gamma1 = rep(0.5, 4),
+            beta0 = 0,
+            beta1 = 0,
+            beta2 = 0,
+            phi0 = 0.5,
+            theta = 1,
+            r = 5
+          )
+}
+
+
+# MCMC 
+n.iter = 100#300000
+n.burnin = 10#20000
+n.chains = 3 
+n.thin = 10
+
+
+
 
 # ---------------------------------------------------------- 
 #                 Availability
 # ----------------------------------------------------------
 
-
-
 # ----------------------------------------------------------
-# Avail Model Hazad Det Fun
+# Avail Model 1: Observer
 # ----------------------------------------------------------
 cat("
 model {
 
   # Priors
-  # Abundance parameters
   beta0 ~ dnorm(0, 0.01)
   beta1 ~ dnorm(0, 0.01)
   beta2 ~ dnorm(0, 0.01)
@@ -171,10 +249,12 @@ model {
   # Availability parameters
   phi0 ~ dunif(0.1, 0.9)
   logit.phi0 <- log(phi0/(1-phi0))
+
   for(k in 1:4){
     gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
-    logit.gamma1[k]<- log(gamma1[k]/(1-gamma1[k]))
+    logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
   }
+  
   gamma2 ~ dnorm(0, 0.01)
 
   # Detection parameters
@@ -184,112 +264,104 @@ model {
 
   for (s in 1:nsites) {
     for (k in 1:K) {
-      # Availability parameter
-      logit.phi[s,k] <- logit.gamma1[k] + gamma2*DOY[s,k]
-      phi[s,k] <- exp(logit.phi[s,k])/(1+ exp(logit.phi[s,k]))
-      
-      # Distance sampling parameter
+
+      # Availability Model
+      logit.phi[s,k] <- logit.gamma1[k] + gamma2 * X.det[s,k,1]
+      phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
+
+      # Distance Sampling
       log(sigma[s,k]) <- log(sigma0)
       
       # Multinomial cell probability construction
       for(b in 1:nD){
-        #log(g[s,b,k]) <- -midpt[b]*midpt[b]/(2*sigma[s,k]*sigma[s,k]) # half-normal
-        cloglog(g[s,b,k]) <- theta*log(sigma[s,k])  - theta*log(midpt[b])  # hazard
-        f[s,b,k] <- (2*midpt[b]*delta)/(B*B)
-        cellprobs[s,b,k] <- g[s,b,k]*f[s,b,k]
-        cellprobs.cond[s,b,k] <- cellprobs[s,b,k]/sum(cellprobs[s,1:nD,k])
-      
+        # Half-normal or hazard rate detection functions
+        cloglog(g[s,b,k]) <- theta * log(sigma[s,k]) - theta * log(midpt[b])
+        
+        # Density function for distance bins
+        f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
+        cellprobs[s,b,k] <- g[s,b,k] * f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k] / sum(cellprobs[s,1:nD,k])
       }
-      cellprobs[s,nD+1,k]<- 1-sum(cellprobs[s,1:nD,k])
+      
+      # Add probability of undetected individuals
+      cellprobs[s,nD+1,k] <- 1 - sum(cellprobs[s,1:nD,k])
 
-      # Conditional 4-part hierarchical model
+      # Detection probabilities
       pdet[s,k] <- sum(cellprobs[s,1:nD,k])
-      pmarg[s,k] <- pdet[s,k]*phi[s,k]
-      
-      # Part 4
+      pmarg[s,k] <- pdet[s,k] * phi[s,k]
+
+      # Observation model (Multinomial likelihood)
       y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
-      
-      # Part 3: Number of detected individuals
-      nobs[s,k] ~ dbin(pmarg[s,k], M[s])  
-      
-      # Part 2: Number of available individuals
-      Navail[s,k] ~ dbin(phi[s,k],M[s])   
-    } # end k loop
 
-     M[s] ~ dnegbin(prob[s], r)
-     prob[s] <- r/(r+lambda[s])
-     # M[s] ~ dpois(lambda[s]) 
-     
-     # Part 1: Abundance model
-     log(lambda[s]) <- beta0 + beta1*HerbPRP[s] + beta2*WoodyPatch[s]
-     
-  }  # end s loop
+      # Number of detected individuals
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])
 
-  # Derived quantities
-  for(k in 1:K){
-    Davail[k] <- mean(phi[,k])*exp(beta0)/area
+      # Number of available individuals
+      Navail[s,k] ~ dbin(phi[s,k], M[s])
+
+      # Log-Likelihood Calculation
+      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Posterior Predictive Checks (Bayesian p-value)
+      y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      for (b in 1:nD) {
+        discrepancy_obs[s,b,k] <- pow(y3d[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+        discrepancy_rep[s,b,k] <- pow(y3d_rep[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+      }
+      
+    } # End k loop
+
+    # Abundance Model
+    log(lambda[s]) <- beta0 #+ beta1 * HerbPRP[s] + beta2 * WoodyPatch[s]
+
+    # Population size follows a negative binomial distribution
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r / (r + lambda[s])
+  } # End s loop
+
+  # Derived Quantities
+  for (k in 1:K){
+    Davail[k] <- mean(phi[,k]) * exp(beta0) / area
   }
+
   Mtotal <- sum(M[])
-  Dtotal <- exp(beta0)/area
+  Dtotal <- exp(beta0) / area
+
+  # Bayesian p-value Computation
+  sum_obs <- sum(discrepancy_obs[, ,])
+  sum_rep <- sum(discrepancy_rep[, ,])
+  p_Bayes <- step(sum_rep - sum_obs)  # Bayesian p-value
+
 } # End model
-" ,fill=TRUE, file="availmodel0.txt")
-# ----------------------------------------------------------
+", fill=TRUE, file="./jags_models/HDS_mod1.txt")
+# ------------End Model-------------
  
-# Inits
-availinits.0 <- function() {
-  list(
-    M = apply(y3d, 1, max) + 5,
-    Navail = apply(y3d, c(1, 3), sum),
-    sigma0 = 50,
-    gamma1 = rep(0.5, 4),
-    beta0 = 0,
-    beta1 = 0,
-    beta2 = 0,
-    phi0 = 0.5,
-    theta = 1,
-    r = 5
-  )
-}
-
-# Parameters to monitor
-availparams.0 <- c("r",
-                   "sigma0",
-                   "beta0", 
-                   "beta1", 
-                   "beta2", 
-                   "theta", 
-                   "phi0", 
-                   "gamma1", 
-                   "logit.gamma1",
-                   "gamma2"
-                   # "lambda",
-                   # "Mtotal",
-                   # "Dtotal"
-                   )
-
 
 # Run JAGs 
-availfm.hz <- jags(data = data, 
-                  inits = availinits.0, 
-                  parameters.to.save = availparams.0, 
-                  model.file = "availmodel0.txt", 
-                  n.thin = 10,
-                  n.iter = 100000,
-                  n.burnin = 10000,
-                  n.chains = 3, 
-                  parallel = TRUE)
+fm.0 <- jags(data = data, 
+             inits = inits, 
+             parameters.to.save = params, 
+             model.file = "./jags_models/HDS_mod1.txt",
+             n.iter = n.iter,
+             n.burnin = n.burnin,
+             n.chains = n.chains, 
+             n.thin = n.thin,
+             parallel = TRUE)
 
-# DIC
-print(availfm.hz$DIC)
-
-# # model summary
-# summary(availfm.hz)
-# 
-# # Convergence
-# print(availfm.hz$Rhat) # Rhat
-# mcmcplot(availfm.0$samples) # trace plots
+# Bayes p-value
+cat("Bayesian p-value =", fm.0$summary["p_Bayes",1], "\n") 
 
 
+# WAIC
+log_lik_array <- fm.0$sims.list$log_lik  # Extract log-likelihood samples
+log_lik_matrix <- apply(log_lik_array, c(1, 2), sum)  # Summing across J
+waic_result <- loo::waic(log_lik_matrix)
+print(waic_result)
+
+# Leave One Out
+loo_result <- loo::loo(log_lik_matrix)
+print(loo_result)
 
 
 
