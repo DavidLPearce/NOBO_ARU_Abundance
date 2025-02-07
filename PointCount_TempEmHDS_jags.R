@@ -4,16 +4,28 @@
 #
 # -------------------------------------------------------
 
-# Load packages
+
+# Load library
 library(tidyverse)
 library(jagsUI)
 library(coda)
 library(mcmcplots)
+library(loo)
+
+# Check JAGs Version
+# Latest version as of (5 Feb 2025) JAGS 4.3.1.  
+# Download here: https://sourceforge.net/projects/mcmc-jags/
+rjags::jags.version() 
 
 # Set seed, scientific notation options, and working directory
 set.seed(123)
 options(scipen = 9999)
 setwd(".")
+
+# Setting up cores
+Ncores <- parallel::detectCores()
+print(Ncores) # Number of available cores
+workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
 
 # -------------------------------------------------------
 #
@@ -123,7 +135,7 @@ X.det[1, 2, 1] # Row 1, column 2, Observer
                     
                     
 # Extract and scale site covariates for X.abund
-X.abund <- site_covs[,-c(1:4,25)] 
+X.abund <- site_covs[,-c(1:4)] 
 X.abund$woody_lrgPInx <- scale(X.abund$woody_lrgPInx)
 X.abund$herb_lrgPInx  <- scale(X.abund$herb_lrgPInx)
 X.abund$woody_AggInx <- scale(X.abund$woody_AggInx)
@@ -189,42 +201,13 @@ str(data)
 # ggdistribution(dnorm, seq(0, 0.01, 0.0001)) # alpha's and beta's 
 # ggdistribution(dgamma, seq(0, 5, 0.01), shape = 0.1, rate = 0.1) # tau
 
-# Parameters monitored
-params <- c("r",
-            "sigma0",
-            "theta", 
-            "phi0", 
-            "beta0", 
-            "beta1", 
-            "beta2", 
-            "gamma1", 
-            "logit.gamma1",
-            "gamma2",
-            "log_lik",
-            "p_Bayes")
 
+# -------------------
+# MCMC Specifications
+# -------------------
 
-
-# Initial values
-inits  <- function() {
-          list(
-            M = apply(y3d, 1, max) + 5,
-            Navail = apply(y3d, c(1, 3), sum),
-            sigma0 = 50,
-            gamma1 = rep(0.5, 4),
-            beta0 = 0,
-            beta1 = 0,
-            beta2 = 0,
-            phi0 = 0.5,
-            theta = 1,
-            r = 5
-          )
-}
-
-
-# MCMC 
-n.iter = 100#300000
-n.burnin = 10#20000
+n.iter = 300000
+n.burnin = 20000
 n.chains = 3 
 n.thin = 10
 
@@ -232,30 +215,57 @@ n.thin = 10
 
 
 # ---------------------------------------------------------- 
-#                 Availability
+#                 Availability Models
 # ----------------------------------------------------------
 
+# Parameters monitored
+avail.params <- c("r",
+                  "sigma0",
+                  "theta", 
+                  "phi0", 
+                  "beta0", 
+                  "gamma1", 
+                  "logit.gamma1",
+                  "gamma2",
+                  "lambda",
+                  "log_lik",
+                  "p_Bayes")
+
+
+
+# Initial values
+avail.inits  <- function() {
+          list(
+            M = apply(y3d, 1, max) + 5,
+            Navail = apply(y3d, c(1, 3), sum),
+            sigma0 = 50,
+            gamma1 = rep(0.5, 4),
+            gamma2 = 0,
+            beta0 = 0,
+            phi0 = 0.5,
+            theta = 1,
+            r = 5
+          )
+}
+
 # ----------------------------------------------------------
-# Avail Model 1: Observer
+# Avail Model 1: Survey 
 # ----------------------------------------------------------
 cat("
 model {
 
   # Priors
   beta0 ~ dnorm(0, 0.01)
-  beta1 ~ dnorm(0, 0.01)
-  beta2 ~ dnorm(0, 0.01)
 
   # Availability parameters
   phi0 ~ dunif(0.1, 0.9)
   logit.phi0 <- log(phi0/(1-phi0))
-
+  gamma2 ~ dnorm(0, 0.01)
+  
   for(k in 1:4){
     gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
     logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
   }
-  
-  gamma2 ~ dnorm(0, 0.01)
 
   # Detection parameters
   sigma0 ~ dunif(0.1,50)   # Intercept
@@ -266,7 +276,7 @@ model {
     for (k in 1:K) {
 
       # Availability Model
-      logit.phi[s,k] <- logit.gamma1[k] + gamma2 * X.det[s,k,1]
+      logit.phi[s,k] <- logit.gamma1[k]
       phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
 
       # Distance Sampling
@@ -313,7 +323,7 @@ model {
     } # End k loop
 
     # Abundance Model
-    log(lambda[s]) <- beta0 #+ beta1 * HerbPRP[s] + beta2 * WoodyPatch[s]
+    log(lambda[s]) <- beta0
 
     # Population size follows a negative binomial distribution
     M[s] ~ dnegbin(prob[s], r)
@@ -325,8 +335,119 @@ model {
     Davail[k] <- mean(phi[,k]) * exp(beta0) / area
   }
 
-  Mtotal <- sum(M[])
-  Dtotal <- exp(beta0) / area
+  # Bayesian p-value Computation
+  sum_obs <- sum(discrepancy_obs[, ,])
+  sum_rep <- sum(discrepancy_rep[, ,])
+  p_Bayes <- step(sum_rep - sum_obs)  # Bayesian p-value
+
+} # End model
+", fill=TRUE, file="./jags_models/HDS_availmod1.txt")
+# ------------End Model-------------
+
+
+# Run JAGs 
+availfm.1 <- jags(data = data, 
+             inits = avail.inits, 
+             parameters.to.save = avail.params, 
+             model.file = "./jags_models/HDS_availmod1.txt",
+             n.iter = n.iter,
+             n.burnin = n.burnin,
+             n.chains = n.chains, 
+             n.thin = n.thin,
+             parallel = TRUE,
+             n.cores = workers,
+             DIC = TRUE)
+
+
+# Save Environment
+save.image(file = "./HDS_JAGs.RData")
+
+# ----------------------------------------------------------
+# Avail Model 2: Surveys + Temperature
+# ----------------------------------------------------------
+cat("
+model {
+
+  # Priors
+  beta0 ~ dnorm(0, 0.01)
+
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  gamma2 ~ dnorm(0, 0.01)
+  
+  for(k in 1:4){
+    gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
+    logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
+  }
+
+  # Detection parameters
+  sigma0 ~ dunif(0.1,50)   # Intercept
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+
+      # Availability Model
+      logit.phi[s,k] <- logit.gamma1[k] + gamma2 * X.det[s,k,2]
+      phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
+
+      # Distance Sampling
+      log(sigma[s,k]) <- log(sigma0)
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        # Half-normal or hazard rate detection functions
+        cloglog(g[s,b,k]) <- theta * log(sigma[s,k]) - theta * log(midpt[b])
+        
+        # Density function for distance bins
+        f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
+        cellprobs[s,b,k] <- g[s,b,k] * f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k] / sum(cellprobs[s,1:nD,k])
+      }
+      
+      # Add probability of undetected individuals
+      cellprobs[s,nD+1,k] <- 1 - sum(cellprobs[s,1:nD,k])
+
+      # Detection probabilities
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k] * phi[s,k]
+
+      # Observation model (Multinomial likelihood)
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Number of detected individuals
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])
+
+      # Number of available individuals
+      Navail[s,k] ~ dbin(phi[s,k], M[s])
+
+      # Log-Likelihood Calculation
+      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Posterior Predictive Checks (Bayesian p-value)
+      y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      for (b in 1:nD) {
+        discrepancy_obs[s,b,k] <- pow(y3d[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+        discrepancy_rep[s,b,k] <- pow(y3d_rep[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+      }
+      
+    } # End k loop
+
+    # Abundance Model
+    log(lambda[s]) <- beta0 
+
+    # Population size follows a negative binomial distribution
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r / (r + lambda[s])
+  } # End s loop
+
+  # Derived Quantities
+  for (k in 1:K){
+    Davail[k] <- mean(phi[,k]) * exp(beta0) / area
+  }
 
   # Bayesian p-value Computation
   sum_obs <- sum(discrepancy_obs[, ,])
@@ -334,34 +455,1096 @@ model {
   p_Bayes <- step(sum_rep - sum_obs)  # Bayesian p-value
 
 } # End model
-", fill=TRUE, file="./jags_models/HDS_mod1.txt")
+", fill=TRUE, file="./jags_models/HDS_availmod2.txt")
 # ------------End Model-------------
- 
+
 
 # Run JAGs 
-fm.0 <- jags(data = data, 
-             inits = inits, 
-             parameters.to.save = params, 
-             model.file = "./jags_models/HDS_mod1.txt",
-             n.iter = n.iter,
-             n.burnin = n.burnin,
-             n.chains = n.chains, 
-             n.thin = n.thin,
-             parallel = TRUE)
+availfm.2 <- jags(data = data, 
+                  inits = avail.inits, 
+                  parameters.to.save = avail.params, 
+                  model.file = "./jags_models/HDS_availmod2.txt",
+                  n.iter = n.iter,
+                  n.burnin = n.burnin,
+                  n.chains = n.chains, 
+                  n.thin = n.thin,
+                  parallel = TRUE,
+                  n.cores = workers,
+                  DIC = TRUE)
 
-# Bayes p-value
-cat("Bayesian p-value =", fm.0$summary["p_Bayes",1], "\n") 
+
+# Save Environment
+save.image(file = "./HDS_JAGs.RData")
 
 
-# WAIC
-log_lik_array <- fm.0$sims.list$log_lik  # Extract log-likelihood samples
-log_lik_matrix <- apply(log_lik_array, c(1, 2), sum)  # Summing across J
-waic_result <- loo::waic(log_lik_matrix)
-print(waic_result)
+# ----------------------------------------------------------
+# Avail Model 3: Surveys + Wind
+# ----------------------------------------------------------
+cat("
+model {
 
-# Leave One Out
-loo_result <- loo::loo(log_lik_matrix)
-print(loo_result)
+  # Priors
+  beta0 ~ dnorm(0, 0.01)
+
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  gamma2 ~ dnorm(0, 0.01)
+  
+  for(k in 1:4){
+    gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
+    logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
+  }
+
+  # Detection parameters
+  sigma0 ~ dunif(0.1,50)   # Intercept
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+
+      # Availability Model
+      logit.phi[s,k] <- logit.gamma1[k] + gamma2 * X.det[s,k,2]
+      phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
+
+      # Distance Sampling
+      log(sigma[s,k]) <- log(sigma0)
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        # Half-normal or hazard rate detection functions
+        cloglog(g[s,b,k]) <- theta * log(sigma[s,k]) - theta * log(midpt[b])
+        
+        # Density function for distance bins
+        f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
+        cellprobs[s,b,k] <- g[s,b,k] * f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k] / sum(cellprobs[s,1:nD,k])
+      }
+      
+      # Add probability of undetected individuals
+      cellprobs[s,nD+1,k] <- 1 - sum(cellprobs[s,1:nD,k])
+
+      # Detection probabilities
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k] * phi[s,k]
+
+      # Observation model (Multinomial likelihood)
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Number of detected individuals
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])
+
+      # Number of available individuals
+      Navail[s,k] ~ dbin(phi[s,k], M[s])
+
+      # Log-Likelihood Calculation
+      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Posterior Predictive Checks (Bayesian p-value)
+      y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      for (b in 1:nD) {
+        discrepancy_obs[s,b,k] <- pow(y3d[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+        discrepancy_rep[s,b,k] <- pow(y3d_rep[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+      }
+      
+    } # End k loop
+
+    # Abundance Model
+    log(lambda[s]) <- beta0 
+
+    # Population size follows a negative binomial distribution
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r / (r + lambda[s])
+  } # End s loop
+
+  # Derived Quantities
+  for (k in 1:K){
+    Davail[k] <- mean(phi[,k]) * exp(beta0) / area
+  }
+
+  # Bayesian p-value Computation
+  sum_obs <- sum(discrepancy_obs[, ,])
+  sum_rep <- sum(discrepancy_rep[, ,])
+  p_Bayes <- step(sum_rep - sum_obs)  # Bayesian p-value
+
+} # End model
+", fill=TRUE, file="./jags_models/HDS_availmod3.txt")
+# ------------End Model-------------
+
+
+# Run JAGs 
+availfm.3 <- jags(data = data, 
+                  inits = avail.inits, 
+                  parameters.to.save = avail.params, 
+                  model.file = "./jags_models/HDS_availmod3.txt",
+                  n.iter = n.iter,
+                  n.burnin = n.burnin,
+                  n.chains = n.chains, 
+                  n.thin = n.thin,
+                  parallel = TRUE,
+                  n.cores = workers,
+                  DIC = TRUE)
+
+
+# Save Environment
+save.image(file = "./HDS_JAGs.RData")
+
+
+
+# ----------------------------------------------------------
+# Avail Model 4: Surveys + Sky
+# ----------------------------------------------------------
+cat("
+model {
+
+  # Priors
+  beta0 ~ dnorm(0, 0.01)
+
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  gamma2 ~ dnorm(0, 0.01)
+  
+  for(k in 1:4){
+    gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
+    logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
+  }
+
+  # Detection parameters
+  sigma0 ~ dunif(0.1,50)   # Intercept
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+
+      # Availability Model
+      logit.phi[s,k] <- logit.gamma1[k] + gamma2 * X.det[s,k,3]
+      phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
+
+      # Distance Sampling
+      log(sigma[s,k]) <- log(sigma0)
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        # Half-normal or hazard rate detection functions
+        cloglog(g[s,b,k]) <- theta * log(sigma[s,k]) - theta * log(midpt[b])
+        
+        # Density function for distance bins
+        f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
+        cellprobs[s,b,k] <- g[s,b,k] * f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k] / sum(cellprobs[s,1:nD,k])
+      }
+      
+      # Add probability of undetected individuals
+      cellprobs[s,nD+1,k] <- 1 - sum(cellprobs[s,1:nD,k])
+
+      # Detection probabilities
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k] * phi[s,k]
+
+      # Observation model (Multinomial likelihood)
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Number of detected individuals
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])
+
+      # Number of available individuals
+      Navail[s,k] ~ dbin(phi[s,k], M[s])
+
+      # Log-Likelihood Calculation
+      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Posterior Predictive Checks (Bayesian p-value)
+      y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      for (b in 1:nD) {
+        discrepancy_obs[s,b,k] <- pow(y3d[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+        discrepancy_rep[s,b,k] <- pow(y3d_rep[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+      }
+      
+    } # End k loop
+
+    # Abundance Model
+    log(lambda[s]) <- beta0 
+
+    # Population size follows a negative binomial distribution
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r / (r + lambda[s])
+  } # End s loop
+
+  # Derived Quantities
+  for (k in 1:K){
+    Davail[k] <- mean(phi[,k]) * exp(beta0) / area
+  }
+
+  # Bayesian p-value Computation
+  sum_obs <- sum(discrepancy_obs[, ,])
+  sum_rep <- sum(discrepancy_rep[, ,])
+  p_Bayes <- step(sum_rep - sum_obs)  # Bayesian p-value
+
+} # End model
+", fill=TRUE, file="./jags_models/HDS_availmod4.txt")
+# ------------End Model-------------
+
+
+# Run JAGs 
+availfm.4 <- jags(data = data, 
+                  inits = avail.inits, 
+                  parameters.to.save = avail.params, 
+                  model.file = "./jags_models/HDS_availmod4.txt",
+                  n.iter = n.iter,
+                  n.burnin = n.burnin,
+                  n.chains = n.chains, 
+                  n.thin = n.thin,
+                  parallel = TRUE,
+                  n.cores = workers,
+                  DIC = TRUE)
+
+
+# Save Environment
+save.image(file = "./HDS_JAGs.RData")
+
+# ----------------------------------------------------------
+# Ranking Availability Models 
+# ----------------------------------------------------------
+
+# Total number of models
+avail_fits <- 4  # Adjust as needed
+avail_waic_values <- numeric(avail_fits)  # For WAIC values
+avail_fitnames <- character(avail_fits)   # For model names
+for (i in 1:(avail_fits)) {
+  model_name <- paste0("availfm.", i)
+  
+  # Extract log-likelihood samples
+  log_lik_array <- get(model_name)$sims.list$log_lik # Extract log-likelihood samples
+  log_lik_matrix <- apply(log_lik_array, c(1, 2), sum)  # Summing across J
+  
+  # Compute WAIC
+  waic_result <- loo::waic(log_lik_matrix)
+  
+  # Store WAIC values
+  avail_waic_values[i] <- waic_result$estimates[3,1]
+  avail_fitnames[i] <- model_name  # Store model name
+}
+
+# Combine into data frame
+avail_WAIC_df <- data.frame(Model = avail_fitnames, WAIC = avail_waic_values)
+
+# Order by WAIC (ascending order, better fit first)
+avail_WAIC_df <- avail_WAIC_df[order(avail_WAIC_df$WAIC),]
+
+# Print results
+print(avail_WAIC_df)
+
+# Best model?
+avail_bm <- get(avail_WAIC_df[1,1]) 
+
+# Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+cat("Bayesian p-value =", avail_bm$summary["p_Bayes",1], "\n")
+
+# Check convergence
+avail_bm$Rhat # Rhat: less than 1.1 means good convergence
+mcmcplot(avail_bm$samples)# Visually inspect trace plots
+
+# Model summary
+summary(avail_bm$samples)
+
+# Save Environment
+save.image(file = "./CMR_JAGs.RData")
+
+
+
+# ---------------------------------------------------------- 
+#                 Detection Models
+# ----------------------------------------------------------
+
+# Parameters monitored
+det.params <- c("r",
+                  "sigma0",
+                  "theta", 
+                  "phi0", 
+                  "beta0", 
+                  "gamma1", 
+                  "logit.gamma1",
+                  "gamma2",
+                  "alpha1",
+                  "lambda",
+                  "log_lik",
+                  "p_Bayes")
+
+
+
+# Initial values
+det.inits  <- function() {
+  list(
+    M = apply(y3d, 1, max) + 5,
+    Navail = apply(y3d, c(1, 3), sum),
+    sigma0 = 50,
+    gamma1 = rep(0.5, 4),
+    gamma2 = 0,
+    beta0 = 0,
+    alpha1 = 0,
+    phi0 = 0.5,
+    theta = 1,
+    r = 5
+  )
+}
+
+
+# ----------------------------------------------------------
+# Det Model 0: Null 
+# ----------------------------------------------------------
+cat("
+model {
+
+  # Priors
+  beta0 ~ dnorm(0, 0.01)
+
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  gamma2 ~ dnorm(0, 0.01)
+  
+  for(k in 1:4){
+    gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
+    logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
+  }
+
+  # Detection parameters
+  sigma0 ~ dunif(0.1,50)   # Intercept
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+
+      # Availability Model
+      logit.phi[s,k] <- logit.gamma1[k]
+      phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
+
+      # Distance Sampling
+      log(sigma[s,k]) <- log(sigma0)
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        # Half-normal or hazard rate detection functions
+        cloglog(g[s,b,k]) <- theta * log(sigma[s,k]) - theta * log(midpt[b])
+        
+        # Density function for distance bins
+        f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
+        cellprobs[s,b,k] <- g[s,b,k] * f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k] / sum(cellprobs[s,1:nD,k])
+      }
+      
+      # Add probability of undetected individuals
+      cellprobs[s,nD+1,k] <- 1 - sum(cellprobs[s,1:nD,k])
+
+      # Detection probabilities
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k] * phi[s,k]
+
+      # Observation model (Multinomial likelihood)
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Number of detected individuals
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])
+
+      # Number of available individuals
+      Navail[s,k] ~ dbin(phi[s,k], M[s])
+
+      # Log-Likelihood Calculation
+      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Posterior Predictive Checks (Bayesian p-value)
+      y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      for (b in 1:nD) {
+        discrepancy_obs[s,b,k] <- pow(y3d[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+        discrepancy_rep[s,b,k] <- pow(y3d_rep[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+      }
+      
+    } # End k loop
+
+    # Abundance Model
+    log(lambda[s]) <- beta0
+
+    # Population size follows a negative binomial distribution
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r / (r + lambda[s])
+  } # End s loop
+
+  # Derived Quantities
+  for (k in 1:K){
+    Davail[k] <- mean(phi[,k]) * exp(beta0) / area
+  }
+
+  # Bayesian p-value Computation
+  sum_obs <- sum(discrepancy_obs[, ,])
+  sum_rep <- sum(discrepancy_rep[, ,])
+  p_Bayes <- step(sum_rep - sum_obs)  # Bayesian p-value
+
+} # End model
+", fill=TRUE, file="./jags_models/HDS_detmod0.txt")
+# ------------End Model-------------
+
+
+# Run JAGs 
+detfm.0 <- jags(data = data, 
+                  inits = det.inits, 
+                  parameters.to.save = det.params, 
+                  model.file = "./jags_models/HDS_detmod0.txt",
+                  n.iter = n.iter,
+                  n.burnin = n.burnin,
+                  n.chains = n.chains, 
+                  n.thin = n.thin,
+                  parallel = TRUE,
+                  n.cores = workers,
+                  DIC = TRUE)
+
+
+# Save Environment
+save.image(file = "./HDS_JAGs.RData")
+
+
+
+# ----------------------------------------------------------
+# Det Model 1: Observer
+# ----------------------------------------------------------
+cat("
+model {
+
+  # Priors
+  beta0 ~ dnorm(0, 0.01)
+
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  gamma2 ~ dnorm(0, 0.01)
+  
+  for(k in 1:4){
+    gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
+    logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
+  }
+
+  # Detection parameters
+  sigma0 ~ dunif(0.1,50)   # Intercept
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+  alpha1 ~ dnorm(0, 0.01)
+
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+
+      # Availability Model
+      logit.phi[s,k] <- logit.gamma1[k]
+      phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
+
+      # Distance Sampling
+      log(sigma[s,k]) <- log(sigma0) + alpha1*X.det[s,k,1]
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        # Half-normal or hazard rate detection functions
+        cloglog(g[s,b,k]) <- theta * log(sigma[s,k]) - theta * log(midpt[b])
+        
+        # Density function for distance bins
+        f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
+        cellprobs[s,b,k] <- g[s,b,k] * f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k] / sum(cellprobs[s,1:nD,k])
+      }
+      
+      # Add probability of undetected individuals
+      cellprobs[s,nD+1,k] <- 1 - sum(cellprobs[s,1:nD,k])
+
+      # Detection probabilities
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k] * phi[s,k]
+
+      # Observation model (Multinomial likelihood)
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Number of detected individuals
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])
+
+      # Number of available individuals
+      Navail[s,k] ~ dbin(phi[s,k], M[s])
+
+      # Log-Likelihood Calculation
+      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Posterior Predictive Checks (Bayesian p-value)
+      y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      for (b in 1:nD) {
+        discrepancy_obs[s,b,k] <- pow(y3d[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+        discrepancy_rep[s,b,k] <- pow(y3d_rep[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+      }
+      
+    } # End k loop
+
+    # Abundance Model
+    log(lambda[s]) <- beta0
+
+    # Population size follows a negative binomial distribution
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r / (r + lambda[s])
+  } # End s loop
+
+  # Derived Quantities
+  for (k in 1:K){
+    Davail[k] <- mean(phi[,k]) * exp(beta0) / area
+  }
+
+  # Bayesian p-value Computation
+  sum_obs <- sum(discrepancy_obs[, ,])
+  sum_rep <- sum(discrepancy_rep[, ,])
+  p_Bayes <- step(sum_rep - sum_obs)  # Bayesian p-value
+
+} # End model
+", fill=TRUE, file="./jags_models/HDS_detmod1.txt")
+# ------------End Model-------------
+
+
+# Run JAGs 
+detfm.1 <- jags(data = data, 
+                inits = det.inits, 
+                parameters.to.save = det.params, 
+                model.file = "./jags_models/HDS_detmod1.txt",
+                n.iter = n.iter,
+                n.burnin = n.burnin,
+                n.chains = n.chains, 
+                n.thin = n.thin,
+                parallel = TRUE,
+                n.cores = workers,
+                DIC = TRUE)
+
+
+# Save Environment
+save.image(file = "./HDS_JAGs.RData")
+
+
+
+
+# ----------------------------------------------------------
+# Det Model 2: Temperature
+# ----------------------------------------------------------
+cat("
+model {
+
+  # Priors
+  beta0 ~ dnorm(0, 0.01)
+
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  gamma2 ~ dnorm(0, 0.01)
+  
+  for(k in 1:4){
+    gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
+    logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
+  }
+
+  # Detection parameters
+  sigma0 ~ dunif(0.1,50)   # Intercept
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+  alpha1 ~ dnorm(0, 0.01)
+
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+
+      # Availability Model
+      logit.phi[s,k] <- logit.gamma1[k]
+      phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
+
+      # Distance Sampling
+      log(sigma[s,k]) <- log(sigma0) + alpha1*X.det[s,k,2]
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        # Half-normal or hazard rate detection functions
+        cloglog(g[s,b,k]) <- theta * log(sigma[s,k]) - theta * log(midpt[b])
+        
+        # Density function for distance bins
+        f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
+        cellprobs[s,b,k] <- g[s,b,k] * f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k] / sum(cellprobs[s,1:nD,k])
+      }
+      
+      # Add probability of undetected individuals
+      cellprobs[s,nD+1,k] <- 1 - sum(cellprobs[s,1:nD,k])
+
+      # Detection probabilities
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k] * phi[s,k]
+
+      # Observation model (Multinomial likelihood)
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Number of detected individuals
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])
+
+      # Number of available individuals
+      Navail[s,k] ~ dbin(phi[s,k], M[s])
+
+      # Log-Likelihood Calculation
+      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Posterior Predictive Checks (Bayesian p-value)
+      y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      for (b in 1:nD) {
+        discrepancy_obs[s,b,k] <- pow(y3d[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+        discrepancy_rep[s,b,k] <- pow(y3d_rep[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+      }
+      
+    } # End k loop
+
+    # Abundance Model
+    log(lambda[s]) <- beta0
+
+    # Population size follows a negative binomial distribution
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r / (r + lambda[s])
+  } # End s loop
+
+  # Derived Quantities
+  for (k in 1:K){
+    Davail[k] <- mean(phi[,k]) * exp(beta0) / area
+  }
+
+  # Bayesian p-value Computation
+  sum_obs <- sum(discrepancy_obs[, ,])
+  sum_rep <- sum(discrepancy_rep[, ,])
+  p_Bayes <- step(sum_rep - sum_obs)  # Bayesian p-value
+
+} # End model
+", fill=TRUE, file="./jags_models/HDS_detmod2.txt")
+# ------------End Model-------------
+
+
+# Run JAGs 
+detfm.2 <- jags(data = data, 
+                inits = det.inits, 
+                parameters.to.save = det.params, 
+                model.file = "./jags_models/HDS_detmod2.txt",
+                n.iter = n.iter,
+                n.burnin = n.burnin,
+                n.chains = n.chains, 
+                n.thin = n.thin,
+                parallel = TRUE,
+                n.cores = workers,
+                DIC = TRUE)
+
+
+# Save Environment
+save.image(file = "./HDS_JAGs.RData")
+
+
+
+
+# ----------------------------------------------------------
+# Det Model 3: Sky
+# ----------------------------------------------------------
+cat("
+model {
+
+  # Priors
+  beta0 ~ dnorm(0, 0.01)
+
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  gamma2 ~ dnorm(0, 0.01)
+  
+  for(k in 1:4){
+    gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
+    logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
+  }
+
+  # Detection parameters
+  sigma0 ~ dunif(0.1,50)   # Intercept
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+  alpha1 ~ dnorm(0, 0.01)
+
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+
+      # Availability Model
+      logit.phi[s,k] <- logit.gamma1[k]
+      phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
+
+      # Distance Sampling
+      log(sigma[s,k]) <- log(sigma0) + alpha1*X.det[s,k,3]
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        # Half-normal or hazard rate detection functions
+        cloglog(g[s,b,k]) <- theta * log(sigma[s,k]) - theta * log(midpt[b])
+        
+        # Density function for distance bins
+        f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
+        cellprobs[s,b,k] <- g[s,b,k] * f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k] / sum(cellprobs[s,1:nD,k])
+      }
+      
+      # Add probability of undetected individuals
+      cellprobs[s,nD+1,k] <- 1 - sum(cellprobs[s,1:nD,k])
+
+      # Detection probabilities
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k] * phi[s,k]
+
+      # Observation model (Multinomial likelihood)
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Number of detected individuals
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])
+
+      # Number of available individuals
+      Navail[s,k] ~ dbin(phi[s,k], M[s])
+
+      # Log-Likelihood Calculation
+      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Posterior Predictive Checks (Bayesian p-value)
+      y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      for (b in 1:nD) {
+        discrepancy_obs[s,b,k] <- pow(y3d[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+        discrepancy_rep[s,b,k] <- pow(y3d_rep[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+      }
+      
+    } # End k loop
+
+    # Abundance Model
+    log(lambda[s]) <- beta0
+
+    # Population size follows a negative binomial distribution
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r / (r + lambda[s])
+  } # End s loop
+
+  # Derived Quantities
+  for (k in 1:K){
+    Davail[k] <- mean(phi[,k]) * exp(beta0) / area
+  }
+
+  # Bayesian p-value Computation
+  sum_obs <- sum(discrepancy_obs[, ,])
+  sum_rep <- sum(discrepancy_rep[, ,])
+  p_Bayes <- step(sum_rep - sum_obs)  # Bayesian p-value
+
+} # End model
+", fill=TRUE, file="./jags_models/HDS_detmod3.txt")
+# ------------End Model-------------
+
+
+# Run JAGs 
+detfm.3 <- jags(data = data, 
+                inits = det.inits, 
+                parameters.to.save = det.params, 
+                model.file = "./jags_models/HDS_detmod3.txt",
+                n.iter = n.iter,
+                n.burnin = n.burnin,
+                n.chains = n.chains, 
+                n.thin = n.thin,
+                parallel = TRUE,
+                n.cores = workers,
+                DIC = TRUE)
+
+
+# Save Environment
+save.image(file = "./HDS_JAGs.RData")
+
+# ----------------------------------------------------------
+# Det Model 4: DOY
+# ----------------------------------------------------------
+cat("
+model {
+
+  # Priors
+  beta0 ~ dnorm(0, 0.01)
+
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  gamma2 ~ dnorm(0, 0.01)
+  
+  for(k in 1:4){
+    gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
+    logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
+  }
+
+  # Detection parameters
+  sigma0 ~ dunif(0.1,50)   # Intercept
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+  alpha1 ~ dnorm(0, 0.01)
+
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+
+      # Availability Model
+      logit.phi[s,k] <- logit.gamma1[k]
+      phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
+
+      # Distance Sampling
+      log(sigma[s,k]) <- log(sigma0) + alpha1*X.det[s,k,4]
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        # Half-normal or hazard rate detection functions
+        cloglog(g[s,b,k]) <- theta * log(sigma[s,k]) - theta * log(midpt[b])
+        
+        # Density function for distance bins
+        f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
+        cellprobs[s,b,k] <- g[s,b,k] * f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k] / sum(cellprobs[s,1:nD,k])
+      }
+      
+      # Add probability of undetected individuals
+      cellprobs[s,nD+1,k] <- 1 - sum(cellprobs[s,1:nD,k])
+
+      # Detection probabilities
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k] * phi[s,k]
+
+      # Observation model (Multinomial likelihood)
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Number of detected individuals
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])
+
+      # Number of available individuals
+      Navail[s,k] ~ dbin(phi[s,k], M[s])
+
+      # Log-Likelihood Calculation
+      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Posterior Predictive Checks (Bayesian p-value)
+      y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      for (b in 1:nD) {
+        discrepancy_obs[s,b,k] <- pow(y3d[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+        discrepancy_rep[s,b,k] <- pow(y3d_rep[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+      }
+      
+    } # End k loop
+
+    # Abundance Model
+    log(lambda[s]) <- beta0
+
+    # Population size follows a negative binomial distribution
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r / (r + lambda[s])
+  } # End s loop
+
+  # Derived Quantities
+  for (k in 1:K){
+    Davail[k] <- mean(phi[,k]) * exp(beta0) / area
+  }
+
+  # Bayesian p-value Computation
+  sum_obs <- sum(discrepancy_obs[, ,])
+  sum_rep <- sum(discrepancy_rep[, ,])
+  p_Bayes <- step(sum_rep - sum_obs)  # Bayesian p-value
+
+} # End model
+", fill=TRUE, file="./jags_models/HDS_detmod4.txt")
+# ------------End Model-------------
+
+
+# Run JAGs 
+detfm.4 <- jags(data = data, 
+                inits = det.inits, 
+                parameters.to.save = det.params, 
+                model.file = "./jags_models/HDS_detmod4.txt",
+                n.iter = n.iter,
+                n.burnin = n.burnin,
+                n.chains = n.chains, 
+                n.thin = n.thin,
+                parallel = TRUE,
+                n.cores = workers,
+                DIC = TRUE)
+
+
+# Save Environment
+save.image(file = "./HDS_JAGs.RData")
+
+
+# ----------------------------------------------------------
+# Det Model 5: Vegetation Density
+# ----------------------------------------------------------
+cat("
+model {
+
+  # Priors
+  beta0 ~ dnorm(0, 0.01)
+
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  gamma2 ~ dnorm(0, 0.01)
+  
+  for(k in 1:4){
+    gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
+    logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
+  }
+
+  # Detection parameters
+  sigma0 ~ dunif(0.1,50)   # Intercept
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+  alpha1 ~ dnorm(0, 0.01)
+
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+
+      # Availability Model
+      logit.phi[s,k] <- logit.gamma1[k]
+      phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
+
+      # Distance Sampling
+      log(sigma[s,k]) <- log(sigma0) + alpha1*X.abund[s,21]
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        # Half-normal or hazard rate detection functions
+        cloglog(g[s,b,k]) <- theta * log(sigma[s,k]) - theta * log(midpt[b])
+        
+        # Density function for distance bins
+        f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
+        cellprobs[s,b,k] <- g[s,b,k] * f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k] / sum(cellprobs[s,1:nD,k])
+      }
+      
+      # Add probability of undetected individuals
+      cellprobs[s,nD+1,k] <- 1 - sum(cellprobs[s,1:nD,k])
+
+      # Detection probabilities
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k] * phi[s,k]
+
+      # Observation model (Multinomial likelihood)
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Number of detected individuals
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])
+
+      # Number of available individuals
+      Navail[s,k] ~ dbin(phi[s,k], M[s])
+
+      # Log-Likelihood Calculation
+      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Posterior Predictive Checks (Bayesian p-value)
+      y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      for (b in 1:nD) {
+        discrepancy_obs[s,b,k] <- pow(y3d[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+        discrepancy_rep[s,b,k] <- pow(y3d_rep[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+      }
+      
+    } # End k loop
+
+    # Abundance Model
+    log(lambda[s]) <- beta0
+
+    # Population size follows a negative binomial distribution
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r / (r + lambda[s])
+  } # End s loop
+
+  # Derived Quantities
+  for (k in 1:K){
+    Davail[k] <- mean(phi[,k]) * exp(beta0) / area
+  }
+
+  # Bayesian p-value Computation
+  sum_obs <- sum(discrepancy_obs[, ,])
+  sum_rep <- sum(discrepancy_rep[, ,])
+  p_Bayes <- step(sum_rep - sum_obs)  # Bayesian p-value
+
+} # End model
+", fill=TRUE, file="./jags_models/HDS_detmod5.txt")
+# ------------End Model-------------
+
+
+# Run JAGs 
+detfm.5 <- jags(data = data, 
+                inits = det.inits, 
+                parameters.to.save = det.params, 
+                model.file = "./jags_models/HDS_detmod5.txt",
+                n.iter = n.iter,
+                n.burnin = n.burnin,
+                n.chains = n.chains, 
+                n.thin = n.thin,
+                parallel = TRUE,
+                n.cores = workers,
+                DIC = TRUE)
+
+
+# Save Environment
+save.image(file = "./HDS_JAGs.RData")
+
+
+
+# Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+cat("Bayesian p-value =", detfm.5$summary["p_Bayes",1], "\n")
+
+
+# ----------------------------------------------------------
+# Ranking Detection Models 
+# ----------------------------------------------------------
+
+# Total number of models
+det_fits <- 5  # Adjust as needed
+det_waic_values <- numeric(det_fits)  # For WAIC values
+det_fitnames <- character(det_fits)   # For model names
+for (i in 0:(det_fits - 1)) {
+  model_name <- paste0("detfm.", i)
+  
+  # Extract log-likelihood samples
+  log_lik_array <- get(model_name)$sims.list$log_lik # Extract log-likelihood samples
+  log_lik_matrix <- apply(log_lik_array, c(1, 2), sum)  # Summing across J
+  
+  # Compute WAIC
+  waic_result <- loo::waic(log_lik_matrix)
+  
+  # Store WAIC values
+  det_waic_values[i + 1] <- waic_result$estimates[3,1]
+  det_fitnames[i + 1] <- model_name  # Store model name
+}
+
+# Combine into data frame
+det_WAIC_df <- data.frame(Model = det_fitnames, WAIC = det_waic_values)
+
+# Order by WAIC (ascending order, better fit first)
+det_WAIC_df <- det_WAIC_df[order(det_WAIC_df$WAIC),]
+
+# Print results
+print(det_WAIC_df)
+
+# Best model?
+det_bm <- get(det_WAIC_df[1,1]) 
+
+# Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+cat("Bayesian p-value =", det_bm$summary["p_Bayes",1], "\n")
+
+# Check convergence
+det_bm$Rhat # Rhat: less than 1.1 means good convergence
+mcmcplot(det_bm$samples)# Visually inspect trace plots
+
+# Model summary
+summary(det_bm$samples)
+
+# Save Environment
+save.image(file = "./CMR_JAGs.RData")
 
 
 
