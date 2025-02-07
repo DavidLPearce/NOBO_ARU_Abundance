@@ -25,7 +25,7 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
+workers <- Ncores * 0.80 # For low background use 80%, for medium use 50% of Ncores
 
 # -------------------------------------------------------
 #
@@ -56,8 +56,11 @@ pc_dat$DOYscaled <- ((pc_dat$DOY - 1) / 365)
 # Remove NAs
 pc_dat_NAom <- na.omit(pc_dat)
 
-# creating a matrix that is 4 Surveys * 4 Distance bins wide and 10 rows long
-det_mat <- matrix(0, nrow = 10, ncol = 16)
+# Truncating distance at Bin 4 
+pc_dat_NAom <- pc_dat_NAom[which(pc_dat_NAom$DistBin != 4),]
+
+# creating a matrix that is 4 Surveys * 3 Distance bins wide and 10 rows long
+det_mat <- matrix(0, nrow = 10, ncol = 12)
 
 # adding a column to state a NOBO was detected, a count column
 pc_dat_NAom$count <- 1
@@ -150,23 +153,24 @@ X.abund$mnElev  <- scale(X.abund$mnElev)
 print(X.abund)
 
 # Create a 3D array
-y3d <- array(NA,dim=c(nrow(det_mat), 4, 4) ) # Length of site (10), width of distance bins (4), depth of surveys (4)
+y3d <- array(NA,dim=c(nrow(det_mat), 3, 4) ) # Length of site (10), width of distance bins (3), depth of surveys (4)
 
 # Fill array
-y3d[,,1] <- det_mat[,1:4]    
-y3d[,,2] <- det_mat[,5:8]  
-y3d[,,3] <- det_mat[,9:12]   
-y3d[,,4] <- det_mat[,13:16]
+y3d[,,1] <- det_mat[,1:3]    
+y3d[,,2] <- det_mat[,4:6]  
+y3d[,,3] <- det_mat[,7:9]   
+y3d[,,4] <- det_mat[,10:12]
 
 # Constances 
 K <- 4                          # Number of primary occasions
 nsites <- nrow(det_mat)         # Number of sites
-nD <- 4                         # Number of distance classes
+nD <- 3                         # Number of distance classes
 delta <- 50                     # Class width
-B <- 200                        # Maximum distance
+B <- 150                        # Maximum distance
 midpt <- seq(delta/2, B, delta) # Class midpoint distance
 nobs <- apply(y3d, c(1,3), sum) # Total detections per site and occasion
-area <- pi*(200^2)/10000        # Area surveyed in hectares
+area <- pi*(200^2)/4046.86      # Area in acres
+
 
 # Bundle data for nimble
 data <- list(y3d = y3d, 
@@ -753,7 +757,7 @@ mcmcplot(avail_bm$samples)# Visually inspect trace plots
 summary(avail_bm$samples)
 
 # Save Environment
-save.image(file = "./CMR_JAGs.RData")
+save.image(file = "./HDS_JAGs.RData")
 
 
 
@@ -1544,8 +1548,379 @@ mcmcplot(det_bm$samples)# Visually inspect trace plots
 summary(det_bm$samples)
 
 # Save Environment
-save.image(file = "./CMR_JAGs.RData")
+save.image(file = "./HDS_JAGs.RData")
+
+
+# ---------------------------------------------------------- 
+#                 Abundance Models
+# ----------------------------------------------------------
+
+# Parameters monitored
+abund.params <- c("r",
+                "sigma0",
+                "theta", 
+                "phi0", 
+                "beta0", 
+                "beta1",
+                "gamma1", 
+                "logit.gamma1",
+                "gamma2",
+                "alpha1",
+                "lambda",
+                "Davail",
+                "log_lik",
+                "p_Bayes")
 
 
 
+# Initial values
+abund.inits  <- function() {
+  list(
+    M = apply(y3d, 1, max) + 5,
+    Navail = apply(y3d, c(1, 3), sum),
+    sigma0 = 50,
+    gamma1 = rep(0.5, 4),
+    gamma2 = 0,
+    beta0 = 0,
+    beta1 = 0,
+    alpha1 = 0,
+    phi0 = 0.5,
+    theta = 1,
+    r = 5
+  )
+}
 
+
+# ----------------------------------------------------------
+# Abund Model 1: Shrub Focal Stats
+# ----------------------------------------------------------
+cat("
+model {
+
+  # Priors
+  beta0 ~ dnorm(0, 0.01)
+  beta1 ~ dnorm(0, 0.01) 
+
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  gamma2 ~ dnorm(0, 0.01)
+  
+  for(k in 1:4){
+    gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
+    logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
+  }
+
+  # Detection parameters
+  sigma0 ~ dunif(0.1,50)   # Intercept
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+  alpha1 ~ dnorm(0, 0.01)
+
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+
+      # Availability Model
+      logit.phi[s,k] <- logit.gamma1[k]
+      phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
+
+      # Distance Sampling
+      log(sigma[s,k]) <- log(sigma0) + alpha1*X.det[s,k,1]
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        # Half-normal or hazard rate detection functions
+        cloglog(g[s,b,k]) <- theta * log(sigma[s,k]) - theta * log(midpt[b])
+        
+        # Density function for distance bins
+        f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
+        cellprobs[s,b,k] <- g[s,b,k] * f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k] / sum(cellprobs[s,1:nD,k])
+      }
+      
+      # Add probability of undetected individuals
+      cellprobs[s,nD+1,k] <- 1 - sum(cellprobs[s,1:nD,k])
+
+      # Detection probabilities
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k] * phi[s,k]
+
+      # Observation model (Multinomial likelihood)
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Number of detected individuals
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])
+
+      # Number of available individuals
+      Navail[s,k] ~ dbin(phi[s,k], M[s])
+
+      # Log-Likelihood Calculation
+      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Posterior Predictive Checks (Bayesian p-value)
+      y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      for (b in 1:nD) {
+        discrepancy_obs[s,b,k] <- pow(y3d[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+        discrepancy_rep[s,b,k] <- pow(y3d_rep[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+      }
+      
+    } # End k loop
+
+    # Abundance Model
+    log(lambda[s]) <- beta0 + beta1*X.abund[s,23]
+
+    # Population size follows a negative binomial distribution
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r / (r + lambda[s])
+  } # End s loop
+
+  # Derived Quantities
+  for (k in 1:K){
+    Davail[k] <- mean(phi[,k]) * exp(beta0) / area
+  }
+
+  # Bayesian p-value Computation
+  sum_obs <- sum(discrepancy_obs[, ,])
+  sum_rep <- sum(discrepancy_rep[, ,])
+  p_Bayes <- step(sum_rep - sum_obs)  # Bayesian p-value
+
+} # End model
+", fill=TRUE, file="./jags_models/HDS_abundmod1.txt")
+# ------------End Model-------------
+
+
+# Run JAGs 
+abundfm.1 <- jags(data = data, 
+                inits = abund.inits, 
+                parameters.to.save = abund.params, 
+                model.file = "./jags_models/HDS_abundmod1.txt",
+                n.iter = n.iter,
+                n.burnin = n.burnin,
+                n.chains = n.chains, 
+                n.thin = n.thin,
+                parallel = TRUE,
+                n.cores = workers,
+                DIC = TRUE)
+
+
+# Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+cat("Bayesian p-value =", abundfm.1$summary["p_Bayes",1], "\n")
+
+# Check convergence
+abundfm.1$Rhat # Rhat: less than 1.1 means good convergence
+mcmcplot(abundfm.1$samples)# Visually inspect trace plots
+
+# Model summary
+summary(abundfm.1$samples)
+
+# Save Environment
+save.image(file = "./HDS_JAGs.RData")
+
+
+# ----------------------------------------------------------
+# Abund Model 2: Herbaceous Patch Density
+# ----------------------------------------------------------
+cat("
+model {
+
+  # Priors
+  beta0 ~ dnorm(0, 0.01)
+  beta1 ~ dnorm(0, 0.01) 
+
+  # Availability parameters
+  phi0 ~ dunif(0.1, 0.9)
+  logit.phi0 <- log(phi0/(1-phi0))
+  gamma2 ~ dnorm(0, 0.01)
+  
+  for(k in 1:K){
+    gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
+    logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
+  }
+
+  # Detection parameters
+  sigma0 ~ dunif(0.1,50)   # Intercept
+  theta ~ dgamma(0.1, 0.1)
+  r ~ dunif(0, 10)
+  alpha1 ~ dnorm(0, 0.01)
+
+  for (s in 1:nsites) {
+    for (k in 1:K) {
+
+      # Availability Model
+      logit.phi[s,k] <- logit.gamma1[k]
+      phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
+
+      # Distance Sampling
+      log(sigma[s,k]) <- log(sigma0) + alpha1*X.det[s,k,1]
+      
+      # Multinomial cell probability construction
+      for(b in 1:nD){
+        # Half-normal or hazard rate detection functions
+        cloglog(g[s,b,k]) <- theta * log(sigma[s,k]) - theta * log(midpt[b])
+        
+        # Density function for distance bins
+        f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
+        cellprobs[s,b,k] <- g[s,b,k] * f[s,b,k]
+        cellprobs.cond[s,b,k] <- cellprobs[s,b,k] / sum(cellprobs[s,1:nD,k])
+      }
+      
+      # Add probability of undetected individuals
+      cellprobs[s,nD+1,k] <- 1 - sum(cellprobs[s,1:nD,k])
+
+      # Detection probabilities
+      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
+      pmarg[s,k] <- pdet[s,k] * phi[s,k]
+
+      # Observation model (Multinomial likelihood)
+      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Number of detected individuals
+      nobs[s,k] ~ dbin(pmarg[s,k], M[s])
+
+      # Number of available individuals
+      Navail[s,k] ~ dbin(phi[s,k], M[s])
+
+      # Log-Likelihood Calculation
+      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      # Posterior Predictive Checks (Bayesian p-value)
+      y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+
+      for (b in 1:nD) {
+        discrepancy_obs[s,b,k] <- pow(y3d[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+        discrepancy_rep[s,b,k] <- pow(y3d_rep[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+      }
+      
+    } # End k loop
+
+    # Abundance Model
+    log(lambda[s]) <- beta0 + beta1*X.abund[s,17]
+
+    # Population size follows a negative binomial distribution
+    M[s] ~ dnegbin(prob[s], r)
+    prob[s] <- r / (r + lambda[s])
+  } # End s loop
+
+  # Derived Quantities
+  for (k in 1:K){
+    Davail[k] <- mean(phi[,k]) * exp(beta0) / area
+  }
+
+  # Bayesian p-value Computation
+  sum_obs <- sum(discrepancy_obs[, ,])
+  sum_rep <- sum(discrepancy_rep[, ,])
+  p_Bayes <- step(sum_rep - sum_obs)  # Bayesian p-value
+
+} # End model
+", fill=TRUE, file="./jags_models/HDS_abundmod2.txt")
+# ------------End Model-------------
+
+
+# Run JAGs 
+abundfm.2 <- jags(data = data, 
+                  inits = abund.inits, 
+                  parameters.to.save = abund.params, 
+                  model.file = "./jags_models/HDS_abundmod2.txt",
+                  n.iter = n.iter,
+                  n.burnin = n.burnin,
+                  n.chains = n.chains, 
+                  n.thin = n.thin,
+                  parallel = TRUE,
+                  n.cores = workers,
+                  DIC = TRUE)
+
+
+# Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+cat("Bayesian p-value =", abundfm.2$summary["p_Bayes",1], "\n")
+
+# Check convergence
+abundfm.2$Rhat # Rhat: less than 1.1 means good convergence
+mcmcplot(abundfm.2$samples)# Visually inspect trace plots
+
+# Model summary
+summary(abundfm.2$samples)
+
+# Save Environment
+save.image(file = "./HDS_JAGs.RData")
+
+
+# -------------------------------------------------------
+#
+#   Estimating Abundance 
+#
+# -------------------------------------------------------
+
+# Combine chains
+combined_chains <- as.mcmc(do.call(rbind, abundfm.2$samples))
+
+# Extract lambda estimates
+lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
+lambda_samples <- combined_chains[ ,lambda_columns]
+
+# mean abundance 
+lambda_tot <- rowSums(lambda_samples)
+
+# Area in hectares
+#area <- pi*(200^2)/10000
+
+# Area in acres
+area <- pi*(200^2)/4046.86
+
+# Getting density
+dens_df <- as.data.frame(lambda_tot/area)
+
+# Summarize by row
+colnames(dens_df)[1] <- "Density"
+dens_df[,2] <- "PC HDS"
+colnames(dens_df)[2] <- "Model"
+dens_df <- dens_df[, c("Model", "Density")] # Switch the order of columns
+head(dens_df)
+
+# Calculate the 95% Credible Interval
+ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
+
+# Subset the data frame to 95% CI
+dens_df <- subset(dens_df, Density >= ci_bounds[1] & Density <= ci_bounds[2])
+
+
+# Violin plot
+ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
+  geom_violin() +
+  geom_boxplot(aes(x = Model, y = Density),
+               width = 0.2, position = position_dodge(width = 0.8)) +
+  labs(
+    title = "",
+    x = "Model",
+    y = "Density (N/hectare)") +
+  scale_y_continuous(limits = c(0, 20),
+                     breaks = seq(0, 5, by = 5),
+                     labels = scales::comma) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "none"
+  )
+
+
+# total density
+print(mean(dens_df$Density))
+print(min(dens_df$Density))
+print(max(dens_df$Density))
+
+
+# Total abundance
+mean_dens * 2710
+LCI_dens * 2710
+HCI_dens * 2710
+
+
+# Save Environment
+save.image(file = "HDS_JAGs.RData")
+
+
+# End Script
