@@ -4,16 +4,29 @@
 #
 # -------------------------------------------------------
 
-# Load packages
+# Install packages (if needed)
+# install.packages("tidyverse")
+# install.packages("jagsUI")
+# install.packages("coda")
+# install.packages("mcmcplots")
+# install.packages("loo")
+
+# Load library
 library(tidyverse)
 library(jagsUI)
 library(coda)
 library(mcmcplots)
+library(loo)
 
 # Set seed, scientific notation options, and working directory
 set.seed(123)
 options(scipen = 9999)
 setwd(".")
+
+# Setting up cores
+Ncores <- parallel::detectCores()
+print(Ncores) # Number of available cores
+workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
 
 # -------------------------------------------------------
 #
@@ -60,7 +73,10 @@ setwd(".")
 # -------------------------------------------------------
 
 # BirdNet detections
-bnet_dat_all <- read.csv("C:/Users/davep/OneDrive - Texas A&M University/Rprojects/CH2_NOBO_Abundance/Data/Acoustic_Data/NOBO_BirdNETall_2024.csv")
+bnet_dat_all <- read.csv("./Data/Acoustic_Data/NOBO_BirdNETall_2024.csv")
+
+# ARU weather covariates
+weather_dat <- read.csv("./Data/Acoustic_Data/ARU_weathercovs.csv")
 
 # Site covariates
 site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
@@ -82,28 +98,6 @@ date_order <- c("2024-05-26", "2024-05-30", "2024-06-03", "2024-06-07", # in asc
 # Dates and their corresponding occasion numbers
 bnet_dat <- bnet_dat_all %>% filter(Date %in% date_order)
 head(bnet_dat)
-
-# Convert your Time column to POSIXct
-bnet_dat$Time <- as.POSIXct(bnet_dat$Time, format="%H:%M:%S", tz="UTC")
-
-# Define the recording start time (6:25:00)
-recording_start_time <- as.POSIXct("06:25:00", format="%H:%M:%S", tz="UTC")
-
-# Calculate the difference in seconds between the Time and the recording start time
-bnet_dat$Time_Into_Recording_Sec <- as.numeric(difftime(bnet_dat$Time, recording_start_time, units = "secs"))
-
-# Convert seconds into minutes and seconds
-bnet_dat$Time_Into_Recording_Min_Sec <- format(
-  as.POSIXct(bnet_dat$Time_Into_Recording_Sec, origin="1970-01-01", tz="UTC"), 
-  "%M:%S"
-)
-
-# Check the result
-head(bnet_dat)
-
-
-write.csv(bnet_dat,"NOBO_BirdNET_14day2024.csv")
-
 
 # Adding occasion column
 bnet_dat <- bnet_dat %>%
@@ -147,7 +141,6 @@ rownames(v) <- as.numeric(1:27)
 
 # Get the site numbers with at least one call
 v_mat <- as.matrix(v)
-rownames(v_mat) <- NULL  
 sites.a <- which(rowSums(!is.na(v_mat) & v >= 1) > 0)
 print(sites.a)
 
@@ -155,8 +148,7 @@ print(sites.a)
 
 # Creating a binary detection matrix, values >= 1 become 1, and 0 stays 0
 v_df <- as.data.frame(v)
-y <- v_df %>%
-  mutate(across(where(is.numeric), ~ if_else(. >= 1, 1, 0)))
+y <- v_df %>% mutate(across(where(is.numeric), ~ if_else(. >= 1, 1, 0)))
 y <- as.matrix(y)
 rownames(y) <- NULL  
 colnames(y) <- NULL 
@@ -165,42 +157,47 @@ print(y)
 # Total number of sites
 R <- as.integer(27) 
 
-# Number of repeat visits
+# Number of repeat visits for each site
 J <- rep(14, R)  
 
 
 
 # ---------------------------------------
-# Manually validated info ****** made up ----- Fix this 
+# Manually validated  
 # ---------------------------------------
 
-#write.csv(v, "v.csv")
 
-# calls validated, do not include sites with no calls
+# Validated Calls
+# Do not include sites with no calls 
 # only include occasions where at least 1 call was validated for a site
-n <- as.matrix(read.csv("./n.csv", row.names = 1))
+n <- read.csv("./Data/Acoustic_Data/Bnet14day_n.csv", row.names = 1)
 
-# calls found to be true, same dimension as n
-k <- as.matrix(read.csv("./k.csv", row.names = 1))
+# True Calls
+# Calls found to be true, same dimension as n
+k <- read.csv("./Data/Acoustic_Data/Bnet14day_k.csv", row.names = 1)
 
-# Survey dates call was validated, same dimension as n
-# should be the column number 
-val.times  <- as.matrix(read.csv("val.times.csv", row.names = 1))
+# Survey days calls were validated, same dimension as n
+val.times <- read.csv("./Data/Acoustic_Data/Bnet14day_val.times.csv", row.names = 1)
 
 # Total number of sites with manually validated data
 R.val <- nrow(n)
 
 # How many surveys were validate
 J.val <- rep(14, R.val)  
+ 
+
+# Check
+dim(n) # dimensions
+dim(k)
+dim(val.times)
+print(n) # format
+print(k)
+print(val.times)
 
 
 # ---------------------------------------
-# Covariates *** site covs made up ***
+# Covariates 
 # ---------------------------------------
-
-# Extract site covariates
-herbPdens <- as.vector(scale(site_covs[,c("herb_Pdens")])) 
-woodyParea <- as.vector(site_covs[,c("woody_Parea")]) 
 
 # For day random effect on cue production rate
 days <- matrix(NA, nrow = 27, ncol = 14)  
@@ -208,6 +205,7 @@ for (col in 1:14) {
   days[, col] <- col
 }
 print(days)
+
 
 
 
@@ -255,13 +253,58 @@ Bnet14.data <- list(R = R,
                     J.A = J.A, 
                     sites.a.v = sites.a.v, 
                     days = days,
-                    n.days = max(J),
-                    herbPdens = herbPdens,
-                    woodyParea = woodyParea)
+                    n.days = max(J))
+
+# ,
+#                     herbPdens = herbPdens,
+#                     woodyParea = woodyParea
 
 # Check structure
 str(Bnet14.data)
 
+
+# -------------------------------------------------------
+# Model Specifications
+# -------------------------------------------------------
+
+# Parameters monitored
+params <- c('alpha.0', 
+              'alpha.1', 
+              'beta.0',
+              'beta.1',
+              'beta.2',
+              'tau', 
+              'tau.day', 
+              'a.phi', 
+              'omega', 
+              'bp.y', 
+              'bp.v',
+              'lambda')
+
+# Initial Values 
+inits <- function() {
+              list(
+                N = rep(1, R), 
+                beta.0 = rnorm(1),
+                beta.1 = rnorm(1), 
+                beta.2 = rnorm(1),
+                omega = runif(1, 0, 10), 
+                tau.day = runif(1, 0.1, 1),
+                tau = runif(1, 0.1, 1),
+                tau.p = runif(1, 0.1, 1),
+                tau.day.p = runif(1, 0.1, 1),
+                alpha.1 = runif(1, 0, 1), 
+                a.phi = runif(1, 0, 5)
+              )
+}#end inits
+  
+  
+
+# MCMC
+n.iter = 1000 # 200000
+n.burnin = 100# 60000 
+n.chains = 3
+n.thin = 50
 
 
 
@@ -299,7 +342,7 @@ cat(" model {
   for (i in 1:R) {
   
     # Abundance Model
-    log(lambda[i]) <- beta.0 + beta.1 * herbPdens[i] + beta.2 * woodyParea[i]
+    log(lambda[i]) <- beta.0 # + beta.1 * herbPdens[i] + beta.2 * woodyParea[i]
     N[i] ~ dpois(lambda[i])
     
     # Detection Model
@@ -334,7 +377,9 @@ cat(" model {
   for (i in 1:R.val) {
     for (j in 1:J.val[i]) {
       K[i, j] ~ dbin(tp[sites.a[i], j], v[sites.a[i], val.times[i, j]])
-      k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
+      #k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
+      k[i, val.times[i, j]] ~ dhyper(K[i, j], max(0, v[sites.a[i], val.times[i, j]] - K[i, j]), n[i, val.times[i, j]], 1)
+
     } # j
   } # i
   
@@ -352,152 +397,40 @@ cat(" model {
   bp.y <- step(fit.y.pred - fit.y)
   bp.v <- step(fit.v.pred - fit.v)
 }
-", fill=TRUE, file="./jags_models/ARU_mod0.txt")
+", fill=TRUE, file="./jags_models/ARU_mod.txt")
 # ------------End Model-------------
 
 
 
-# Parameters monitored
-params.ARU <- c('alpha.0', 
-              'alpha.1', 
-              'beta.0',
-              'beta.1',
-              'beta.2',
-              'tau', 
-              'tau.day', 
-              'a.phi', 
-              'omega', 
-              'bp.y', 
-              'bp.v',
-              'lambda')
-
-# Initial Values 
-inits.ARU <- function() {
-              list(
-                N = rep(1, R), 
-                beta.0 = rnorm(1),
-                beta.1 = rnorm(1), 
-                beta.2 = rnorm(1),
-                omega = runif(1, 0, 10), 
-                tau.day = runif(1, 0.1, 1),
-                tau = runif(1, 0.1, 1),
-                tau.p = runif(1, 0.1, 1),
-                tau.day.p = runif(1, 0.1, 1),
-                alpha.1 = runif(1, 0, 1), 
-                a.phi = runif(1, 0, 5)
-  )
-}#end inits
-
-
+ 
 
 
 # Fit Model
-fm.0 <- jags(data = Bnet14.data, 
-                    inits = inits.ARU, 
-                    parameters.to.save = params.ARU, 
+fm <- jags(data = Bnet14.data, 
+                    inits = inits, 
+                    parameters.to.save = params, 
                     model.file = "./jags_models/ARU_mod.txt", 
-                    n.iter = 200000, 
-                    n.burnin = 60000, 
-                    n.chains = 3,
-                    n.thin = 50,
+                    n.iter = n.iter,
+                    n.burnin = n.burnin,
+                    n.chains = n.chains, 
+                    n.thin = n.thin,
                     parallel = TRUE,
-                    n.cores = 8,
+                    n.cores = workers,
                     DIC = TRUE) 
                     
-
+ 
 
 # Model summary
-print(fm.0, digits = 3)
+print(fm, digits = 3)
 
 # Rhat
 fm.0$Rhat
 
 # Trace plots
-mcmcplot(fm.0$samples)
+mcmcplot(fm$samples)
 
 # Bayesian P value
 cat("Bayesian p-value =", fm.0$summary["bp.v",1], "\n")
 
 # Average number of false positives detections
 cat("False positives =", fm.0$summary["omega",1], "\n")
-
-#  -------------------------------------------------------
-#
-#   Estimating Abundance 
-#
-#  -------------------------------------------------------
-
-
-# Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.0$samples))
-
-# Extract lambda estimates
-lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
-lambda_samples <- combined_chains[, lambda_columns]
-
-# mean abundance 
-lambda_tot <- rowSums(lambda_samples)
-
-# Area in hectares
-area <- pi*(200^2)/10000
-
-# Getting density
-dens_df <- as.data.frame(lambda_tot/area)
-
-# Summarize by row
-colnames(dens_df)[1] <- "Density"
-dens_df[,2] <- "ARU Bnet"
-colnames(dens_df)[2] <- "Model"
-dens_df <- dens_df[, c("Model", "Density")]# Switch the order of columns
-head(dens_df)
-
-# Calculate the 95% Credible Interval
-ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
-
-
-# Subset the data frame to 95% CI
-dens_df <- subset(dens_df, Density >= ci_bounds[1] & Density <= ci_bounds[2])
-
-
-# Plot
-ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
-  geom_violin() +
-  geom_boxplot(aes(x = Model, y = Density),
-               width = 0.2, position = position_dodge(width = 0.8)) +
-  labs(
-    title = "Latent Density",
-    x = "Model",
-    y = "Density") +
-  scale_y_continuous(limits = c(0, 20),
-                     breaks = seq(0, 10, by = 5),
-                     labels = scales::comma) +
-  theme_minimal() +
-  theme(
-    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
-    axis.text.y = element_text(size = 12),
-    plot.title = element_text(hjust = 0.5),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    legend.position = "none"
-  )
-
-
-# total density
-mean_dens <- mean(dens_df$Density)
-LCI_dens <- min(dens_df$Density)
-HCI_dens <- max(dens_df$Density)
-
-print(mean_dens)
-print(LCI_dens)
-print(HCI_dens)
-
-# total abundance
-mean_dens * 1096.698
-LCI_dens * 1096.698
-HCI_dens * 1096.698
-
-
-# Export Density data frame
-#saveRDS(dens_df, "./Data/Fitted_Models/ARU_Bnet.rds")
-
-
