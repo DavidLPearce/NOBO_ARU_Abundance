@@ -424,21 +424,23 @@ cat(" model {
     log(lambda[i]) <- beta.0  
     N[i] ~ dpois(lambda[i])
     
-    # Detection Model
-    logit(p.a[i]) <- alpha.0 + alpha.1 * N[i]
+
     
     # Acoustic Data 
     for (j in 1:J[i]) {
     
+    # Detection Model
+    logit(p.a[i, j]) <- alpha.0 + alpha.1 * N[i]
+    
     # Vocalization Model
       log(delta[i, j]) <- gamma.1[days[i, j]]
-      y[i, j] ~ dbin(p.a[i], 1)
+      y[i, j] ~ dbin(p.a[i, j], 1)
       tp[i, j] <- delta[i, j] * N[i] / (delta[i, j] * N[i] + omega)
       
       # Posterior predictive checks for Bayesian P-value
-      y.pred[i, j] ~ dbin(p.a[i], 1)
-      resid.y[i, j] <- pow(pow(y[i, j], 0.5) - pow(p.a[i], 0.5), 2)
-      resid.y.pred[i, j] <- pow(pow(y.pred[i, j], 0.5) - pow(p.a[i], 0.5), 2)
+      y.pred[i, j] ~ dbin(p.a[i, j], 1)
+      resid.y[i, j] <- pow(pow(y[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
+      resid.y.pred[i, j] <- pow(pow(y.pred[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
     } # j
     
     for (j in 1:J.r[i]) {
@@ -477,7 +479,6 @@ cat(" model {
 }
 ", fill=TRUE, file="./jags_models/ARU_mod0.txt")
 # ------------End Model-------------
-
 
 
 
