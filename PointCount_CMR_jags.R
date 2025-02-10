@@ -31,7 +31,7 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
+workers <- Ncores * 0.6 # For low background use 80%, for medium use 50% of Ncores
 
 # -------------------------------------------------------
 #
@@ -40,10 +40,10 @@ workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncor
 # -------------------------------------------------------
 
 # Load in capture data
-pc_dat <- read.csv("./NOBO_PC_Summer2024data.csv")
+pc_dat <- read.csv("./Data/Point_Count_Data/NOBO_PC_Summer2024data.csv")
 
 # Load in site covariates
-site_covs <- read.csv("./PointCount_siteCovs.csv")
+site_covs <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
 
 # -------------------------------------------------------
 #
@@ -88,8 +88,9 @@ nsites <- 10
 # Number of individuals detected
 nind <- nrow(y)
 
-# Superpopulation 
-M <- 400
+# Superpopulation
+print(nind)
+M <- nind + 100 # ensure that M is larger than number of indi detected
 
 # Data Augmentation
 y <- rbind(y, matrix(0, nrow=(M-nind), ncol=4))
@@ -194,21 +195,21 @@ params <- c("lambda",
 )}
 
 # MCMC 
-n.iter = 100#300000
-n.burnin = 10#20000
+n.iter = 300000
+n.burnin = 20000
 n.chains = 3 
 n.thin = 10
 
 
 # -------------------------------------------------------
-# Model 1: Woody Focal Stats
+# Model 33: herb_Pdens + woody_lrgPInx 
 # -------------------------------------------------------
 cat("
 model {
 
   # Prior distributions
   p0 ~ dunif(0,1)
-  alpha0 <- log(p0/(1-p0))
+  alpha0 <- log(p0/(1-p0)) 
   alpha1 ~ dnorm(0, 0.01)
   beta0 ~ dnorm(0, 0.01)
   beta1 ~ dnorm(0, 0.01)
@@ -222,7 +223,7 @@ model {
 
   # Abundance model 
   for(s in 1:nsites){
-    log(lambda[s]) <- beta0 + beta1*X.abund[s,20] 
+    log(lambda[s]) <- beta0 + beta1*X.abund[s,17] + beta2*X.abund[s,10]
     probs[s] <- lambda[s] / sum(lambda[])
   }
 
@@ -256,28 +257,30 @@ model {
   sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
   p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
 }
-", fill=TRUE, file = "./jags_models/CMR_mod1.txt")
+", fill=TRUE, file = "./jags_models/CMR_mod33.txt")
 # ------------End Model-------------
 
 # Fit Model
-fm.1 <- jags(data = data, 
-             parameters.to.save = params,
-             inits = inits, 
-             model.file = "./CMR_mod1.txt",
-             n.iter = n.iter,
-             n.burnin = n.burnin,
-             n.chains = n.chains, 
-             n.thin = n.thin,
-             parallel = TRUE,
-             n.cores = workers,
-             DIC = TRUE)  
+fm.33 <- jags(data = data, 
+              parameters.to.save = params,
+              inits = inits, 
+              model.file = "./jags_models/CMR_mod33.txt",
+              n.iter = n.iter,
+              n.burnin = n.burnin,
+              n.chains = n.chains, 
+              n.thin = n.thin,
+              parallel = TRUE,
+              n.cores = workers,
+              DIC = FALSE)  
+
+
 
 # Bayes p-value
-cat("Bayesian p-value =", fm.1$summary["p_Bayes",1], "\n") 
+cat("Bayesian p-value =", fm.33$summary["p_Bayes",1], "\n") 
 
 
 # WAIC
-log_lik_array <- fm.1$sims.list$log_lik  # Extract log-likelihood samples
+log_lik_array <- fm.33$sims.list$log_lik  # Extract log-likelihood samples
 log_lik_matrix <- apply(log_lik_array, c(1, 2), sum)  # Summing across J
 waic_result <- loo::waic(log_lik_matrix)
 print(waic_result)
@@ -287,6 +290,85 @@ loo_result <- loo::loo(log_lik_matrix)
 print(loo_result)
 
 
+
+# -------------------------------------------------------
+#
+#   Estimating Abundance 
+#
+# -------------------------------------------------------
+
+# Combine chains
+combined_chains <- as.mcmc(do.call(rbind, fm.33$samples))
+
+# Extract lambda estimates
+lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
+lambda_samples <- combined_chains[ ,lambda_columns]
+
+# mean abundance 
+lambda_tot <- rowSums(lambda_samples)
+
+# Area in hectares
+# area <- pi*(200^2)/10000
+
+# Area in acres
+area <- pi*(200^2)/4046.86
+
+# Getting density
+dens_df <- as.data.frame(lambda_tot/area)
+
+# Summarize by row
+colnames(dens_df)[1] <- "Density"
+dens_df[,2] <- "PC CMR"
+colnames(dens_df)[2] <- "Model"
+dens_df <- dens_df[, c("Model", "Density")] # Switch the order of columns
+head(dens_df)
+
+# Calculate the 95% Credible Interval
+ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
+
+# Subset the data frame to 95% CI
+dens_df <- subset(dens_df, Density >= ci_bounds[1] & Density <= ci_bounds[2])
+
+
+# Violin plot
+ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
+  geom_violin() +
+  geom_boxplot(aes(x = Model, y = Density),
+               width = 0.2, position = position_dodge(width = 0.8)) +
+  labs(
+    title = "",
+    x = "Model",
+    y = "Density (N/acre)") +
+  scale_y_continuous(limits = c(0, 5),
+                     breaks = seq(0, 5, by = 1),
+                     labels = scales::comma) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "none"
+  )
+
+
+# total density
+print(mean(dens_df$Density))
+print(min(dens_df$Density))
+print(max(dens_df$Density))
+
+
+# Total abundance
+mean(dens_df$Density) * 2710
+  
+
+
+# Save Environment
+save.image(file = "./CMR_bm_JAGs.RData")
+
+# Export density dataframe
+saveRDS(dens_df, "./Data/Fitted_Models/PC_CMR_DensityDF.rds")
 
 
 # End Script
