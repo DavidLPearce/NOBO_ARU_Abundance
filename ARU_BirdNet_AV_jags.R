@@ -1282,6 +1282,8 @@ mean(dens_df$Density) * 2710
 # Save Environment
 save.image(file = "ARU_AV_Bnet14day_JAGs.RData")
 
+# Export density dataframe
+saveRDS(dens_df, "./Data/Fitted_Models/ARU_AV_Bnet14day_DensityDF.rds")
 
 # End Script
 
