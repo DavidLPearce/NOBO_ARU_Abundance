@@ -292,7 +292,101 @@ fm.1 <- jags(data = data,
                   n.cores = workers,
                   DIC = TRUE)
 
-# Bayes p-value
-cat("Bayesian p-value =", fm.1$summary["p_Bayes",1], "\n") 
 
+# Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+cat("Bayesian p-value =", fm.1$summary["p_Bayes",1], "\n")
+
+# Check convergence
+fm.1$Rhat # Rhat: less than 1.1 means good convergence
+mcmcplot(fm.1$samples)# Visually inspect trace plots
+
+# Model summary
+summary(fm.1$samples)
+
+# Save Environment
+save.image(file = "./NmixTempEm_JAGs.RData")
+
+
+# -------------------------------------------------------
+#
+#   Estimating Abundance 
+#
+# -------------------------------------------------------
+
+# Combine chains
+combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
+
+# Extract lambda estimates
+lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
+lambda_samples <- combined_chains[ ,lambda_columns]
+
+# mean abundance 
+lambda_tot <- rowSums(lambda_samples)
+
+# Area in hectares
+#area <- pi*(200^2)/10000
+
+# Area in acres
+area <- pi*(200^2)/4046.86
+
+# Getting density
+dens_df <- as.data.frame(lambda_tot/area)
+
+# Summarize by row
+colnames(dens_df)[1] <- "Density"
+dens_df[,2] <- "PC Nmix"
+colnames(dens_df)[2] <- "Model"
+dens_df <- dens_df[, c("Model", "Density")] # Switch the order of columns
+head(dens_df)
+
+# Calculate the 95% Credible Interval
+ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
+
+# Subset the data frame to 95% CI
+dens_df <- subset(dens_df, Density >= ci_bounds[1] & Density <= ci_bounds[2])
+
+
+# Violin plot
+ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
+  geom_violin() +
+  geom_boxplot(aes(x = Model, y = Density),
+               width = 0.2, position = position_dodge(width = 0.8)) +
+  labs(
+    title = "",
+    x = "Model",
+    y = "Density (N/hectare)") +
+  scale_y_continuous(limits = c(0, 20),
+                     breaks = seq(0, 5, by = 5),
+                     labels = scales::comma) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "none"
+  )
+
+
+# total density
+print(mean(dens_df$Density))
+print(min(dens_df$Density))
+print(max(dens_df$Density))
+
+
+# Total abundance
+mean(dens_df$Density) * 2710
+
+
+
+# Save Environment
+save.image(file = "HDS_JAGs.RData")
+
+# Export density dataframe
+saveRDS(dens_df, "./Data/Fitted_Models/PC_Nmix_DensityDF.rds")
+
+
+
+# End Script
 
