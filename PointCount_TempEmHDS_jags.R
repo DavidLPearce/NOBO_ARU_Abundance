@@ -34,8 +34,8 @@ workers <- Ncores * 0.80 # For low background use 80%, for medium use 50% of Nco
 # -------------------------------------------------------
 
 # Load in capture data
-pc_dat <- read.csv("./Data/Point_Count_Data/NOBO_PC_Summer2024data.csv")
-
+#pc_dat <- read.csv("./Data/Point_Count_Data/NOBO_PC_Summer2024data.csv")
+pc_dat <- read.csv("./Data/Point_Count_Data/NOBO_PC_Summer2024data - bin42bin3.csv")
 # Load in site covariates
 site_covs <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
 
@@ -120,7 +120,7 @@ Observer_numeric <- matrix(as.numeric(as.factor(obsvr_mat)),
                            ncol = ncol(obsvr_mat))
 
 
-# Extract and scale site covariates for X.det array
+# Extract and scale detection covariates for X.det array
 X.det <- array(NA, dim = c(10,  # Number of sites
                                  4,  # Number of surveys
                                  5),                      # Number of covariates
@@ -1757,7 +1757,8 @@ model {
       # Multinomial cell probability construction
       for(b in 1:nD){
         # Half-normal or hazard rate detection functions
-        cloglog(g[s,b,k]) <- theta * log(sigma[s,k]) - theta * log(midpt[b])
+        log(g[s,b,k]) <- -midpt[b]*midpt[b]/(2*sigma[s,k]*sigma[s,k]) # half-normal
+        #cloglog(g[s,b,k]) <- theta*log(sigma[s,k])  - theta*log(midpt[b])  # hazard
         
         # Density function for distance bins
         f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
@@ -1914,9 +1915,8 @@ print(max(dens_df$Density))
 
 
 # Total abundance
-mean_dens * 2710
-LCI_dens * 2710
-HCI_dens * 2710
+mean(dens_df$Density) * 2710
+
 
 
 # Save Environment
