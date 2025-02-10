@@ -1,3 +1,25 @@
+# Author: David L. Pearce
+# Description:
+#             TBD
+
+# This code extends code from the following sources: 
+#     1. Chambert, T., Waddle, J. H., Miller, D. A., Walls, S. C., 
+#           and Nichols, J. D. (2018b). A new framework for analysing 
+#           automated acoustic species detection data: Occupancy estimation 
+#           and optimization of recordings post-processing. 
+#           Methods in Ecology and Evolution, 9(3):560–570.
+#     2. Kery, M. and Royle, J. A. (2020). Applied hierarchical modeling 
+#           in ecology: Analysis of distribution, abundance, and species 
+#           richness in R and BUGS: Volume 2: Dynamic and advanced models. 
+#           Academic Press.
+#     3. Doser, J. W., A. O. Finley, A. S. Weed, and E. F. Zipkin. 2021. 
+#           Integrating automated acoustic vocalization data and point count 
+#           surveys for estimation of bird abundance. 
+#           Methods in Ecology and Evolution 12:1040–1049.
+
+# Citation: 
+#      TBD
+
 # -------------------------------------------------------
 #
 #                    Load libraries
@@ -160,7 +182,24 @@ R <- as.integer(27)
 # Number of repeat visits for each site
 J <- rep(14, R)  
 
+# J.r contains the number of surveys at each acoustic site that contains at least 1 detected vocalization. 
+J.r <- apply(v_mat, 1, function(a) {sum(a != 0)})
+J.r <- ifelse(is.na(J.r), 0, J.r)
+J.r <- as.numeric(J.r)
+print(J.r)
 
+# A.times is a R x J matrix that contains the indices of the
+# specific surveys at each acoustic site that have at least one detected
+# vocalization. This determines the specific components of v[i, j] that
+# are used in the zero-truncated Poisson.
+A.times <- matrix(NA, R, max(J))
+tmp <- apply(v, 1, function(a) {which(a != 0)})
+for (i in 1:R) {
+  if (length(tmp[[i]]) > 0) {
+    A.times[i, 1:length(tmp[[i]])] <- tmp[[i]]
+  }
+}
+print(A.times)
 
 # ---------------------------------------
 # Manually validated  
@@ -171,13 +210,16 @@ J <- rep(14, R)
 # Do not include sites with no calls 
 # only include occasions where at least 1 call was validated for a site
 n <- read.csv("./Data/Acoustic_Data/Bnet14day_n.csv", row.names = 1)
+n <- as.matrix(n)
 
 # True Calls
 # Calls found to be true, same dimension as n
 k <- read.csv("./Data/Acoustic_Data/Bnet14day_k.csv", row.names = 1)
+k <- as.matrix(k)
 
 # Survey days calls were validated, same dimension as n
 val.times <- read.csv("./Data/Acoustic_Data/Bnet14day_val.times.csv", row.names = 1)
+val.times <- as.matrix(val.times)
 
 # Total number of sites with manually validated data
 R.val <- nrow(n)
@@ -200,67 +242,117 @@ print(val.times)
 # ---------------------------------------
 
 # For day random effect on cue production rate
-days <- matrix(NA, nrow = 27, ncol = 14)  
-for (col in 1:14) {
-  days[, col] <- col
-}
+days <- matrix(rep(1:14, each = 27), nrow = 27, ncol = 14, byrow = TRUE)
 print(days)
 
+# Extract and scale site covariates for X.abund
+X.abund <- site_covs[,-c(1:4)] 
+X.abund$woody_lrgPInx <- scale(X.abund$woody_lrgPInx)
+X.abund$herb_lrgPInx  <- scale(X.abund$herb_lrgPInx)
+X.abund$woody_AggInx <- scale(X.abund$woody_AggInx)
+X.abund$herb_AggInx  <- scale(X.abund$herb_AggInx)
+X.abund$woody_EdgDens <- scale(X.abund$woody_EdgDens)
+X.abund$herb_EdgDens  <- scale(X.abund$herb_EdgDens)
+X.abund$woody_Pdens <- scale(X.abund$woody_Pdens)
+X.abund$herb_Pdens  <- scale(X.abund$herb_Pdens)
+X.abund$woody_Npatches <- scale(X.abund$woody_Npatches)
+X.abund$herb_Npatches  <- scale(X.abund$herb_Npatches)
+X.abund$mnElev  <- scale(X.abund$mnElev)
+X.abund <- as.matrix(X.abund)
+print(X.abund)
 
 
 
-# J.r contains the number of surveys at each acoustic site that contains at least 1 detected vocalization. 
-J.r <- apply(v_mat, 1, function(a) {sum(a != 0)})
-J.r <- ifelse(is.na(J.r), 0, J.r)
-J.r <- as.numeric(J.r)
-print(J.r)
+# Extract and scale detection covariates to matracies 
+temp_matrix <- matrix(NA, nrow = R, ncol = max(J))
+wind_matrix <- matrix(NA, nrow = R, ncol = max(J))
+sky_matrix <- matrix(NA, nrow = R, ncol = max(J))
 
-# A.times is a R x J matrix that contains the indices of the
-# specific surveys at each acoustic site that have at least one detected
-# vocalization. This determines the specific components of v[i, j] that
-# are used in the zero-truncated Poisson.
-A.times <- matrix(NA, R, max(J))
-tmp <- apply(v, 1, function(a) {which(a != 0)})
-for (i in 1:R) {
-  if (length(tmp[[i]]) > 0) {
-    A.times[i, 1:length(tmp[[i]])] <- tmp[[i]]
-  }
+weather_dat$Temp_degF_scaled <- scale(weather_dat$Temp_degF)
+weather_dat$Wind_mph_scaled <- scale(weather_dat$Wind_mph)
+weather_dat$Sky_Condition_factor <- as.factor(weather_dat$Sky_Condition)
+
+for (i in 1:max(J)) {
+  temp_matrix[, i] <- rep(weather_dat$Temp_degF_scaled[i], R)
+  wind_matrix[, i] <- rep(weather_dat$Wind_mph_scaled[i], R)
+  sky_matrix[, i] <- rep(weather_dat$Sky_Condition_factor[i], R)
 }
-print(A.times)
+colnames(temp_matrix) <- weather_dat$Date # Occasion as column names
+colnames(wind_matrix) <- weather_dat$Date
+colnames(sky_matrix) <- weather_dat$Date
+
+# Extract and scale detection covariates for X.det array
+X.det <- array(NA, dim = c(R,      # Number of sites
+                           max(J), # Number of surveys
+                           3),     # Number of covariates
+               dimnames = list(NULL, NULL, c("Temp", "Wind", "Sky")))
+
+# Assign each covariate to the respective slice in the array
+X.det[, , "Temp"] <- as.matrix(temp_matrix)  # Scaled
+X.det[, , "Wind"] <- as.matrix(wind_matrix)
+X.det[, , "Sky"] <- as.matrix(sky_matrix)
+print(X.det)
+X.det[, , 1]  # Temp
+X.det[1, 2, 1] # Row 1, column 2, Temp
 
 
 
-# For Bayesian P-value
+# ---------------------------------------
+# Bayesian P-value
+# ---------------------------------------
+
 R.A <- sum(J.r > 0)
 sites.a.v <- which(J.r > 0)
 J.A <- max(J)
 
 
-# Bundle data 
+# ---------------------------------------
+# Bundle Data 
+# ---------------------------------------
+
 Bnet14.data <- list(R = R, 
                     J = J, 
                     v = v, 
-                    y = y, 
+                    y = y,
+                    n = n,
                     k = k, 
-                    n = n, 
+                    val.times = val.times, 
                     sites.a = sites.a, 
                     R.val = R.val, 
                     J.val = J.val, 
                     J.r = J.r, 
                     A.times = A.times, 
-                    val.times = val.times, 
                     R.A = R.A, 
                     J.A = J.A, 
                     sites.a.v = sites.a.v, 
                     days = days,
-                    n.days = max(J))
-
-# ,
-#                     herbPdens = herbPdens,
-#                     woodyParea = woodyParea
+                    n.days = max(J),
+                    X.abund = X.abund,
+                    X.det = X.det)
 
 # Check structure
 str(Bnet14.data)
+
+
+# ---------------------------------------------------------- 
+# 
+#           Acoustic HM with Validated Calls
+# 
+# ----------------------------------------------------------
+
+
+# -------------------
+# MCMC Specifications
+# -------------------
+n.iter = 10000  # 200000
+n.burnin = 1000 # 60000 
+n.chains = 3
+n.thin = 5#  50
+
+
+# --------------------------------------------------------- 
+#                 Detection Models
+# ---------------------------------------------------------
 
 
 # -------------------------------------------------------
@@ -271,8 +363,6 @@ str(Bnet14.data)
 params <- c('alpha.0', 
               'alpha.1', 
               'beta.0',
-              'beta.1',
-              'beta.2',
               'tau', 
               'tau.day', 
               'a.phi', 
@@ -286,8 +376,6 @@ inits <- function() {
               list(
                 N = rep(1, R), 
                 beta.0 = rnorm(1),
-                beta.1 = rnorm(1), 
-                beta.2 = rnorm(1),
                 omega = runif(1, 0, 10), 
                 tau.day = runif(1, 0.1, 1),
                 tau = runif(1, 0.1, 1),
@@ -300,16 +388,9 @@ inits <- function() {
   
   
 
-# MCMC
-n.iter = 1000 # 200000
-n.burnin = 100# 60000 
-n.chains = 3
-n.thin = 50
-
-
-
+ 
 # -------------------------------------------------------
-# Acoustic Model
+# Detection Model 0: Null Model
 # -------------------------------------------------------
 cat(" model {
   
@@ -317,8 +398,6 @@ cat(" model {
   # Priors 
   # -------------------------------------------
   beta.0 ~ dnorm(0, .01)
-  beta.1 ~ dnorm(0, .01)
-  beta.2 ~ dnorm(0, .01)
   alpha.0 <- logit(mu.alpha)
   mu.alpha ~ dunif(0, 1)
   alpha.1 ~ dunif(0, 1000) # Constrained to be positive
@@ -342,7 +421,7 @@ cat(" model {
   for (i in 1:R) {
   
     # Abundance Model
-    log(lambda[i]) <- beta.0 # + beta.1 * herbPdens[i] + beta.2 * woodyParea[i]
+    log(lambda[i]) <- beta.0  
     N[i] ~ dpois(lambda[i])
     
     # Detection Model
@@ -377,8 +456,7 @@ cat(" model {
   for (i in 1:R.val) {
     for (j in 1:J.val[i]) {
       K[i, j] ~ dbin(tp[sites.a[i], j], v[sites.a[i], val.times[i, j]])
-      #k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
-      k[i, val.times[i, j]] ~ dhyper(K[i, j], max(0, v[sites.a[i], val.times[i, j]] - K[i, j]), n[i, val.times[i, j]], 1)
+      k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
 
     } # j
   } # i
@@ -397,19 +475,17 @@ cat(" model {
   bp.y <- step(fit.y.pred - fit.y)
   bp.v <- step(fit.v.pred - fit.v)
 }
-", fill=TRUE, file="./jags_models/ARU_mod.txt")
+", fill=TRUE, file="./jags_models/ARU_mod0.txt")
 # ------------End Model-------------
 
 
 
- 
-
 
 # Fit Model
-fm <- jags(data = Bnet14.data, 
+fm.0 <- jags(data = Bnet14.data, 
                     inits = inits, 
                     parameters.to.save = params, 
-                    model.file = "./jags_models/ARU_mod.txt", 
+                    model.file = "./jags_models/ARU_mod0.txt", 
                     n.iter = n.iter,
                     n.burnin = n.burnin,
                     n.chains = n.chains, 
@@ -417,17 +493,15 @@ fm <- jags(data = Bnet14.data,
                     parallel = TRUE,
                     n.cores = workers,
                     DIC = TRUE) 
-                    
- 
-
+   
 # Model summary
-print(fm, digits = 3)
+print(fm.0, digits = 3)
 
 # Rhat
 fm.0$Rhat
 
 # Trace plots
-mcmcplot(fm$samples)
+mcmcplot(fm.0$samples)
 
 # Bayesian P value
 cat("Bayesian p-value =", fm.0$summary["bp.v",1], "\n")
