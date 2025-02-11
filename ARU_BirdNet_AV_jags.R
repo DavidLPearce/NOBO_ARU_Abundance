@@ -934,7 +934,7 @@ fm.4 <- jags(data = Bnet14.data,
 cat("Bayesian p-value =", fm.0$summary["bp.v",1], "\n")
 cat("Bayesian p-value =", fm.1$summary["bp.v",1], "\n")
 cat("Bayesian p-value =", fm.2$summary["bp.v",1], "\n")
-cat("Bayesian p-value =", fm.3$summary["bp.v",1], "\n")
+#cat("Bayesian p-value =", fm.3$summary["bp.v",1], "\n")
 cat("Bayesian p-value =", fm.4$summary["bp.v",1], "\n")
 
 
@@ -942,7 +942,7 @@ cat("Bayesian p-value =", fm.4$summary["bp.v",1], "\n")
 fm.0$DIC # null
 fm.1$DIC # temp
 fm.2$DIC # wind
-fm.3$DIC # sky cond
+#fm.3$DIC # sky cond
 fm.4$DIC # veg density
 
 
@@ -1178,9 +1178,7 @@ fm.6 <- jags(data = Bnet14.data,
              parallel = TRUE,
              n.cores = workers,
              DIC = TRUE) 
-
-summary(fm.6)
-
+ 
 
 
 # Bayesian P value
@@ -1205,6 +1203,84 @@ cat("False positives =", fm.6$summary["omega",1], "\n")
 # Save Environment
 save.image(file = "./ARU_AV_Bnet14day_JAGs.RData")
 
+# -------------------------------------------------------
+#
+#   Covariate Effects 
+#
+# -------------------------------------------------------
+
+# Combine chains
+combined_chains <- as.mcmc(do.call(rbind, fm.6$samples))
+
+# Extract beta estimates
+beta0_samples <- combined_chains[, "beta0"]
+beta1_samples <- combined_chains[, "beta1"]
+beta2_samples <- combined_chains[, "beta2"]
+
+# Means
+beta0 <- mean(beta0_samples)
+beta1 <- mean(beta1_samples)
+beta2 <- mean(beta2_samples)
+
+# # Credible Intervals
+# beta0_CI_lower <- quantile(beta0_samples, probs = 0.025)
+# beta0_CI_upper <- quantile(beta0_samples, probs = 0.975)
+# 
+# beta1_CI_lower <- quantile(beta1_samples, probs = 0.025)
+# beta1_CI_upper <- quantile(beta1_samples, probs = 0.975)
+# 
+# beta2_CI_lower <- quantile(beta2_samples, probs = 0.025)
+# beta2_CI_upper <- quantile(beta2_samples, probs = 0.975)
+# 
+# 
+
+# Create a prediction of covariate values
+herb_Pdens_pred_vals <- seq(min(site_covs[,'herb_Pdens']), max(site_covs[,'herb_Pdens']), length.out = 100)
+woody_lrgPInx_pred_vals <- seq(min(site_covs[,'woody_lrgPInx']), max(site_covs[,'woody_lrgPInx']), length.out = 100)
+
+# Scale to have a mean of 0
+herb_Pdens_pred_vals_scaled <- (herb_Pdens_pred_vals - mean(site_covs[,'herb_Pdens'])) / sd(site_covs[,'herb_Pdens'])
+woody_lrgPInx_pred_vals_scaled <- (woody_lrgPInx_pred_vals - mean(site_covs[,'woody_lrgPInx'])) / sd(site_covs[,'woody_lrgPInx'])
+
+# Matrices for storing predictions
+herbPdens_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(herb_Pdens_pred_vals))
+woodylrgPInx_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(woody_lrgPInx_pred_vals))
+
+# Generate predictions  
+for (i in 1:length(beta0_samples)) {
+  herbPdens_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * herb_Pdens_pred_vals_scaled
+  woodylrgPInx_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * woody_lrgPInx_pred_vals_scaled
+}
+
+# Calculate credible intervals
+herbPdens_CI_lower <- apply(herbPdens_preds, 2, quantile, probs = 0.025)
+herbPdens_CI_upper <- apply(herbPdens_preds, 2, quantile, probs = 0.975)
+
+woodylrgPInx_CI_lower <- apply(woodylrgPInx_preds, 2, quantile, probs = 0.025)
+woodylrgPInx_CI_upper <- apply(woodylrgPInx_preds, 2, quantile, probs = 0.975)
+
+# Calculate mean predictions
+herbPdens_mean <- apply(herbPdens_preds, 2, mean)
+woodylrgPInx_mean <- apply(woodylrgPInx_preds, 2, mean)
+
+# Plot Herbaceous Patch
+plot(herb_Pdens_pred_vals, herbPdens_mean, type = "l", col = "lightgreen", lwd = 2, 
+     xlab = "Herbaceous Patch Density", ylab = "Predicted Effect",
+     main = "Effect of Herbaceous Patch Density")
+polygon(c(herb_Pdens_pred_vals, rev(herb_Pdens_pred_vals)),
+        c(herbPdens_CI_lower, rev(herbPdens_CI_upper)),
+        col = rgb(0.2, 0.6, 0.2, 0.2), border = NA)  # Add CI shading
+
+# Plot Woody Largest Patch Index
+plot(woody_lrgPInx_pred_vals, woodylrgPInx_mean, type = "l", col = "forestgreen", lwd = 2, 
+     xlab = "Woody Largest Patch Index", ylab = "Predicted Effect",
+     main = "Effect of Woody Largest Patch Index")
+polygon(c(woody_lrgPInx_pred_vals, rev(woody_lrgPInx_pred_vals)),
+        c(woodylrgPInx_CI_lower, rev(woodylrgPInx_CI_upper)),
+        col = rgb(0.2, 0.6, 0.2, 0.2), border = NA)  # Add CI shading
+
+
+
 
 # -------------------------------------------------------
 #
@@ -1212,8 +1288,6 @@ save.image(file = "./ARU_AV_Bnet14day_JAGs.RData")
 #
 # -------------------------------------------------------
 
-# Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.6$samples))
 
 # Extract lambda estimates
 lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
