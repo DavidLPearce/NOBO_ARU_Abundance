@@ -31,7 +31,7 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- Ncores * 0.6 # For low background use 80%, for medium use 50% of Ncores
+workers <- 2 # Ncores  * 0.6 # For low background use 80%, for medium use 50% of Ncores
 
 # -------------------------------------------------------
 #
@@ -90,7 +90,8 @@ nind <- nrow(y)
 
 # Superpopulation
 print(nind)
-M <- nind + 100 # ensure that M is larger than number of indi detected
+M <- nind + 100 # ensure that M is larger than number detected
+print(M)
 
 # Data Augmentation
 y <- rbind(y, matrix(0, nrow=(M-nind), ncol=4))
@@ -167,6 +168,8 @@ str(data)
 
 # Parameters monitored
 params <- c("lambda",
+            "N",
+            "N_tot",
             "p0", 
             "alpha0", 
             "alpha1", 
@@ -219,19 +222,20 @@ model {
 
   # Precision for survey-level random effect
   tau ~ dgamma(0.1, 0.1)  
-  sigma <- 1/sqrt(tau) # Standard deviation of survey effects
-
-  # Abundance model 
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0 + beta1*X.abund[s,17] + beta2*X.abund[s,10]
-    probs[s] <- lambda[s] / sum(lambda[])
-  }
 
   # Site-level random effect
   for(s in 1:nsites){  
     S.raneff[s] ~ dnorm(0, tau)  
   }
-  
+
+  # Abundance model 
+  for(s in 1:nsites){
+    log(lambda[s]) <- beta0 + beta1*X.abund[s,17] + beta2*X.abund[s,10]
+    probs[s] <- lambda[s] / sum(lambda[])
+    N[s] <- sum(group[] == s)  # Estimated abundance at site s
+  }
+
+
   # Model for individual encounter histories
   for(i in 1:M){
     group[i] ~ dcat(probs[])  # Group == site membership
@@ -252,6 +256,10 @@ model {
     log_lik[i,j] <- logdensity.bern(y[i,j], pz[i,j])
     }
   }
+  
+  # Total estimated population
+  N_tot <- sum(z[])
+  
   # Bayesian p-value
   sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
   sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
@@ -273,7 +281,17 @@ fm.33 <- jags(data = data,
               n.cores = workers,
               DIC = FALSE)  
 
+# Save Environment
+save.image(file = "./CMR_bm_JAGs.RData")
 
+# Trace plots
+mcmcplot(fm.33$samples)
+
+# Rhat
+fm.33$Rhat
+
+# Model summary
+print(fm.33, digits = 2)
 
 # Bayes p-value
 cat("Bayesian p-value =", fm.33$summary["p_Bayes",1], "\n") 
@@ -285,9 +303,9 @@ log_lik_matrix <- apply(log_lik_array, c(1, 2), sum)  # Summing across J
 waic_result <- loo::waic(log_lik_matrix)
 print(waic_result)
 
-# Leave One Out
-loo_result <- loo::loo(log_lik_matrix)
-print(loo_result)
+# # Leave One Out
+# loo_result <- loo::loo(log_lik_matrix)
+# print(loo_result)
 
 
 
@@ -301,11 +319,11 @@ print(loo_result)
 combined_chains <- as.mcmc(do.call(rbind, fm.33$samples))
 
 # Extract lambda estimates
-lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
-lambda_samples <- combined_chains[ ,lambda_columns]
+N_columns <- grep("^N\\[", colnames(combined_chains))
+N_samples <- combined_chains[ ,N_columns]
 
 # mean abundance 
-lambda_tot <- rowSums(lambda_samples)
+N_tot <- rowSums(N_samples)
 
 # Area in hectares
 # area <- pi*(200^2)/10000
@@ -314,7 +332,7 @@ lambda_tot <- rowSums(lambda_samples)
 area <- pi*(200^2)/4046.86
 
 # Getting density
-dens_df <- as.data.frame(lambda_tot/area)
+dens_df <- as.data.frame(N_tot/area)
 
 # Summarize by row
 colnames(dens_df)[1] <- "Density"
