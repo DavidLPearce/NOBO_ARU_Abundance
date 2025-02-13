@@ -31,7 +31,7 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- 2 # Ncores  * 0.6 # For low background use 80%, for medium use 50% of Ncores
+workers <- Ncores  * 0.6 # For low background use 80%, for medium use 50% of Ncores
 
 # -------------------------------------------------------
 #
@@ -136,6 +136,9 @@ merged_df <- merge(site_covs, pc_CMR, by = "PointNum") # VegDens to stacked
 X.det$vegDens = as.matrix(merged_df[,c("vegDens50m")]) 
 print(X.det)
 
+# Area surveyed 
+area <- pi * (200^2) / 4046.86  # in acres
+
 
 # Bundle data for JAGs
 data <- list(J = J,
@@ -144,7 +147,8 @@ data <- list(J = J,
              y = y,
              X.abund = X.abund,
              X.det = X.det,
-             group = site)
+             group = site,
+             area = area)
  
 # Check structure 
 str(data)
@@ -170,6 +174,7 @@ str(data)
 params <- c("lambda",
             "N",
             "N_tot",
+            "D_tot",
             "p0", 
             "alpha0", 
             "alpha1", 
@@ -260,6 +265,9 @@ model {
   # Total estimated population
   N_tot <- sum(z[])
   
+  # Total estimated density
+  D_tot <- N_tot / area
+  
   # Bayesian p-value
   sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
   sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
@@ -293,8 +301,8 @@ fm.33$Rhat
 # Model summary
 print(fm.33, digits = 2)
 
-# Bayes p-value
-cat("Bayesian p-value =", fm.33$summary["p_Bayes",1], "\n") 
+# # Bayes p-value
+# cat("Bayesian p-value =", fm.33$summary["p_Bayes",1], "\n") 
 
 
 # WAIC
@@ -346,8 +354,8 @@ herb_Pdens_pred_vals_scaled <- (herb_Pdens_pred_vals - mean(site_covs[,'herb_Pde
 woody_lrgPInx_pred_vals_scaled <- (woody_lrgPInx_pred_vals - mean(site_covs[,'woody_lrgPInx'])) / sd(site_covs[,'woody_lrgPInx'])
 
 # Matrices for storing predictions
-herbPdens_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(herb_Pdens_pred_vals))
-woodylrgPInx_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(woody_lrgPInx_pred_vals))
+herbPdens_preds <- matrix(NA, nrow = length(beta1_samples), ncol = length(herb_Pdens_pred_vals_scaled))
+woodylrgPInx_preds <- matrix(NA, nrow = length(beta2_samples), ncol = length(woody_lrgPInx_pred_vals_scaled))
 
 # Generate predictions  
 for (i in 1:length(beta0_samples)) {
@@ -367,18 +375,18 @@ herbPdens_mean <- apply(herbPdens_preds, 2, mean)
 woodylrgPInx_mean <- apply(woodylrgPInx_preds, 2, mean)
 
 # Plot Herbaceous Patch
-plot(herb_Pdens_pred_vals, herbPdens_mean, type = "l", col = "lightgreen", lwd = 2, 
+plot(herb_Pdens_pred_vals_scaled, herbPdens_mean, type = "l", col = "lightgreen", lwd = 2, 
      xlab = "Herbaceous Patch Density", ylab = "Predicted Effect",
      main = "Effect of Herbaceous Patch Density")
-polygon(c(herb_Pdens_pred_vals, rev(herb_Pdens_pred_vals)),
+polygon(c(herb_Pdens_pred_vals_scaled, rev(herb_Pdens_pred_vals_scaled)),
         c(herbPdens_CI_lower, rev(herbPdens_CI_upper)),
         col = rgb(0.2, 0.6, 0.2, 0.2), border = NA)  # Add CI shading
 
 # Plot Woody Largest Patch Index
-plot(woody_lrgPInx_pred_vals, woodylrgPInx_mean, type = "l", col = "forestgreen", lwd = 2, 
+plot(woody_lrgPInx_pred_vals_scaled, woodylrgPInx_mean, type = "l", col = "forestgreen", lwd = 2, 
      xlab = "Woody Largest Patch Index", ylab = "Predicted Effect",
      main = "Effect of Woody Largest Patch Index")
-polygon(c(woody_lrgPInx_pred_vals, rev(woody_lrgPInx_pred_vals)),
+polygon(c(woody_lrgPInx_pred_vals_scaled, rev(woody_lrgPInx_pred_vals_scaled)),
         c(woodylrgPInx_CI_lower, rev(woodylrgPInx_CI_upper)),
         col = rgb(0.2, 0.6, 0.2, 0.2), border = NA)  # Add CI shading
 
@@ -389,51 +397,41 @@ polygon(c(woody_lrgPInx_pred_vals, rev(woody_lrgPInx_pred_vals)),
 #   Estimating Abundance 
 #
 # -------------------------------------------------------
+colnames()
+ 
+# Extracting Abundance
+Ntot_samples <- combined_chains[ ,"N_tot"]
 
-# Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.33$samples))
+# Ntotal is the abundance based on 10 point counts at a radius of 200m.
+# To correct for density, Ntotal needs to be divided by 10 * area surveyed
+area <- pi * (200^2) / 4046.86  # Area in acres
+dens_samples <- Ntot_samples / (area * 10)
 
-# Extract lambda estimates
-N_columns <- grep("^N\\[", colnames(combined_chains))
-N_samples <- combined_chains[ ,N_columns]
-
-# mean abundance 
-N_tot <- rowSums(N_samples)
-
-# Area in hectares
-# area <- pi*(200^2)/10000
-
-# Area in acres
-area <- pi*(200^2)/4046.86
-
-# Getting density
-dens_df <- as.data.frame(N_tot/area)
-
-# Summarize by row
-colnames(dens_df)[1] <- "Density"
-dens_df[,2] <- "PC CMR"
-colnames(dens_df)[2] <- "Model"
-dens_df <- dens_df[, c("Model", "Density")] # Switch the order of columns
+# Create data frame for density
+dens_df <- data.frame(Model = rep("PC CMR", length(dens_samples)), Density = dens_samples)
+colnames(dens_df)[2] <- "Density"
 head(dens_df)
 
-# Calculate the 95% Credible Interval
-ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
+# Calculate the mean and 95% Credible Interval
+dens_summary <- dens_df %>%
+  group_by(Model) %>%
+  summarise(
+    Mean = mean(Density),
+    Lower_CI = quantile(Density, 0.025),
+    Upper_CI = quantile(Density, 0.975)
+  )
 
-# Subset the data frame to 95% CI
-dens_df <- subset(dens_df, Density >= ci_bounds[1] & Density <= ci_bounds[2])
-
-
-# Violin plot
-ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
-  geom_violin() +
-  geom_boxplot(aes(x = Model, y = Density),
-               width = 0.2, position = position_dodge(width = 0.8)) +
+# Plot density
+ggplot(dens_summary, aes(x = Model)) +
+  geom_point(aes(y = Mean), size = 3) +  # Add mean points
+  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.05) +  # Add error bars for CI
   labs(
     title = "",
     x = "Model",
-    y = "Density (N/acre)") +
-  scale_y_continuous(limits = c(0, 5),
-                     breaks = seq(0, 5, by = 1),
+    y = "Density (N/acre)"
+  ) +
+  scale_y_continuous(limits = c(0, 0.5),
+                     breaks = seq(0, 0.5, by = 0.25),
                      labels = scales::comma) +
   theme_minimal() +
   theme(
@@ -446,10 +444,44 @@ ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
   )
 
 
-# total density
+
+# Total density
 print(mean(dens_df$Density))
 print(min(dens_df$Density))
 print(max(dens_df$Density))
+
+
+
+# Getting total abundance
+abund_summary <- dens_summary
+abund_summary[,2:4] <- abund_summary[,2:4] * 2710
+
+
+
+# Plot abundance
+ggplot(abund_summary, aes(x = Model)) +
+  geom_point(aes(y = Mean), size = 3) +  # Add mean points
+  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.05) +  # Add error bars for CI
+  labs(
+    title = "",
+    x = "Model",
+    y = "Abundance"
+  ) +
+  scale_y_continuous(limits = c(500, 700),
+                     breaks = seq(500, 700, by = 25),
+                     labels = scales::comma) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "none"
+  )
+
+
+
 
 
 # Total abundance
@@ -461,7 +493,8 @@ mean(dens_df$Density) * 2710
 save.image(file = "./CMR_bm_JAGs.RData")
 
 # Export density dataframe
-saveRDS(dens_df, "./Data/Fitted_Models/PC_CMR_DensityDF.rds")
+saveRDS(dens_summary, "./Data/Fitted_Models/PC_CMR_dens_summary.rds")
+saveRDS(abund_summary, "./Data/Fitted_Models/PC_CMR_abund_summary.rds")
 
 
 # End Script
