@@ -20,8 +20,8 @@ setwd(".")
 # -------------------------------------------------------
 
 # BirdNet detections
-bnet_dat <- read.csv("./Data/Acoustic_Data/ARU_BirdNET_alldates.csv") # 2024 4/28 - 8/8
-
+bnet_dat <- read.csv("./Data/Acoustic_Data/NOBO_BirdNETall_2024.csv") # 2024 4/28 - 8/8
+nrow(bnet_dat)
 # bnet_dat <- read.csv("./Data/Acoustic_Data/ARU_BirdNET_2023.csv") # 2023 6/15 - 7/11
 # bnet_dat <- bnet_dat[which( bnet_dat$Common_name == "Northern Bobwhite"),]
 
@@ -104,52 +104,58 @@ call_4day <- call_sum[call_sum$Date %in% dates4day, ]
 # -------------------------------------------------
 # Histogram
 # -------------------------------------------------
-ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
-  geom_col(fill = "black", alpha = 0.7) +  
-  labs(
-    title = "Calls Per Day",
-    x = "Date",
-    y = "Number of Calls"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45,hjust = 1),
-        axis.text.y = element_text(hjust = 0.5),
-        axis.ticks.x = element_line(size = 1),
-        axis.ticks.y = element_line(size = 1),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        axis.line = element_line(color = "black", size = 1)
-  ) +
-  scale_x_date(
-    date_breaks = "3 day",
-    date_labels = "%b%d"
-  )
+callsPerDay <- ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
+                geom_col(fill = "black", alpha = 0.7) +  
+                labs(
+                  title = "Calls Per Day",
+                  x = "Date",
+                  y = "Number of Calls"
+                ) +
+                theme_minimal() +
+                theme(axis.text.x = element_text(angle = 45,hjust = 1),
+                      axis.text.y = element_text(hjust = 0.5),
+                      axis.ticks.x = element_line(size = 1),
+                      axis.ticks.y = element_line(size = 1),
+                      panel.grid.major = element_blank(),
+                      panel.grid.minor = element_blank(),
+                      axis.line = element_line(color = "black", size = 1)
+                ) +
+                scale_x_date(
+                  date_breaks = "3 day",
+                  date_labels = "%b%d")
+# Export                
+ggsave(plot = callsPerDay, "Figures/calls_per_day.jpeg",  
+       width = 8, height = 5, dpi = 300)
 
 # -------------------------------------------------
 # Histogram + 14 day
 # -------------------------------------------------
-ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
-  geom_col(fill = "black", alpha = 0.7) +  
-  # 14-day 
-  geom_vline(data = call_14day, aes(xintercept = as.numeric(Date)), color = "grey", linetype = "solid", size = 1) +
-  labs(
-    title = "Calls Per Day",
-    x = "Date",
-    y = "Number of Calls"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45,hjust = 1),
-        axis.text.y = element_text(hjust = 0.5),
-        axis.ticks.x = element_line(size = 1),
-        axis.ticks.y = element_line(size = 1),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        axis.line = element_line(color = "black", size = 1)
-  ) +
-  scale_x_date(
-    date_breaks = "3 day",
-    date_labels = "%b%d"
-  )  
+Samp14Day <- ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
+                  geom_col(fill = "black", alpha = 0.7) +  
+                  # 14-day 
+                  geom_vline(data = call_14day, aes(xintercept = as.numeric(Date)), 
+                             color = "red", linetype = "dashed", size = 0.75) +
+                  labs(
+                    title = "Calls Per Day",
+                    x = "Date",
+                    y = "Number of Calls"
+                  ) +
+                  theme_minimal() +
+                  theme(axis.text.x = element_text(angle = 45,hjust = 1),
+                        axis.text.y = element_text(hjust = 0.5),
+                        axis.ticks.x = element_line(size = 1),
+                        axis.ticks.y = element_line(size = 1),
+                        panel.grid.major = element_blank(),
+                        panel.grid.minor = element_blank(),
+                        axis.line = element_line(color = "black", size = 1)
+                  ) +
+                  scale_x_date(
+                    date_breaks = "3 day",
+                    date_labels = "%b%d")
+ 
+# Export                
+ggsave(plot = Samp14Day, "Figures/14daySamp.jpeg",  
+       width = 8, height = 5, dpi = 300)                  
 
 # -------------------------------------------------
 # Histogram + 14 day + 7 day
