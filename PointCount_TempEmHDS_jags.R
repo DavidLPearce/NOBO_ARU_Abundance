@@ -26,7 +26,7 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- Ncores * 0.60 # For low background use 80%, for medium use 50% of Ncores
+workers <- 2 #Ncores * 0.60 # For low background use 80%, for medium use 50% of Ncores
 print(workers)
 
 # -------------------------------------------------------
@@ -227,7 +227,6 @@ params <- c("r",
             "phi0", 
             "beta0", 
             "beta1",
-            "beta2",
             "gamma1", 
             "logit.gamma1",
             "gamma2",
@@ -235,7 +234,6 @@ params <- c("r",
             "lambda",
             "N",
             "N_tot",
-            "D_tot",
             "Davail",
             "log_lik",
             "p_Bayes")
@@ -270,7 +268,6 @@ model {
   # Priors
   beta0 ~ dnorm(0, 1)
   beta1 ~ dnorm(0, 1)
-  beta2 ~ dnorm(0, 1)
 
   # Availability parameters
   phi0 ~ dunif(0.1, 0.9)
@@ -340,12 +337,13 @@ model {
     } # End k loop
 
     # Abundance Model
-    #log(lambda[s]) <- beta0 + beta1*X.abund[s,17] + beta2 * X.abund[s,10]  
-    lambda[s] <- exp(beta0 + beta1 * X.abund[s,17] + beta2 * X.abund[s,10])
+    log(lambda[s]) <- beta0 + beta1*X.abund[s,17] 
 
     # Population size follows a negative binomial distribution
     # M[s] ~ dnegbin(prob[s], r)
     # prob[s] <- r / (r + lambda[s])
+    
+    # Poisson
     M[s] ~ dpois(lambda[s])
   } # End s loop
 
@@ -362,7 +360,6 @@ model {
   }
   # Abundance and Density
   N_tot <- sum(N[])
-  D_tot <- N_total / area
 
   # Bayesian p-value Computation
   sum_obs <- sum(discrepancy_obs[, ,])

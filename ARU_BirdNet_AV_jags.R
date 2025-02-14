@@ -356,8 +356,7 @@ params <- c('alpha0',
              'bp.v',
              'lambda',
              'N',
-             'N_tot',
-             'D_tot')
+             'N_tot')
 
 # Initial Values 
 inits <- function() {
@@ -458,9 +457,7 @@ cat(" model {
   # Derive Abundance/Density
   # -------------------------------------------
   N_tot <- sum(N[])
-  D_tot <- N_tot/area
 
-  
   # -------------------------------------------
   # Bayesian P-value
   # -------------------------------------------

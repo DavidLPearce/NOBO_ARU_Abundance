@@ -174,7 +174,6 @@ str(data)
 params <- c("lambda",
             "N",
             "N_tot",
-            "D_tot",
             "p0", 
             "alpha0", 
             "alpha1", 
@@ -260,9 +259,6 @@ model {
   
   # Total estimated population
   N_tot <- sum(z[])
-  
-  # Total estimated density
-  D_tot <- N_tot / area
   
   # Bayesian p-value
   sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
