@@ -48,7 +48,7 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- 2 # Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
+workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
 
 # -------------------------------------------------------
 #
@@ -333,10 +333,8 @@ n.thin = 10
 #                   Model 1 
 # Cue Rate =  ran eff of survey/day
 # Detection =  Wind
-# Abundance = Herbaceous Patch Density + Woody large patch index
+# Abundance = Shrub Focal Statistics
 # ----------------------------------------------------------
-
-
 
 # -------------------------------------------------------
 # Model Specifications
@@ -348,8 +346,9 @@ params <- c('alpha0',
             'alpha2',
              'beta0',
              'beta1',
-             'tau', 
-             'tau.day', 
+             'gamma.1',
+             'mu_gamma',
+             'tau_gamma',
              'a.phi', 
              'omega', 
              'bp.y', 
@@ -361,16 +360,14 @@ params <- c('alpha0',
 # Initial Values 
 inits <- function() {
               list(
-                N = rep(1, R), 
+                N = rep(1, R),
                 beta0 = rnorm(1),
                 beta1 = 0,
                 omega = runif(1, 0, 10), 
-                tau.day = runif(1, 0.1, 1),
-                tau = runif(1, 0.1, 1),
-                tau.p = runif(1, 0.1, 1),
-                tau.day.p = runif(1, 0.1, 1),
-                alpha1 = runif(1, 0, 1), 
-                alpha2 = 0,
+                mu_gamma = 0, 
+                tau_gamma = 1,
+                alpha1 = runif(1, 0, 10),
+                alpha2 = rnorm(1, 0, 0.1),
                 a.phi = runif(1, 0, 5)
               )
 }#end inits
@@ -392,11 +389,13 @@ cat(" model {
   alpha1 ~ dunif(0, 1000) # Constrained to be positive
   alpha2 ~ dnorm(0, 1)
   omega ~ dunif(0, 1000)
-  tau.day ~ dgamma(.01, .01)
+  mu_gamma ~ dnorm(0, 0.1)
+  tau_gamma ~ dgamma(0.1, 0.1)
   a.phi ~ dunif(0, 100)
 
+
   for (i in 1:n.days) {
-    gamma.1[i] ~ dnorm(0, tau.day)
+    gamma.1[i] ~ dnorm(mu_gamma, tau_gamma)
   }
 
   for (i in 1:R) {
@@ -413,14 +412,12 @@ cat(" model {
     # Abundance Model
     log(lambda[i]) <- beta0 + beta1 * X.abund[i,17] 
     N[i] ~ dpois(lambda[i])
-    
 
-    
     # Acoustic Data 
     for (j in 1:J[i]) {
     
     # Detection Model
-    logit(p.a[i, j]) <- alpha0 + alpha1 * N[i] + alpha2 * X.abund[i,21]
+    logit(p.a[i, j]) <- alpha0 + alpha1 * N[i] + alpha2 * X.abund[i,23]
     
     # Vocalization Model
       log(delta[i, j]) <- gamma.1[days[i, j]]
@@ -454,7 +451,7 @@ cat(" model {
   } # i
   
   # -------------------------------------------
-  # Derive Abundance/Density
+  # Derive Abundance
   # -------------------------------------------
   N_tot <- sum(N[])
 
@@ -477,7 +474,7 @@ cat(" model {
 
 
 # Fit Model
-fm.6 <- jags(data = Bnet14.data, 
+fm.1 <- jags(data = Bnet14.data, 
              inits = inits, 
              parameters.to.save = params, 
              model.file = "./jags_models/Bnet_AV_mod1.txt", 
@@ -490,16 +487,12 @@ fm.6 <- jags(data = Bnet14.data,
              DIC = TRUE) 
  
 # Check Convergence
-mcmcplot(fm.6$samples)# Trace plots
-cat("Bayesian p-value =", fm.6$summary["bp.v",1], "\n")# Bayesian P value
-fm.6$Rhat# Rhat
+mcmcplot(fm.1$samples)# Trace plots
+cat("Bayesian p-value =", fm.1$summary["bp.v",1], "\n")# Bayesian P value
+fm.1$Rhat# Rhat
 
 # Model summary
-print(fm.6, digits = 2)
-
-# Average number of false positives detections
-cat("False positives =", fm.6$summary["omega",1], "\n")
-
+print(fm.1, digits = 2)
 
 # Save Environment
 save.image(file = "./ARU_AV_Bnet14day_JAGs.RData")
@@ -512,7 +505,7 @@ save.image(file = "./ARU_AV_Bnet14day_JAGs.RData")
 # -------------------------------------------------------
 
 # Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.6$samples))
+combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
 
 
 # Extracting Abundance
@@ -601,8 +594,8 @@ ggplot(abund_summary, aes(x = Model)) +
 
 
 # Total abundance
-mean(dens_df$Density) * 2710
-
+abund_summary$Mean
+abund_summary$Upper_CI
 
 
 # Save Environment
@@ -611,6 +604,7 @@ save.image(file = "./ARU_AV_Bnet14day_JAGs.RData")
 # Export density dataframe
 saveRDS(dens_summary, "./Data/Fitted_Models/ARU_BnetAV_dens_summary.rds")
 saveRDS(abund_summary, "./Data/Fitted_Models/ARU_BnetAV_abund_summary.rds")
+
 
 
 
