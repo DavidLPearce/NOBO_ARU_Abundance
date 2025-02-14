@@ -409,8 +409,12 @@ save.image(file = "./HDS_JAGs.RData")
 # -------------------------------------------------------
  
 
+# Combine chains
+combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
+
+
 # Extracting Abundance
-Ntot_samples <- combined_chains[ ,"N_tot"]
+Ntot_samples <- combined_chains[ ,"N_total"] # will need corrected, has been changed to N_tot
 
 # Ntotal is the abundance based on 10 point counts at a radius of 200m.
 # To correct for density, Ntotal needs to be divided by 10 * area surveyed
@@ -500,7 +504,7 @@ mean(dens_df$Density) * 2710
 
 
 # Save Environment
-save.image(file = "./CMR_bm_JAGs.RData")
+save.image(file = "./HDS_JAGs.RData")
 
 # Export density dataframe
 saveRDS(dens_summary, "./Data/Fitted_Models/PC_HDS_dens_summary.rds")
