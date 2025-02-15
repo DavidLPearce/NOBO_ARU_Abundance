@@ -48,7 +48,7 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
+workers <- Ncores * 0.9 # For low background use 80%, for medium use 50% of Ncores
 
 # -------------------------------------------------------
 #
@@ -347,6 +347,8 @@ params <- c('alpha0',
              'beta0',
              'beta1',
              'gamma.1',
+            'sigma_S',
+            'eta',
              'mu_gamma',
              'tau_gamma',
              'a.phi', 
@@ -363,6 +365,8 @@ inits <- function() {
                 N = rep(1, R),
                 beta0 = rnorm(1),
                 beta1 = 0,
+                sigma_S = runif(1, 0.1, 2), 
+                eta = rnorm(R, 0, 1), 
                 omega = runif(1, 0, 10), 
                 mu_gamma = 0, 
                 tau_gamma = 1,
@@ -393,6 +397,12 @@ cat(" model {
   tau_gamma ~ dgamma(0.1, 0.1)
   a.phi ~ dunif(0, 100)
 
+  # Site random effect on abundance - getting at availability changes at site
+  sigma_S ~ dunif(0, 10)  # Prior on standard deviation
+  for (i in 1:R) {
+    eta[i] ~ dnorm(0, 1)  # Standard normal for non-centered approach
+    S.raneff[i] <- beta0 + sigma_S * eta[i]  
+  }
 
   for (i in 1:n.days) {
     gamma.1[i] ~ dnorm(mu_gamma, tau_gamma)
@@ -410,7 +420,8 @@ cat(" model {
   for (i in 1:R) {
   
     # Abundance Model
-    log(lambda[i]) <- beta0 + beta1 * X.abund[i,17] 
+    #log(lambda[i]) <- beta0 + beta1 * X.abund[i,17]
+    log(lambda[i]) <- beta1 * X.abund[i,17] + S.raneff[i]
     N[i] ~ dpois(lambda[i])
 
     # Acoustic Data 
