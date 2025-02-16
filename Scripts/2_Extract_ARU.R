@@ -452,4 +452,68 @@ print(site_dat)
 write.csv(site_dat, "./Data/Acoustic_Data/ARU_siteCovs.csv") # .csv
 
 
-# End Script
+
+
+# --------------------End Script -----------------------------
+
+site_dat<- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
+
+cor_mat <- cor(site_dat[-c((1:4))])
+ 
+
+# Heat Map
+library(reshape2)
+library(psych)
+
+# Assuming cor_mat is your correlation matrix
+cor_mat_melted <- melt(cor_mat)
+
+# Create the heatmap
+ggplot(cor_mat_melted, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1, 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Correlation Heatmap", x = "", y = "")
+
+# Checking correlation
+pairs.panels(site_dat[-c((1:4))],
+             gap = 0,
+             bg = c("blue", "red"),
+             pch = 21, main = "ARU Site Covs Correlations")
+
+# Filter to less than 30% correlated
+low_corr <- which(abs(cor_mat) < 0.3, arr.ind = TRUE)
+
+# Remove redundant and diagonal elements
+low_corr <- low_corr[low_corr[, 1] > low_corr[, 2], ]
+
+# Filter to keep only pairs where one variable starts with "woody_" and the other with "herb_"
+woody_herb_pairs <- low_corr[
+  (grepl("^woody_", rownames(cor_mat)[low_corr[, 1]]) & grepl("^herb_", colnames(cor_mat)[low_corr[, 2]])) |
+    (grepl("^herb_", rownames(cor_mat)[low_corr[, 1]]) & grepl("^woody_", colnames(cor_mat)[low_corr[, 2]])), 
+]
+
+# Create formatted output of low correlation pairs
+low_corr_pairs <- apply(woody_herb_pairs, 1, function(idx) 
+  paste(rownames(cor_mat)[idx[1]], colnames(cor_mat)[idx[2]], sep = " - ")
+)
+
+print(low_corr_pairs)
+str(low_corr_pairs)
+
+# Now convert the character vector into a dataframe
+ARU_combo <- data.frame(pairs = low_corr_pairs)
+
+
+PC_combo <-read.csv("PC_model_combinations.csv")
+
+# Find common pairs
+common_pairs <- intersect(ARU_combo$pairs, PC_combo$pairs)
+
+# Print common pairs
+print(common_pairs)
+# "woody_EdgDens - herb_prp"  "woody_lrgPInx - herb_ClmIdx"  "woody_AggInx - herb_ShpInx"
+
+
+

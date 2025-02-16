@@ -469,7 +469,7 @@ pairs.panels(site_dat[-c((1:4))],
              pch = 21, main = "Point Count Site Covs Correlations")
 
 cor_mat <- cor(site_dat[-c((1:4))])
-write.csv(cor_mat, "PC_Site_Covs_Correlations.csv")
+#write.csv(cor_mat, "PC_Site_Covs_Correlations.csv")
 
 # Heat Map
 library(reshape2)
@@ -504,7 +504,11 @@ low_corr_pairs <- apply(woody_herb_pairs, 1, function(idx)
 )
 
 print(low_corr_pairs)
+str(low_corr_pairs)
 
+# Now convert the character vector into a dataframe
+low_corr_df <- data.frame(pairs = low_corr_pairs)
 
+write.csv(low_corr_df, "PC_model_combinations.csv")
   
 # End Script

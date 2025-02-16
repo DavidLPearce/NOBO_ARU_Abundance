@@ -125,7 +125,7 @@ X.det <- array(NA, dim = c(10,  # Number of sites
 # Assign each covariate to the respective slice in the array
 X.det[, , "Observer"] <- as.matrix(Observer_numeric)
 X.det[, , "Temp"] <- as.matrix(scale(temp_mat))  # Scaled
-X.det[, , "Wind"] <- as.matrix(wind_mat)
+X.det[, , "Wind"] <- as.matrix(scale(wind_mat))
 X.det[, , "Sky"] <- as.matrix(sky_mat)
 X.det[, , "DOY"] <- as.matrix(scale(doy_mat)) # Scaled
 print(X.det)
@@ -217,7 +217,7 @@ n.thin = 10
 #                   Model 1 
 # Availability =  ran eff of survey/day
 # Detection =  Wind
-# Abundance = Herbaceous Patch Density + Woody large patch index
+# Abundance = Herbaceous Patch Density
 # ----------------------------------------------------------
 
 # Parameters monitored
@@ -411,7 +411,7 @@ combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
 
 
 # Extracting Abundance
-Ntot_samples <- combined_chains[ ,"N_total"] # will need corrected, has been changed to N_tot
+Ntot_samples <- combined_chains[ ,"N_tot"]  
 
 # Ntotal is the abundance based on 10 point counts at a radius of 200m.
 # To correct for density, Ntotal needs to be divided by 10 * area surveyed

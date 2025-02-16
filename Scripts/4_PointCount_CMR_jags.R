@@ -315,74 +315,97 @@ print(fm.33, digits = 2)
 
 # Combine chains
 combined_chains <- as.mcmc(do.call(rbind, fm.33$samples))
-# 
-# # Extract beta estimates
-# beta0_samples <- combined_chains[, "beta0"]
-# beta1_samples <- combined_chains[, "beta1"]
-# beta2_samples <- combined_chains[, "beta2"]
-# 
-# # Means
-# beta0 <- mean(beta0_samples)
-# beta1 <- mean(beta1_samples)
-# beta2 <- mean(beta2_samples)
-# 
-# # # Credible Intervals
-# # beta0_CI_lower <- quantile(beta0_samples, probs = 0.025)
-# # beta0_CI_upper <- quantile(beta0_samples, probs = 0.975)
-# # 
-# # beta1_CI_lower <- quantile(beta1_samples, probs = 0.025)
-# # beta1_CI_upper <- quantile(beta1_samples, probs = 0.975)
-# # 
-# # beta2_CI_lower <- quantile(beta2_samples, probs = 0.025)
-# # beta2_CI_upper <- quantile(beta2_samples, probs = 0.975)
-# 
-# 
-# # Create a prediction of covariate values
-# herb_Pdens_pred_vals <- seq(min(site_covs[,'herb_Pdens']), max(site_covs[,'herb_Pdens']), length.out = 100)
-# woody_lrgPInx_pred_vals <- seq(min(site_covs[,'woody_lrgPInx']), max(site_covs[,'woody_lrgPInx']), length.out = 100)
-# 
-# # Scale to have a mean of 0
-# herb_Pdens_pred_vals_scaled <- (herb_Pdens_pred_vals - mean(site_covs[,'herb_Pdens'])) / sd(site_covs[,'herb_Pdens'])
-# woody_lrgPInx_pred_vals_scaled <- (woody_lrgPInx_pred_vals - mean(site_covs[,'woody_lrgPInx'])) / sd(site_covs[,'woody_lrgPInx'])
-# 
-# # Matrices for storing predictions
-# herbPdens_preds <- matrix(NA, nrow = length(beta1_samples), ncol = length(herb_Pdens_pred_vals_scaled))
-# woodylrgPInx_preds <- matrix(NA, nrow = length(beta2_samples), ncol = length(woody_lrgPInx_pred_vals_scaled))
-# 
-# # Generate predictions  
-# for (i in 1:length(beta0_samples)) {
-#   herbPdens_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * herb_Pdens_pred_vals_scaled
-#   woodylrgPInx_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * woody_lrgPInx_pred_vals_scaled
-# }
-# 
-# # Calculate credible intervals
-# herbPdens_CI_lower <- apply(herbPdens_preds, 2, quantile, probs = 0.025)
-# herbPdens_CI_upper <- apply(herbPdens_preds, 2, quantile, probs = 0.975)
-# 
-# woodylrgPInx_CI_lower <- apply(woodylrgPInx_preds, 2, quantile, probs = 0.025)
-# woodylrgPInx_CI_upper <- apply(woodylrgPInx_preds, 2, quantile, probs = 0.975)
-# 
-# # Calculate mean predictions
-# herbPdens_mean <- apply(herbPdens_preds, 2, mean)
-# woodylrgPInx_mean <- apply(woodylrgPInx_preds, 2, mean)
-# 
-# # Plot Herbaceous Patch
-# plot(herb_Pdens_pred_vals_scaled, herbPdens_mean, type = "l", col = "lightgreen", lwd = 2, 
-#      xlab = "Herbaceous Patch Density", ylab = "Predicted Effect",
-#      main = "Effect of Herbaceous Patch Density")
-# polygon(c(herb_Pdens_pred_vals_scaled, rev(herb_Pdens_pred_vals_scaled)),
-#         c(herbPdens_CI_lower, rev(herbPdens_CI_upper)),
-#         col = rgb(0.2, 0.6, 0.2, 0.2), border = NA)  # Add CI shading
-# 
-# # Plot Woody Largest Patch Index
-# plot(woody_lrgPInx_pred_vals_scaled, woodylrgPInx_mean, type = "l", col = "forestgreen", lwd = 2, 
-#      xlab = "Woody Largest Patch Index", ylab = "Predicted Effect",
-#      main = "Effect of Woody Largest Patch Index")
-# polygon(c(woody_lrgPInx_pred_vals_scaled, rev(woody_lrgPInx_pred_vals_scaled)),
-#         c(woodylrgPInx_CI_lower, rev(woodylrgPInx_CI_upper)),
-#         col = rgb(0.2, 0.6, 0.2, 0.2), border = NA)  # Add CI shading
-# 
 
+# Extract beta estimates
+beta0_samples <- combined_chains[, "beta0"]
+beta1_samples <- combined_chains[, "beta1"]
+beta2_samples <- combined_chains[, "beta2"]
+
+# Means
+beta0 <- mean(beta0_samples)
+beta1 <- mean(beta1_samples)
+beta2 <- mean(beta2_samples)
+
+# # Credible Intervals
+# beta0_CI_lower <- quantile(beta0_samples, probs = 0.025)
+# beta0_CI_upper <- quantile(beta0_samples, probs = 0.975)
+#
+# beta1_CI_lower <- quantile(beta1_samples, probs = 0.025)
+# beta1_CI_upper <- quantile(beta1_samples, probs = 0.975)
+#
+# beta2_CI_lower <- quantile(beta2_samples, probs = 0.025)
+# beta2_CI_upper <- quantile(beta2_samples, probs = 0.975)
+
+
+# Create a prediction of covariate values
+herb_Pdens_pred_vals <- seq(min(site_covs[,'herb_Pdens']), max(site_covs[,'herb_Pdens']), length.out = 1000)
+woody_lrgPInx_pred_vals <- seq(min(site_covs[,'woody_lrgPInx']), max(site_covs[,'woody_lrgPInx']), length.out = 1000)
+
+# Scale to have a mean of 0
+herb_Pdens_pred_vals_scaled <- (herb_Pdens_pred_vals - mean(site_covs[,'herb_Pdens'])) / sd(site_covs[,'herb_Pdens'])
+woody_lrgPInx_pred_vals_scaled <- (woody_lrgPInx_pred_vals - mean(site_covs[,'woody_lrgPInx'])) / sd(site_covs[,'woody_lrgPInx'])
+
+# Matrices for storing predictions
+herbPdens_preds <- matrix(NA, nrow = length(beta1_samples), ncol = length(herb_Pdens_pred_vals_scaled))
+woodylrgPInx_preds <- matrix(NA, nrow = length(beta2_samples), ncol = length(woody_lrgPInx_pred_vals_scaled))
+
+# Generate predictions
+for (i in 1:length(beta0_samples)) {
+  herbPdens_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * herb_Pdens_pred_vals_scaled
+  woodylrgPInx_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * woody_lrgPInx_pred_vals_scaled
+}
+
+# Calculate credible intervals
+herbPdens_CI_lower <- apply(herbPdens_preds, 2, quantile, probs = 0.025)
+herbPdens_CI_upper <- apply(herbPdens_preds, 2, quantile, probs = 0.975)
+
+woodylrgPInx_CI_lower <- apply(woodylrgPInx_preds, 2, quantile, probs = 0.025)
+woodylrgPInx_CI_upper <- apply(woodylrgPInx_preds, 2, quantile, probs = 0.975)
+
+# Calculate mean predictions
+herbPdens_mean <- apply(herbPdens_preds, 2, mean)
+woodylrgPInx_mean <- apply(woodylrgPInx_preds, 2, mean)
+
+# Combine into a single data frame
+herbaceous_data <- data.frame(
+  herb_Pdens_pred_vals_scaled = herb_Pdens_pred_vals_scaled,
+  herbPdens_mean = herbPdens_mean,
+  herbPdens_CI_lower = herbPdens_CI_lower,
+  herbPdens_CI_upper = herbPdens_CI_upper
+)
+
+woody_data <- data.frame(
+  woody_lrgPInx_pred_vals_scaled = woody_lrgPInx_pred_vals_scaled,
+  woodylrgPInx_mean = woodylrgPInx_mean,
+  woodylrgPInx_CI_lower = woodylrgPInx_CI_lower,
+  woodylrgPInx_CI_upper = woodylrgPInx_CI_upper
+)
+
+
+
+# Plot Herbaceous Patch
+hebPdens_plot <- ggplot(herbaceous_data, aes(x = herb_Pdens_pred_vals_scaled, y = herbPdens_mean)) +
+                  geom_line(color = "lightgreen", linewidth = 1.5) +  # Line plot
+                  geom_ribbon(aes(ymin = herbPdens_CI_lower, ymax = herbPdens_CI_upper), fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
+                  labs(x = "Herbaceous Patch Density", y = "Predicted Effect", title = "Effect of Herbaceous Patch Density") +
+                  theme_minimal() +
+                  theme(panel.grid = element_blank())
+# Export                
+ggsave(plot = hebPdens_plot, "Figures/hebPdens_plot.jpeg",  
+       width = 8, height = 5, dpi = 300) 
+
+
+# Plot Woody Largest Patch Index
+woodyPindx_plot <- ggplot(woody_data, aes(x = woody_lrgPInx_pred_vals_scaled, y = woodylrgPInx_mean)) +
+                  geom_line(color = "forestgreen", size = 1.5) +  # Line plot
+                  geom_ribbon(aes(ymin = woodylrgPInx_CI_lower, ymax = woodylrgPInx_CI_upper), fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
+                  labs(x = "Woody Largest Patch Index", y = "", title = "Effect of Woody Largest Patch Index") +
+                  theme_minimal() +
+                  theme(panel.grid = element_blank())
+
+# Export                
+ggsave(plot = woodyPindx_plot, "Figures/woodyPindx_plot.jpeg",  
+       width = 8, height = 5, dpi = 300) 
 
 # -------------------------------------------------------
 #
@@ -390,7 +413,6 @@ combined_chains <- as.mcmc(do.call(rbind, fm.33$samples))
 #
 # -------------------------------------------------------
 
- 
 # Extracting Abundance
 Ntot_samples <- combined_chains[ ,"N_tot"]
 
@@ -403,6 +425,11 @@ dens_samples <- Ntot_samples / (area * 10)
 dens_df <- data.frame(Model = rep("PC CMR", length(dens_samples)), Density = dens_samples)
 colnames(dens_df)[2] <- "Density"
 head(dens_df)
+
+dens_df <- dens_df %>%
+  group_by(Model) %>%
+  filter(Density >= quantile(Density, 0.25) & Density <= quantile(Density, 0.975))
+
 
 # Calculate the mean and 95% Credible Interval
 dens_summary <- dens_df %>%
@@ -434,6 +461,24 @@ ggplot(dens_summary, aes(x = Model)) +
     panel.grid.minor = element_blank(),
     legend.position = "none"
   )
+
+# Plot violin
+ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) + 
+  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
+  labs(x = "Model", y = "Density (N/acre)") +
+  scale_fill_manual(values = c("PC CMR" = "orange", 
+                               "PC HDS" = "purple", 
+                               "AV Bnet" = "blue")) +  # Custom colors
+  scale_y_continuous(limits = c(0, 0.5),
+                     breaks = seq(0, 0.5, by = 0.25),
+                     labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
+        axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
+        axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
+        panel.grid = element_blank(),
+        legend.position = "none")  # Removes legend
+
 
 
 
@@ -471,6 +516,28 @@ ggplot(abund_summary, aes(x = Model)) +
     panel.grid.minor = element_blank(),
     legend.position = "none"
   )
+
+
+# Plot violin
+abund_df <- dens_df
+abund_df$Density <- abund_df$Density * 2710
+
+ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) + 
+  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
+  labs(x = "Model", y = "Density (N/acre)") +
+  scale_fill_manual(values = c("PC CMR" = "orange", 
+                               "PC HDS" = "purple", 
+                               "AV Bnet" = "blue")) +  # Custom colors
+  scale_y_continuous(limits = c(0, 1000),
+                     breaks = seq(0, 1000, by = 25),
+                     labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
+        axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
+        axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
+        panel.grid = element_blank(),
+        legend.position = "none")  # Removes legend
+
 
 
 

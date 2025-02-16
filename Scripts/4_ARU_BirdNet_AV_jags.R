@@ -509,6 +509,212 @@ print(fm.1, digits = 2)
 save.image(file = "./ARU_AV_Bnet14day_JAGs.RData")
 
 
+
+
+# ----------------------------------------------------------
+#                   Model 3 CONSPECIFIC DENSITIES
+# Call Rate = Day Ran Eff + conspecific density
+# Detection = Vegetation Densit + site ran eff
+# Abundance = Herb patch density 
+# ----------------------------------------------------------
+
+# -------------------
+# MCMC Specifications
+# -------------------
+n.iter = 1000000
+n.burnin = 100000 
+n.chains = 3
+n.thin = 10
+n.adapt = 5000
+
+
+# Parameters monitored
+params3 <- c('lambda',
+             'N_tot',
+             'N',
+             'alpha0', 
+             'alpha1', 
+             'alpha2',
+             'beta0',
+             'S.raneff',
+             'sigma_S',
+             'eta',
+             'beta1',
+             'kappa',
+             'gamma1',
+             'mu_gamma1',   
+             'tau_gamma1',
+             'a.phi',
+             'omega', 
+             'bp.y', 
+             'bp.v')
+
+# Initial Values 
+inits3 <- function() {
+  list(
+    N = rep(1, R), 
+    beta0 = rnorm(1, 0, 1),
+    beta1 = rnorm(1, 0, 5),
+    sigma_S = runif(1, 0.1, 2), 
+    eta = rnorm(R, 0, 1),  
+    kappa = runif(1, 0.8, 1.5),
+    omega = 0.001,
+    mu_gamma1 = rlnorm(1, log(3), 0.5), 
+    tau_gamma1 = rgamma(1, 0.1, 0.1),
+    alpha0 = rnorm(1, 0, 1),
+    alpha1 = runif(1, 0, 1), 
+    alpha2 = rnorm(1, 0, 0.1),
+    a.phi = runif(1, 0, 5)
+  )
+}#end inits
+
+
+# ----------------------------- 
+# Model Statement 
+# ----------------------------- 
+cat(" model {
+  
+  # -------------------------------------------
+  # Priors 
+  # -------------------------------------------
+  beta0 ~ dnorm(0, 0.1)
+  beta1 ~ dnorm(0, 0.1)
+  sigma_S ~ dunif(0, 10)  # Prior on standard deviation
+  alpha0 ~ dnorm(0, 1)
+  alpha1 ~ dunif(0, 1000) # Constrained to be positive
+  alpha2 ~ dnorm(0, 1)
+  kappa ~ dnorm(1, 1) T(0, ) # truncated to always be positive
+  mu_gamma1 ~ dnorm(mu_mu, tau_mu) # dlnorm(1, 1)
+  mu_mu ~ dnorm(1, 0.1)
+  tau_mu ~ dgamma(0.1, 0.1) 
+  tau_gamma1 ~ dgamma(0.01, 0.01)
+  a.phi ~ dgamma(0.001, 0.001)
+  omega  ~ dnorm(0, 1) T(0, ) # Truncated at 0, 0 false positive rate
+ 
+ 
+  # Site random effect on abundance - missing habitat variability
+  for (i in 1:R) {
+    eta[i] ~ dnorm(0, 1)  # Standard normal for non-centered approach
+    S.raneff[i] <- beta0 + sigma_S * eta[i]  
+  }
+
+ 
+  # Call rate random effect for survey
+  for (j in 1:n.days) {
+    gamma1[j] ~ dnorm(mu_gamma1, tau_gamma1) 
+  }
+ 
+  for (i in 1:R) {
+    for (j in 1:J.A) {
+      phi[i, j] ~ dgamma(a.phi, a.phi)
+    }
+  }
+  
+  # -------------------------------------------
+  # Likelihood and process model 
+  # -------------------------------------------
+  for (i in 1:R) {
+    
+    # Abundance Model Poisson
+    log(lambda[i]) <- beta1 * X.abund[i,17] + S.raneff[i]
+    N[i] ~ dpois(lambda[i])
+    
+    # Acoustic Data 
+    for (j in 1:J[i]) {
+    
+      # Detection Model 
+      logit(p.a[i, j]) <- alpha0 + alpha1*N[i] + alpha2*X.det[j,2]  
+      
+      # Vocalization Model  
+      log(delta[i, j]) <-  kappa*log(N[i]) + gamma1[days[i, j]] 
+      y[i, j] ~ dbin(p.a[i, j], 1)
+      tp[i, j] <- delta[i, j] * N[i] / (delta[i, j] * N[i] + omega)
+      
+      # Posterior predictive checks
+      y.pred[i, j] ~ dbin(p.a[i, j], 1)
+      resid.y[i, j] <- pow(pow(y[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
+      resid.y.pred[i, j] <- pow(pow(y.pred[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
+    } # j
+    
+    for (j in 1:J.r[i]) {
+      # Zero Truncated Poisson
+      v[i, A.times[i, j]] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
+
+      # Predicted Values
+      v.pred[i, j] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
+      mu.v[i, j] <- ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]]) / (1 - exp(-1 * ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]])))
+      resid.v[i, j] <- pow(pow(v[i, A.times[i, j]], 0.5) - pow(mu.v[i, j], 0.5), 2)
+      resid.v.pred[i, j] <- pow(pow(v.pred[i, j], 0.5) - pow(mu.v[i, j], 0.5), 2)
+    } # j
+  } # i
+  
+  # ------------------------------------------- 
+  # Manual validation 
+  # -------------------------------------------
+  for (i in 1:R.val) {
+    for (j in 1:J.val[i]) {
+      K[i, j] ~ dbin(tp[sites.a[i], j], v[sites.a[i], val.times[i, j]])
+      k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
+    } # j
+  } # i
+  
+  # -------------------------------------------
+  # Derive Abundance/Density
+  # -------------------------------------------
+  N_tot <- sum(N[])
+
+  # -------------------------------------------
+  # Bayesian P-value
+  # -------------------------------------------
+  for (i in 1:R.A) {
+    tmp.v[i] <- sum(resid.v[sites.a.v[i], 1:J.r[sites.a.v[i]]])
+    tmp.v.pred[i] <- sum(resid.v.pred[sites.a.v[i], 1:J.r[sites.a.v[i]]])
+  }
+  fit.y <- sum(resid.y[sites.a, 1:J.A])
+  fit.y.pred <- sum(resid.y.pred[sites.a, 1:J.A])
+  fit.v <- sum(tmp.v[1:R.A])
+  fit.v.pred <- sum(tmp.v.pred[1:R.A])
+  bp.y <- step(fit.y.pred - fit.y)
+  bp.v <- step(fit.v.pred - fit.v)
+}", fill=TRUE, file="./jags_models/Wolfe_AV_PoisMod3.txt")
+# ------------End Model-------------
+
+
+
+# Fit Model
+fm.p3 <- jags(data = Bnet14.data,
+              inits = inits3,
+              parameters.to.save = params3,
+              model.file = "./jags_models/Wolfe_AV_PoisMod3.txt",
+              n.iter = n.iter,
+              n.burnin = n.burnin,
+              n.chains = n.chains,
+              n.thin = n.thin,
+              n.adapt = n.adapt,
+              parallel = TRUE,
+              n.cores = workers,
+              verbose = TRUE,
+              DIC = FALSE)
+
+
+
+# Trace plots
+mcmcplot(fm.p3$samples)
+
+# Rhat
+fm.p3$Rhat
+
+# Bayesian P value
+cat("Bayesian p-value =", fm.p3$summary["bp.v",1], "\n")
+
+
+# Model summary
+print(fm.p3, digits = 2)
+
+
+
+
+
 # -------------------------------------------------------
 #
 #   Estimating Abundance 
@@ -516,8 +722,8 @@ save.image(file = "./ARU_AV_Bnet14day_JAGs.RData")
 # -------------------------------------------------------
 
 # Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
-
+#combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
+combined_chains <- as.mcmc(do.call(rbind, fm.p3$samples))
 
 # Extracting Abundance
 Ntot_samples <- combined_chains[ ,"N_tot"]
