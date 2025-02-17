@@ -272,8 +272,10 @@ X.det <- as.matrix(data.frame(temp = temp_mat, wind = wind_mat))
 # sky_vec <- as.factor(weather_dat$Sky_Condition)  # Convert to factor
 # sky_dum <- model.matrix(~ sky_vec - 1)  # Create dummy variables for sky, without intercept
 
-# Area in acres
+# Survey area in acres
 area <- pi*(200^2)/4046.86
+
+# Survey area in kilometers, for convergence
 
 # ---------------------------------------
 # Bayesian P-value
@@ -307,7 +309,7 @@ Bnet14.data <- list(R = R,
                     n.days = max(J),
                     X.abund = X.abund,
                     X.det = X.det,
-                    area = area)
+                    Offset = area)
 
 # Check structure
 str(Bnet14.data)
@@ -323,8 +325,8 @@ str(Bnet14.data)
 # -------------------
 # MCMC Specifications
 # -------------------
-n.iter = 300000
-n.burnin = 60000 
+n.iter = 400000
+n.burnin = 80000 
 n.chains = 3
 n.thin = 10
 
@@ -332,8 +334,8 @@ n.thin = 10
 # ----------------------------------------------------------
 #                   Model 1 
 # Cue Rate =  ran eff of survey/day
-# Detection =  Wind
-# Abundance = Shrub Focal Statistics
+# Detection =  Veg Density
+# Abundance = Herb Patch Density + Site Random effect
 # ----------------------------------------------------------
 
 # -------------------------------------------------------
@@ -347,8 +349,8 @@ params <- c('alpha0',
              'beta0',
              'beta1',
              'gamma.1',
-            'sigma_S',
-            'eta',
+             'S.raneff',
+             'S.tau',
              'mu_gamma',
              'tau_gamma',
              'a.phi', 
@@ -398,10 +400,9 @@ cat(" model {
   a.phi ~ dunif(0, 100)
 
   # Site random effect on abundance - getting at availability changes at site
-  sigma_S ~ dunif(0, 10)  # Prior on standard deviation
+  S.tau ~ dgamma(0.1, 0.1)
   for (i in 1:R) {
-    eta[i] ~ dnorm(0, 1)  # Standard normal for non-centered approach
-    S.raneff[i] <- beta0 + sigma_S * eta[i]  
+    S.raneff[i] ~ dnorm(beta0, S.tau)  
   }
 
   for (i in 1:n.days) {
@@ -420,15 +421,14 @@ cat(" model {
   for (i in 1:R) {
   
     # Abundance Model
-    #log(lambda[i]) <- beta0 + beta1 * X.abund[i,17]
     log(lambda[i]) <- beta1 * X.abund[i,17] + S.raneff[i]
-    N[i] ~ dpois(lambda[i])
+    N[i] ~ dpois(lambda[i] * Offset)
 
     # Acoustic Data 
     for (j in 1:J[i]) {
     
     # Detection Model
-    logit(p.a[i, j]) <- alpha0 + alpha1 * N[i] + alpha2 * X.abund[i,23]
+    logit(p.a[i, j]) <- alpha0 + alpha1 * N[i] + alpha2 * X.abund[i,21]
     
     # Vocalization Model
       log(delta[i, j]) <- gamma.1[days[i, j]]
@@ -480,7 +480,7 @@ cat(" model {
   bp.y <- step(fit.y.pred - fit.y)
   bp.v <- step(fit.v.pred - fit.v)
 }
-", fill=TRUE, file="./jags_models/Bnet_AV_mod1.txt")
+", fill=TRUE, file="./JAGs_Models/Bnet_AV_mod1.txt")
 # ------------End Model-------------
 
 
@@ -488,7 +488,7 @@ cat(" model {
 fm.1 <- jags(data = Bnet14.data, 
              inits = inits, 
              parameters.to.save = params, 
-             model.file = "./jags_models/Bnet_AV_mod1.txt", 
+             model.file = "./JAGs_Models/Bnet_AV_mod1.txt", 
              n.iter = n.iter,
              n.burnin = n.burnin,
              n.chains = n.chains, 
@@ -506,30 +506,30 @@ fm.1$Rhat# Rhat
 print(fm.1, digits = 2)
 
 # Save Environment
-save.image(file = "./ARU_AV_Bnet14day_JAGs.RData")
+save.image(file = "./Data/Model_Environments/ARU_AV_Bnet14day_JAGs.RData")
 
 
 
 
 # ----------------------------------------------------------
-#                   Model 3 CONSPECIFIC DENSITIES
+#                   Model 2 CONSPECIFIC DENSITIES
 # Call Rate = Day Ran Eff + conspecific density
-# Detection = Vegetation Densit + site ran eff
-# Abundance = Herb patch density 
+# Detection = Vegetation Densit 
+# Abundance = Herb patch density + site ran eff
 # ----------------------------------------------------------
 
 # -------------------
 # MCMC Specifications
 # -------------------
-n.iter = 1000000
-n.burnin = 100000 
+n.iter = 800000
+n.burnin = 40000 
 n.chains = 3
 n.thin = 10
 n.adapt = 5000
 
 
 # Parameters monitored
-params3 <- c('lambda',
+params2 <- c('lambda',
              'N_tot',
              'N',
              'alpha0', 
@@ -550,7 +550,7 @@ params3 <- c('lambda',
              'bp.v')
 
 # Initial Values 
-inits3 <- function() {
+inits2 <- function() {
   list(
     N = rep(1, R), 
     beta0 = rnorm(1, 0, 1),
@@ -617,16 +617,16 @@ cat(" model {
     
     # Abundance Model Poisson
     log(lambda[i]) <- beta1 * X.abund[i,17] + S.raneff[i]
-    N[i] ~ dpois(lambda[i])
+    N[i] ~ dpois(lambda[i] * Offset)
     
     # Acoustic Data 
     for (j in 1:J[i]) {
     
       # Detection Model 
-      logit(p.a[i, j]) <- alpha0 + alpha1*N[i] + alpha2*X.det[j,2]  
+      logit(p.a[i, j]) <- alpha0 + alpha1*N[i] + alpha2 * X.abund[i,21] 
       
       # Vocalization Model  
-      log(delta[i, j]) <-  kappa*log(N[i]) + gamma1[days[i, j]] 
+      log(delta[i, j]) <-  kappa*N[i] + gamma1[days[i, j]] 
       y[i, j] ~ dbin(p.a[i, j], 1)
       tp[i, j] <- delta[i, j] * N[i] / (delta[i, j] * N[i] + omega)
       
@@ -676,16 +676,16 @@ cat(" model {
   fit.v.pred <- sum(tmp.v.pred[1:R.A])
   bp.y <- step(fit.y.pred - fit.y)
   bp.v <- step(fit.v.pred - fit.v)
-}", fill=TRUE, file="./jags_models/Wolfe_AV_PoisMod3.txt")
+}", fill=TRUE, file="./JAGs_Models/Bnet_AV_mod2.txt")
 # ------------End Model-------------
 
 
 
 # Fit Model
-fm.p3 <- jags(data = Bnet14.data,
-              inits = inits3,
-              parameters.to.save = params3,
-              model.file = "./jags_models/Wolfe_AV_PoisMod3.txt",
+fm.2 <- jags(data = Bnet14.data,
+              inits = inits2,
+              parameters.to.save = params2,
+              model.file = "./JAGs_Models/Bnet_AV_mod2.txt",
               n.iter = n.iter,
               n.burnin = n.burnin,
               n.chains = n.chains,
@@ -699,17 +699,17 @@ fm.p3 <- jags(data = Bnet14.data,
 
 
 # Trace plots
-mcmcplot(fm.p3$samples)
+mcmcplot(fm.2$samples)
 
 # Rhat
-fm.p3$Rhat
+fm.2$Rhat
 
 # Bayesian P value
-cat("Bayesian p-value =", fm.p3$summary["bp.v",1], "\n")
+cat("Bayesian p-value =", fm.2$summary["bp.v",1], "\n")
 
 
 # Model summary
-print(fm.p3, digits = 2)
+print(fm.2, digits = 2)
 
 
 
@@ -723,7 +723,7 @@ print(fm.p3, digits = 2)
 
 # Combine chains
 #combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
-combined_chains <- as.mcmc(do.call(rbind, fm.p3$samples))
+combined_chains <- as.mcmc(do.call(rbind, fm.2$samples))
 
 # Extracting Abundance
 Ntot_samples <- combined_chains[ ,"N_tot"]
@@ -816,7 +816,7 @@ abund_summary$Upper_CI
 
 
 # Save Environment
-save.image(file = "./ARU_AV_Bnet14day_JAGs.RData")
+save.image(file = "./Data/Model_Environments/ARU_AV_Bnet14day_JAGs.RData")
 
 # Export density dataframe
 saveRDS(dens_summary, "./Data/Fitted_Models/ARU_BnetAV_dens_summary.rds")
