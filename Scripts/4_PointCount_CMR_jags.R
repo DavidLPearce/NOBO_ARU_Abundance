@@ -413,12 +413,15 @@ ggsave(plot = woodyPindx_plot, "Figures/woodyPindx_plot.jpeg",
 #
 # -------------------------------------------------------
 
+#load(file = "./Data/Model_Environments/CMR_bm_JAGs.RData")
+
+
 # Extracting Abundance
 Ntot_samples <- combined_chains[ ,"N_tot"]
 
 # Ntotal is the abundance based on 10 point counts at a radius of 200m.
 # To correct for density, Ntotal needs to be divided by 10 * area surveyed
-area <- pi * (200^2) / 4046.86  # Area in acres
+area <- pi * (250^2) / 4046.86  # Area in acres
 dens_samples <- Ntot_samples / (area * 10)
 
 # Create data frame for density
@@ -439,6 +442,11 @@ dens_summary <- dens_df %>%
     Lower_CI = quantile(Density, 0.025),
     Upper_CI = quantile(Density, 0.975)
   )
+
+# Subset the data within the 95% credible interval
+dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI & dens_df$Density <= dens_summary$Upper_CI, ]
+
+
 
 # Plot density
 ggplot(dens_summary, aes(x = Model)) +
@@ -504,8 +512,8 @@ ggplot(abund_summary, aes(x = Model)) +
     x = "Model",
     y = "Abundance"
   ) +
-  scale_y_continuous(limits = c(500, 700),
-                     breaks = seq(500, 700, by = 25),
+  scale_y_continuous(limits = c(0, 700),
+                     breaks = seq(0, 700, by = 100),
                      labels = scales::comma) +
   theme_minimal() +
   theme(
@@ -529,7 +537,7 @@ ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) +
                                "PC HDS" = "purple", 
                                "AV Bnet" = "blue")) +  # Custom colors
   scale_y_continuous(limits = c(0, 1000),
-                     breaks = seq(0, 1000, by = 25),
+                     breaks = seq(0, 1000, by = 100),
                      labels = scales::comma) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
@@ -548,12 +556,12 @@ mean(dens_df$Density) * 2710
   
 
 
-# Save Environment
-save.image(file = "./CMR_bm_JAGs.RData")
-
 # Export density dataframe
+saveRDS(dens_df, "./Data/Fitted_Models/PC_CMR_dens_df.rds")
 saveRDS(dens_summary, "./Data/Fitted_Models/PC_CMR_dens_summary.rds")
 saveRDS(abund_summary, "./Data/Fitted_Models/PC_CMR_abund_summary.rds")
 
+# Save Environment
+save.image(file = "./CMR_bm_JAGs.RData")
 
 # End Script

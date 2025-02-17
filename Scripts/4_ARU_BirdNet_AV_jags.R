@@ -48,8 +48,8 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- Ncores * 0.9 # For low background use 80%, for medium use 50% of Ncores
-
+workers <- Ncores * 0.4 # For low background use 80%, for medium use 50% of Ncores
+workers
 # -------------------------------------------------------
 #
 #             Variable and Object Definitions
@@ -421,7 +421,7 @@ cat(" model {
   for (i in 1:R) {
   
     # Abundance Model
-    log(lambda[i]) <- beta1 * X.abund[i,17] + S.raneff[i]
+    log(lambda[i]) <- beta1 * X.abund[i,17] #+ S.raneff[i]
     N[i] ~ dpois(lambda[i] * Offset)
 
     # Acoustic Data 
@@ -521,12 +521,13 @@ save.image(file = "./Data/Model_Environments/ARU_AV_Bnet14day_JAGs.RData")
 # -------------------
 # MCMC Specifications
 # -------------------
-n.iter = 800000
-n.burnin = 40000 
+n.iter = 1000000
+n.burnin = 100000 
 n.chains = 3
 n.thin = 10
 n.adapt = 5000
 
+workers = 5
 
 # Parameters monitored
 params2 <- c('lambda',
@@ -537,8 +538,7 @@ params2 <- c('lambda',
              'alpha2',
              'beta0',
              'S.raneff',
-             'sigma_S',
-             'eta',
+             'S.tau',
              'beta1',
              'kappa',
              'gamma1',
@@ -589,16 +589,14 @@ cat(" model {
   tau_mu ~ dgamma(0.1, 0.1) 
   tau_gamma1 ~ dgamma(0.01, 0.01)
   a.phi ~ dgamma(0.001, 0.001)
-  omega  ~ dnorm(0, 1) T(0, ) # Truncated at 0, 0 false positive rate
+  omega  ~ dunif(0, 1000)
  
- 
-  # Site random effect on abundance - missing habitat variability
+  # Site random effect on abundance - getting at availability changes at site
+  S.tau ~ dgamma(0.1, 0.1)
   for (i in 1:R) {
-    eta[i] ~ dnorm(0, 1)  # Standard normal for non-centered approach
-    S.raneff[i] <- beta0 + sigma_S * eta[i]  
+    S.raneff[i] ~ dnorm(beta0, S.tau)  
   }
 
- 
   # Call rate random effect for survey
   for (j in 1:n.days) {
     gamma1[j] ~ dnorm(mu_gamma1, tau_gamma1) 
@@ -626,7 +624,7 @@ cat(" model {
       logit(p.a[i, j]) <- alpha0 + alpha1*N[i] + alpha2 * X.abund[i,21] 
       
       # Vocalization Model  
-      log(delta[i, j]) <-  kappa*N[i] + gamma1[days[i, j]] 
+      log(delta[i, j]) <-  kappa*log(N[i]) + gamma1[days[i, j]] 
       y[i, j] ~ dbin(p.a[i, j], 1)
       tp[i, j] <- delta[i, j] * N[i] / (delta[i, j] * N[i] + omega)
       
@@ -679,8 +677,6 @@ cat(" model {
 }", fill=TRUE, file="./JAGs_Models/Bnet_AV_mod2.txt")
 # ------------End Model-------------
 
-
-
 # Fit Model
 fm.2 <- jags(data = Bnet14.data,
               inits = inits2,
@@ -723,7 +719,7 @@ print(fm.2, digits = 2)
 
 # Combine chains
 #combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
-combined_chains <- as.mcmc(do.call(rbind, fm.2$samples))
+#combined_chains <- as.mcmc(do.call(rbind, fm.2$samples))
 
 # Extracting Abundance
 Ntot_samples <- combined_chains[ ,"N_tot"]
@@ -747,6 +743,10 @@ dens_summary <- dens_df %>%
     Upper_CI = quantile(Density, 0.975)
   )
 
+# Subset the data within the 95% credible interval
+dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI & dens_df$Density <= dens_summary$Upper_CI, ]
+
+
 # Plot density
 ggplot(dens_summary, aes(x = Model)) +
   geom_point(aes(y = Mean), size = 3) +  # Add mean points
@@ -756,8 +756,8 @@ ggplot(dens_summary, aes(x = Model)) +
     x = "Model",
     y = "Density (N/acre)"
   ) +
-  scale_y_continuous(limits = c(0, 0.5),
-                     breaks = seq(0, 0.5, by = 0.25),
+  scale_y_continuous(limits = c(0, 2),
+                     breaks = seq(0, 2, by = 0.25),
                      labels = scales::comma) +
   theme_minimal() +
   theme(
@@ -793,8 +793,8 @@ ggplot(abund_summary, aes(x = Model)) +
     x = "Model",
     y = "Abundance"
   ) +
-  scale_y_continuous(limits = c(100,1000),
-                     breaks = seq(100, 1000, by = 100),
+  scale_y_continuous(limits = c(0,2000),
+                     breaks = seq(0, 2000, by = 100),
                      labels = scales::comma) +
   theme_minimal() +
   theme(
@@ -819,6 +819,7 @@ abund_summary$Upper_CI
 save.image(file = "./Data/Model_Environments/ARU_AV_Bnet14day_JAGs.RData")
 
 # Export density dataframe
+saveRDS(dens_df, "./Data/Fitted_Models/ARU_BnetAV_dens_df.rds")
 saveRDS(dens_summary, "./Data/Fitted_Models/ARU_BnetAV_dens_summary.rds")
 saveRDS(abund_summary, "./Data/Fitted_Models/ARU_BnetAV_abund_summary.rds")
 

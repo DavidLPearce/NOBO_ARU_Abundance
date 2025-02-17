@@ -405,6 +405,8 @@ save.image(file = "./HDS_JAGs.RData")
 #
 # -------------------------------------------------------
  
+#load(file = "./Data/Model_Environments/HDS_JAGs.RData")
+
 
 # Combine chains
 combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
@@ -431,6 +433,10 @@ dens_summary <- dens_df %>%
     Lower_CI = quantile(Density, 0.025),
     Upper_CI = quantile(Density, 0.975)
   )
+
+# Subset the data within the 95% credible interval
+dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI & dens_df$Density <= dens_summary$Upper_CI, ]
+
 
 # Plot density
 ggplot(dens_summary, aes(x = Model)) +
@@ -500,10 +506,11 @@ mean(dens_df$Density) * 2710
 
 
 
-# Save Environment
-save.image(file = "./HDS_JAGs.RData")
 
 # Export density dataframe
+saveRDS(dens_df, "./Data/Fitted_Models/PC_HDS_dens_df.rds")
 saveRDS(dens_summary, "./Data/Fitted_Models/PC_HDS_dens_summary.rds")
 saveRDS(abund_summary, "./Data/Fitted_Models/PC_HDS_abund_summary.rds")
 
+# Save Environment
+save.image(file = "./HDS_JAGs.RData")
