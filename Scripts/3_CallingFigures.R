@@ -118,11 +118,15 @@ callsPerDay <- ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
                       axis.ticks.y = element_line(size = 1),
                       panel.grid.major = element_blank(),
                       panel.grid.minor = element_blank(),
-                      axis.line = element_line(color = "black", size = 1)
+                      axis.line = element_line(color = "black", linewidth = 1)
                 ) +
                 scale_x_date(
                   date_breaks = "3 day",
                   date_labels = "%b%d")
+
+# View 
+callsPerDay
+
 # Export                
 ggsave(plot = callsPerDay, "Figures/calls_per_day.jpeg",  
        width = 8, height = 5, dpi = 300)
@@ -147,25 +151,78 @@ Samp14Day <- ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
                         axis.ticks.y = element_line(size = 1),
                         panel.grid.major = element_blank(),
                         panel.grid.minor = element_blank(),
-                        axis.line = element_line(color = "black", size = 1)
+                        axis.line = element_line(color = "black", linewidth = 1)
                   ) +
                   scale_x_date(
                     date_breaks = "3 day",
                     date_labels = "%b%d")
+
+Samp14Day
  
 # Export                
-ggsave(plot = Samp14Day, "Figures/14daySamp.jpeg",  
-       width = 8, height = 5, dpi = 300)                  
+ggsave(plot = Samp14Day, "Figures/14daySamp.jpeg", width = 8, height = 5, dpi = 300)
+                         
+
+
+# -------------------------------------------------
+# Histogram + 14 survey days + Precip events
+# -------------------------------------------------
+
+# Create a data frame for blue lines
+blue_dates <- data.frame(Date = as.Date(c("2024-05-17", "2024-05-18", "2024-05-28", "2024-05-29", 
+                                          "2024-06-01", "2024-06-11", "2024-06-13", "2024-06-14", 
+                                          "2024-06-18", "2024-06-19", "2024-06-20", "2024-06-21", 
+                                          "2024-06-22", "2024-06-23", "2024-06-24", "2024-06-25", 
+                                          "2024-06-29", "2024-07-08", "2024-07-10", "2024-07-11", 
+                                          "2024-07-12", "2024-07-13", "2024-07-15", "2024-07-21", 
+                                          "2024-07-22", "2024-07-23", "2024-07-24", "2024-07-25", 
+                                          "2024-07-26", "2024-07-27", "2024-07-28", "2024-07-29")))
+
+# Updated plot with blue and red lines
+Samp14Dayprecip <- ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
+  geom_col(fill = "black", alpha = 0.7) +  
+    # Blue solid lines for specific dates
+  geom_vline(data = blue_dates, aes(xintercept = as.numeric(Date)), 
+             color = "blue", linetype = "solid", size = 0.75) +
+  # 14-day red dashed lines
+  geom_vline(data = call_14day, aes(xintercept = as.numeric(Date)), 
+             color = "red", linetype = "dashed", size = 0.75) +
+  labs(
+    title = "Calls Per Day",
+    x = "Date",
+    y = "Number of Calls"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text.y = element_text(hjust = 0.5),
+        axis.ticks.x = element_line(size = 1),
+        axis.ticks.y = element_line(size = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black", linewidth = 1)
+  ) +
+  scale_x_date(
+    date_breaks = "3 day",
+    date_labels = "%b%d"
+  )
+
+# Print the plot
+print(Samp14Dayprecip)
+
+# Export                
+ggsave(plot = Samp14Dayprecip, "Figures/Samp14Dayprecip.jpeg", width = 8, height = 5, dpi = 300)
 
 # -------------------------------------------------
 # Histogram + 14 day + 7 day
 # -------------------------------------------------
 ggplot(call_sum, aes(x = Date, y = Total_Calls)) +
   geom_col(fill = "black", alpha = 0.7) +  
+  
+  geom_vline(data = call_7day, aes(xintercept = as.numeric(Date)), color = "blue", linetype = "dashed", size = 1) +
+
   # 14-day 
   geom_vline(data = call_14day, aes(xintercept = as.numeric(Date)), color = "grey", linetype = "solid", size = 1) +
   # 7-day 
-  geom_vline(data = call_7day, aes(xintercept = as.numeric(Date)), color = "blue", linetype = "dashed", size = 1) +
   labs(
     title = "Calls Per Day",
     x = "Date",
