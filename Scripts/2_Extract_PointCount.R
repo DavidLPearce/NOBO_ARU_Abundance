@@ -460,8 +460,8 @@ write.csv(site_dat, "./Data/Point_Count_Data/PointCount_siteCovs.csv")# .csv
 # Check Correlations
 # ------------------------------
 
-#site_dat <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
-
+site_dat <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
+site_dat <- site_dat[-c(25:27)]
 # Checking correlation
 pairs.panels(site_dat[-c((1:4))],
              gap = 0,
@@ -482,7 +482,9 @@ ggplot(cor_mat_melted, aes(Var1, Var2, fill = value)) +
   geom_tile() +
   scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1, 1)) +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
+        axis.text.y = element_text(hjust = 1, size = 14) 
+        ) +
   labs(title = "Correlation Heatmap", x = "", y = "")
 
 
