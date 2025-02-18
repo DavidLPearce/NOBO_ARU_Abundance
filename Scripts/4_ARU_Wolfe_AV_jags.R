@@ -75,11 +75,11 @@ print(workers)
 # v = acoustic vocalization data from clustering algorithm
 # y = binary summary of v, takes value 0 if v = 0 and value 1 if v > 0. 
 # c = point count data
-# R = number of total sites
+# S = number of total sites
 # J = number of repeat visits for acoustic data at each site
 # J.A = max number of repeat visits at each acoustic data site. 
 # n.count = number of repeat visits for count data
-# R.val = number of sites where validation of acoustic data occurred
+# S.val = number of sites where validation of acoustic data occurred
 # days = variable used to index different recording days. 
 # A.times = indexing variable used to determine specific indexes with v > 0.
 # K = true number of acoustic vocalizations
@@ -170,7 +170,7 @@ print(y)
 # print(v)
 
 # Total number of sites
-R <- as.integer(27) 
+S <- as.integer(27) 
 
 # Number of repeat visits for each site
 J <- rep(14, R)  
@@ -215,7 +215,7 @@ val.times <- read.csv("./Data/Acoustic_Data/Wolfe14day_val.times.csv", row.names
 val.times <- as.matrix(val.times)
 
 # Total number of sites with manually validated data
-R.val <- nrow(n)
+S.val <- nrow(n)
 
 # How many surveys were validate
 J.val <- rep(14, R.val)  
@@ -259,15 +259,15 @@ temp_mat <- scale(weather_dat$Temp_degF)
 wind_mat <- scale(weather_dat$Wind_mph)
 X.det <- as.matrix(data.frame(temp = temp_mat, wind = wind_mat))
 
-sky_vec <- as.factor(weather_dat$Sky_Condition)  # Convert to factor
-sky_dum <- model.matrix(~ sky_vec - 1)  # Create dummy variables for sky, without intercept
+# Area surveyed 
+area <- pi * (200^2) / 4046.86  # in acres
 
-
+ 
 # ---------------------------------------
 # Bayesian P-value
 # ---------------------------------------
 
-R.A <- sum(J.r > 0)
+S.A <- sum(J.r > 0)
 sites.a.v <- which(J.r > 0)
 J.A <- max(J)
 
@@ -276,7 +276,7 @@ J.A <- max(J)
 # Bundle Data 
 # ---------------------------------------
 
-Wolfe14.data <- list(R = R, 
+Wolfe14.data <- list(S = S, 
                     J = J, 
                     v = v, 
                     y = y,
@@ -284,18 +284,18 @@ Wolfe14.data <- list(R = R,
                     k = k, 
                     val.times = val.times, 
                     sites.a = sites.a, 
-                    R.val = R.val, 
+                    S.val = S.val, 
                     J.val = J.val, 
                     J.r = J.r, 
                     A.times = A.times, 
-                    R.A = R.A, 
+                    S.A = S.A, 
                     J.A = J.A, 
                     sites.a.v = sites.a.v, 
                     days = days,
                     n.days = max(J),
                     X.abund = X.abund,
                     X.det = X.det,
-                    sky_dum = sky_dum)
+                    Offset = area)
 
 # Check structure
 str(Wolfe14.data)
@@ -311,952 +311,234 @@ str(Wolfe14.data)
 # Model Specifications
 # ----------------------------- 
 
+# ----------------------------------------------------------
+#                    Model 1 
+# Abundance = Herb Patch Density + Site Ran Eff
+# Detection = Vegetation Density 
+# Call Rate = Day Ran Eff + conspecific density
+# Vocal =  Site/Survey Ran Eff
 
-# # MCMC Specifications
-n.iter =  300000
-n.burnin =  20000
-n.chains = 3
-n.thin = 10
+# ----------------------------------------------------------
 
-# MCMC Specifications
-# n.iter <- 750000
-# n.thin <- 50
-# n.burn <- 80000
-# n.chain <- 3
-# n.adapt <- 5000
+
+n.iter <- 10000
+n.burnin <- 1000
+n.thin <- 10
+n.chains <- 3
+n.adapt = 5000
+
 
 
 # Parameters monitored
-params <- c('alpha0', 
-            'alpha1', 
-            'alpha2',
-            'beta0',
-            'beta1',
-            'beta2',
-            'beta3',
-            'tau', 
-            'tau.day', 
-            'a.phi', 
-            'omega', 
-            'bp.y', 
-            'bp.v',
-            'lambda')
+params <- c('lambda',
+             'N_tot',
+             'N',
+             'alpha0', 
+             'alpha1', 
+             'alpha2',
+             'beta0',
+             'S.raneff',
+             'sigma_S',
+             'eta',
+             'beta1',
+             'kappa',
+             'gamma1',
+             'mu_gamma1',   
+             'tau_gamma1',
+             'a.phi',
+             'omega', 
+             'bp.y', 
+             'bp.v')
 
 # Initial Values 
 inits <- function() {
   list(
     N = rep(1, R), 
-    beta0 = rnorm(1),
-    beta1 = 0,
-    beta2 = 0,
-    beta3 = 0,
-    omega = runif(1, 0, 10), 
-    tau.day = runif(1, 0.1, 1),
-    tau = runif(1, 0.1, 1),
-    tau.p = runif(1, 0.1, 1),
-    tau.day.p = runif(1, 0.1, 1),
+    beta0 = rnorm(1, 0, 1),
+    beta1 = rnorm(1, 0, 5),
+    sigma_S = runif(1, 0.1, 2), 
+    eta = rnorm(R, 0, 1),  
+    kappa = runif(1, 0.8, 1.5),
+    omega = 0.001,
+    mu_gamma1 = rlnorm(1, log(3), 0.5), 
+    tau_gamma1 = rgamma(1, 0.1, 0.1),
+    alpha0 = rnorm(1, 0, 1),
     alpha1 = runif(1, 0, 1), 
-    alpha2 = 0,
+    alpha2 = rnorm(1, 0, 0.1),
     a.phi = runif(1, 0, 5)
   )
 }#end inits
 
 
-# -------------------------------------------------------
-# Detection Model 0: Null Model
-# -------------------------------------------------------
+# ----------------------------- 
+# Model Statement 
+# ----------------------------- 
 cat(" model {
   
-  # -------------------------------------------
-  # Priors 
-  # -------------------------------------------
-  beta0 ~ dnorm(0, .01)
-  alpha0 <- logit(mu.alpha)
-  mu.alpha ~ dunif(0, 1)
-  alpha1 ~ dunif(0, 1000) # Constrained to be positive
-  omega ~ dunif(0, 1000)
-  tau.day ~ dgamma(.01, .01)
-  a.phi ~ dunif(0, 100)
-
-  for (i in 1:n.days) {
-    gamma.1[i] ~ dnorm(0, tau.day)
+  # ----------------------
+  # Abundance Priors
+  # ----------------------
+  beta0 ~ dnorm(0, 0.1)
+  beta1 ~ dnorm(0, 0.1)
+  sigma_S ~ dunif(0, 10)  # Prior on standard deviation
+  
+  # Abundance random effect - missing habitat variability
+  for (s in 1:S) {
+    eta[s] ~ dnorm(0, 1)  # Standard normal for non-centered approach
+    S.raneff[s] <- beta0 + sigma_S * eta[s]  
   }
 
-  for (i in 1:R) {
-    for (j in 1:J.A) {
-      phi[i, j] ~ dgamma(a.phi, a.phi)
-    }
-  }
-  
-  # -------------------------------------------
-  # Likelihood and process model 
-  # -------------------------------------------
-  for (i in 1:R) {
-  
-    # Abundance Model
-    log(lambda[i]) <- beta0  
-    N[i] ~ dpois(lambda[i])
-    
-
-    
-    # Acoustic Data 
-    for (j in 1:J[i]) {
-    
-    # Detection Model
-    logit(p.a[i, j]) <- alpha0 + alpha1 * N[i]
-    
-    # Vocalization Model
-      log(delta[i, j]) <- gamma.1[days[i, j]]
-      y[i, j] ~ dbin(p.a[i, j], 1)
-      tp[i, j] <- delta[i, j] * N[i] / (delta[i, j] * N[i] + omega)
-      
-      # Posterior predictive checks for Bayesian P-value
-      y.pred[i, j] ~ dbin(p.a[i, j], 1)
-      resid.y[i, j] <- pow(pow(y[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-      resid.y.pred[i, j] <- pow(pow(y.pred[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-    } # j
-    
-    for (j in 1:J.r[i]) {
-      v[i, A.times[i, j]] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-      v.pred[i, j] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-      mu.v[i, j] <- ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]]) / (1 - exp(-1 * ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]])))
-      resid.v[i, j] <- pow(pow(v[i, A.times[i, j]], 0.5) - pow(mu.v[i, j], 0.5), 2)
-      resid.v.pred[i, j] <- pow(pow(v.pred[i, j], 0.5) - pow(mu.v[i, j], 0.5), 2)
-    } # j
-  } # i
-  
-  # ------------------------------------------- 
-  # Manual validation 
-  # -------------------------------------------
-  for (i in 1:R.val) {
-    for (j in 1:J.val[i]) {
-      K[i, j] ~ dbin(tp[sites.a[i], j], v[sites.a[i], val.times[i, j]])
-      k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
-
-    } # j
-  } # i
-  
-  # -------------------------------------------
-  # Bayesian P-value
-  # -------------------------------------------
-  for (i in 1:R.A) {
-    tmp.v[i] <- sum(resid.v[sites.a.v[i], 1:J.r[sites.a.v[i]]])
-    tmp.v.pred[i] <- sum(resid.v.pred[sites.a.v[i], 1:J.r[sites.a.v[i]]])
-  }
-  fit.y <- sum(resid.y[sites.a, 1:J.A])
-  fit.y.pred <- sum(resid.y.pred[sites.a, 1:J.A])
-  fit.v <- sum(tmp.v[1:R.A])
-  fit.v.pred <- sum(tmp.v.pred[1:R.A])
-  bp.y <- step(fit.y.pred - fit.y)
-  bp.v <- step(fit.v.pred - fit.v)
-}
-", fill=TRUE, file="./jags_models/ARU_mod0.txt")
-# ------------End Model-------------
-
-
-
-# Fit Model
-fm.0 <- jags(data = Wolfe14.data, 
-             inits = inits, 
-             parameters.to.save = params, 
-             model.file = "./jags_models/ARU_mod0.txt", 
-             n.iter = n.iter,
-             n.burnin = n.burnin,
-             n.chains = n.chains, 
-             n.thin = n.thin,
-             parallel = TRUE,
-             n.cores = workers,
-             DIC = TRUE) 
-
-
-
-# -------------------------------------------------------
-# Detection Model 1: Temp
-# -------------------------------------------------------
-cat(" model {
-  
-  # -------------------------------------------
-  # Priors 
-  # -------------------------------------------
-  beta0 ~ dnorm(0, .01)
-  alpha0 <- logit(mu.alpha)
-  mu.alpha ~ dunif(0, 1)
+  # ------------------------
+  # Detection Priors
+  # ------------------------
+  alpha0 ~ dnorm(0, 1)
   alpha1 ~ dunif(0, 1000) # Constrained to be positive
   alpha2 ~ dnorm(0, 1)
-  omega ~ dunif(0, 1000)
-  tau.day ~ dgamma(.01, .01)
-  a.phi ~ dunif(0, 100)
-
-  for (i in 1:n.days) {
-    gamma.1[i] ~ dnorm(0, tau.day)
+  
+  # ------------------------
+  # Call Rate Priors
+  # ------------------------
+  kappa ~ dnorm(1, 1) T(0, ) # truncated to always be positive
+  mu_gamma1 ~ dgamma(0.01, 0.01) 
+  tau_gamma1 ~ dgamma(0.01, 0.01)
+  
+  # Call rate random effect for survey
+  for (j in 1:n.days) {
+    gamma1[j] ~ dnorm(mu_gamma1, tau_gamma1) 
   }
+  
+  # ------------------------
+  # Vocalization Priors
+  # ------------------------
+  a.phi ~ dgamma(0.001, 0.001)
+  omega  ~ dnorm(0, 1) T(0, ) # Truncated at 0, 0 false positive rate
 
-  for (i in 1:R) {
+  # Vocal random effect for site and survey
+  for (s in 1:S) {
     for (j in 1:J.A) {
-      phi[i, j] ~ dgamma(a.phi, a.phi)
+      phi[s, j] ~ dgamma(a.phi, a.phi)
     }
   }
   
-  # -------------------------------------------
-  # Likelihood and process model 
-  # -------------------------------------------
-  for (i in 1:R) {
   
-    # Abundance Model
-    log(lambda[i]) <- beta0  
-    N[i] ~ dpois(lambda[i])
+  # -------------------------------------------
+  #
+  # Likelihood and process model 
+  #
+  # -------------------------------------------
+  
+  # Site
+  for (s in 1:S) {
     
+    # ---------------------------------
+    # Abundance submodel  
+    # ---------------------------------
+    log(lambda[s]) <- beta1 * X.abund[s,17] + S.raneff[s]
+    N[s] ~ dpois(lambda[s] * Offset)
+    
+    # Survey
+    for (j in 1:J[s]) {
+    
+      # ---------------------------------
+      # Detection submodel  
+      # ---------------------------------
+      logit(p.a[s, j]) <- alpha0 + alpha1*N[s] + alpha2*X.det[j,2]  
 
+      # ---------------------------------
+      # Call rate submodel  
+      # ---------------------------------
+      log(delta[s, j]) <-  kappa*log(N[s]) + gamma1[days[s, j]] 
+      y[s, j] ~ dbin(p.a[s, j], 1)
+      tp[s, j] <- delta[s, j] * N[s] / (delta[s, j] * N[s] + omega)
+
+      # ---------------------------------
+      # Posterior Predictive Checks  
+      # ---------------------------------
+      y.pred[s, j] ~ dbin(p.a[s, j], 1)
+      resid.y[s, j] <- pow(pow(y[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
+      resid.y.pred[s, j] <- pow(pow(y.pred[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
+    } # End J
     
-    # Acoustic Data 
-    for (j in 1:J[i]) {
+    # Surveys with Vocalizations
+    for (j in 1:J.r[s]) {
     
-    # Detection Model
-    logit(p.a[i, j]) <- alpha0 + alpha1 * N[i] + alpha2 * X.det[j,1]
-    
-    # Vocalization Model
-      log(delta[i, j]) <- gamma.1[days[i, j]]
-      y[i, j] ~ dbin(p.a[i, j], 1)
-      tp[i, j] <- delta[i, j] * N[i] / (delta[i, j] * N[i] + omega)
+      # ---------------------------------
+      # Vocalizations  
+      # ---------------------------------
+      v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
       
-      # Posterior predictive checks for Bayesian P-value
-      y.pred[i, j] ~ dbin(p.a[i, j], 1)
-      resid.y[i, j] <- pow(pow(y[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-      resid.y.pred[i, j] <- pow(pow(y.pred[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-    } # j
-    
-    for (j in 1:J.r[i]) {
-      v[i, A.times[i, j]] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-      v.pred[i, j] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-      mu.v[i, j] <- ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]]) / (1 - exp(-1 * ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]])))
-      resid.v[i, j] <- pow(pow(v[i, A.times[i, j]], 0.5) - pow(mu.v[i, j], 0.5), 2)
-      resid.v.pred[i, j] <- pow(pow(v.pred[i, j], 0.5) - pow(mu.v[i, j], 0.5), 2)
-    } # j
-  } # i
+      # ---------------------------------
+      # Predicted Values  
+      # ---------------------------------
+      v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
+      mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]]) / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]])))
+      resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
+      resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
+    } # End J.r
+  } # End S
   
   # ------------------------------------------- 
   # Manual validation 
   # -------------------------------------------
-  for (i in 1:R.val) {
-    for (j in 1:J.val[i]) {
-      K[i, j] ~ dbin(tp[sites.a[i], j], v[sites.a[i], val.times[i, j]])
-      k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
-
-    } # j
-  } # i
+  for (s in 1:S.val) {
+    for (j in 1:J.val[s]) {
+      K[s, j] ~ dbin(tp[sites.a[s], j], v[sites.a[s], val.times[s, j]])
+      k[s, val.times[s, j]] ~ dhyper(K[s, j], v[sites.a[s], val.times[s, j]] - K[s, j], n[s, val.times[s, j]], 1)
+    } # End J
+  } # End S
   
+  # -------------------------------------------
+  # Derive Abundance/Density
+  # -------------------------------------------
+  N_tot <- sum(N[])
+
   # -------------------------------------------
   # Bayesian P-value
   # -------------------------------------------
-  for (i in 1:R.A) {
-    tmp.v[i] <- sum(resid.v[sites.a.v[i], 1:J.r[sites.a.v[i]]])
-    tmp.v.pred[i] <- sum(resid.v.pred[sites.a.v[i], 1:J.r[sites.a.v[i]]])
+  for (s in 1:S.A) {
+    tmp.v[s] <- sum(resid.v[sites.a.v[s], 1:J.r[sites.a.v[s]]])
+    tmp.v.pred[s] <- sum(resid.v.pred[sites.a.v[s], 1:J.r[sites.a.v[s]]])
   }
   fit.y <- sum(resid.y[sites.a, 1:J.A])
   fit.y.pred <- sum(resid.y.pred[sites.a, 1:J.A])
-  fit.v <- sum(tmp.v[1:R.A])
-  fit.v.pred <- sum(tmp.v.pred[1:R.A])
+  fit.v <- sum(tmp.v[1:S.A])
+  fit.v.pred <- sum(tmp.v.pred[1:S.A])
   bp.y <- step(fit.y.pred - fit.y)
   bp.v <- step(fit.v.pred - fit.v)
-}
-", fill=TRUE, file="./jags_models/ARU_mod1.txt")
+  
+}", fill=TRUE, file="./JAGs_Models/Wolfe_AV_Mod1.txt")
 # ------------End Model-------------
 
 
 
 # Fit Model
-fm.1 <- jags(data = Wolfe14.data, 
-             inits = inits, 
-             parameters.to.save = params, 
-             model.file = "./jags_models/ARU_mod1.txt", 
-             n.iter = n.iter,
-             n.burnin = n.burnin,
-             n.chains = n.chains, 
-             n.thin = n.thin,
-             parallel = TRUE,
-             n.cores = workers,
-             DIC = TRUE) 
-
-
-# -------------------------------------------------------
-# Detection Model 2: Wind
-# -------------------------------------------------------
-cat(" model {
-  
-  # -------------------------------------------
-  # Priors 
-  # -------------------------------------------
-  beta0 ~ dnorm(0, .01)
-  alpha0 <- logit(mu.alpha)
-  mu.alpha ~ dunif(0, 1)
-  alpha1 ~ dunif(0, 1000) # Constrained to be positive
-  alpha2 ~ dnorm(0, 1)
-  omega ~ dunif(0, 1000)
-  tau.day ~ dgamma(.01, .01)
-  a.phi ~ dunif(0, 100)
-
-  for (i in 1:n.days) {
-    gamma.1[i] ~ dnorm(0, tau.day)
-  }
-
-  for (i in 1:R) {
-    for (j in 1:J.A) {
-      phi[i, j] ~ dgamma(a.phi, a.phi)
-    }
-  }
-  
-  # -------------------------------------------
-  # Likelihood and process model 
-  # -------------------------------------------
-  for (i in 1:R) {
-  
-    # Abundance Model
-    log(lambda[i]) <- beta0  
-    N[i] ~ dpois(lambda[i])
-    
-
-    
-    # Acoustic Data 
-    for (j in 1:J[i]) {
-    
-    # Detection Model
-    logit(p.a[i, j]) <- alpha0 + alpha1 * N[i] + alpha2 * X.det[j,2]
-    
-    # Vocalization Model
-      log(delta[i, j]) <- gamma.1[days[i, j]]
-      y[i, j] ~ dbin(p.a[i, j], 1)
-      tp[i, j] <- delta[i, j] * N[i] / (delta[i, j] * N[i] + omega)
-      
-      # Posterior predictive checks for Bayesian P-value
-      y.pred[i, j] ~ dbin(p.a[i, j], 1)
-      resid.y[i, j] <- pow(pow(y[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-      resid.y.pred[i, j] <- pow(pow(y.pred[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-    } # j
-    
-    for (j in 1:J.r[i]) {
-      v[i, A.times[i, j]] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-      v.pred[i, j] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-      mu.v[i, j] <- ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]]) / (1 - exp(-1 * ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]])))
-      resid.v[i, j] <- pow(pow(v[i, A.times[i, j]], 0.5) - pow(mu.v[i, j], 0.5), 2)
-      resid.v.pred[i, j] <- pow(pow(v.pred[i, j], 0.5) - pow(mu.v[i, j], 0.5), 2)
-    } # j
-  } # i
-  
-  # ------------------------------------------- 
-  # Manual validation 
-  # -------------------------------------------
-  for (i in 1:R.val) {
-    for (j in 1:J.val[i]) {
-      K[i, j] ~ dbin(tp[sites.a[i], j], v[sites.a[i], val.times[i, j]])
-      k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
-
-    } # j
-  } # i
-  
-  # -------------------------------------------
-  # Bayesian P-value
-  # -------------------------------------------
-  for (i in 1:R.A) {
-    tmp.v[i] <- sum(resid.v[sites.a.v[i], 1:J.r[sites.a.v[i]]])
-    tmp.v.pred[i] <- sum(resid.v.pred[sites.a.v[i], 1:J.r[sites.a.v[i]]])
-  }
-  fit.y <- sum(resid.y[sites.a, 1:J.A])
-  fit.y.pred <- sum(resid.y.pred[sites.a, 1:J.A])
-  fit.v <- sum(tmp.v[1:R.A])
-  fit.v.pred <- sum(tmp.v.pred[1:R.A])
-  bp.y <- step(fit.y.pred - fit.y)
-  bp.v <- step(fit.v.pred - fit.v)
-}
-", fill=TRUE, file="./jags_models/ARU_mod2.txt")
-# ------------End Model-------------
+fm.AV.1 <- jags(data = Wolfe14.data,
+              inits = inits,
+              parameters.to.save = params,
+              model.file = "./JAGs_Models/Wolfe_AV_Mod1.txt",
+              n.iter = n.iter,
+              n.burnin = n.burnin,
+              n.chains = n.chains,
+              n.thin = n.thin,
+              n.adapt = n.adapt,
+              parallel = TRUE,
+              n.cores = workers,
+              verbose = TRUE)
 
 
 
-# Fit Model
-fm.2 <- jags(data = Wolfe14.data, 
-             inits = inits, 
-             parameters.to.save = params, 
-             model.file = "./jags_models/ARU_mod2.txt", 
-             n.iter = n.iter,
-             n.burnin = n.burnin,
-             n.chains = n.chains, 
-             n.thin = n.thin,
-             parallel = TRUE,
-             n.cores = workers,
-             DIC = TRUE) 
+# Trace plots
+mcmcplot(fm.AV.1$samples)
 
-
-# # -------------------------------------------------------
-# # Detection Model 3: Sky
-# # -------------------------------------------------------
-# cat(" model {
-# 
-#   # -------------------------------------------
-#   # Priors
-#   # -------------------------------------------
-#   beta0 ~ dnorm(0, .01)
-#   alpha0 <- logit(mu.alpha)
-#   mu.alpha ~ dunif(0, 1)
-#   alpha1 ~ dunif(0, 1000) # Constrained to be positive
-#   omega ~ dunif(0, 1000)
-#   tau.day ~ dgamma(.01, .01)
-#   a.phi ~ dunif(0, 100)
-# 
-#   # Sky condition coefficients
-#   for (a in 1:7) {
-#     alpha2[a] ~ dnorm(0, 0.01)
-#   }
-# 
-# 
-#   for (i in 1:n.days) {
-#     gamma.1[i] ~ dnorm(0, tau.day)
-#   }
-# 
-#   for (i in 1:R) {
-#     for (j in 1:J.A) {
-#       phi[i, j] ~ dgamma(a.phi, a.phi)
-#     }
-#   }
-# 
-#   # -------------------------------------------
-#   # Likelihood and process model
-#   # -------------------------------------------
-#   for (i in 1:R) {
-# 
-#     # Abundance Model
-#     log(lambda[i]) <- beta0
-#     N[i] ~ dpois(lambda[i])
-# 
-# 
-# 
-#     # Acoustic Data
-#     for (j in 1:J[i]) {
-# 
-#     # Detection Model
-#     logit(p.a[i, j]) <- alpha0 + alpha1 * N[i] + sum(sky_dum[j, 1:7] * alpha2)
-# 
-#     # Vocalization Model
-#       log(delta[i, j]) <- gamma.1[days[i, j]]
-#       y[i, j] ~ dbin(p.a[i, j], 1)
-#       tp[i, j] <- delta[i, j] * N[i] / (delta[i, j] * N[i] + omega)
-# 
-#       # Posterior predictive checks for Bayesian P-value
-#       y.pred[i, j] ~ dbin(p.a[i, j], 1)
-#       resid.y[i, j] <- pow(pow(y[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-#       resid.y.pred[i, j] <- pow(pow(y.pred[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-#     } # j
-# 
-#     for (j in 1:J.r[i]) {
-#       v[i, A.times[i, j]] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-#       v.pred[i, j] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-#       mu.v[i, j] <- ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]]) / (1 - exp(-1 * ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]])))
-#       resid.v[i, j] <- pow(pow(v[i, A.times[i, j]], 0.5) - pow(mu.v[i, j], 0.5), 2)
-#       resid.v.pred[i, j] <- pow(pow(v.pred[i, j], 0.5) - pow(mu.v[i, j], 0.5), 2)
-#     } # j
-#   } # i
-# 
-#   # -------------------------------------------
-#   # Manual validation
-#   # -------------------------------------------
-#   for (i in 1:R.val) {
-#     for (j in 1:J.val[i]) {
-#       K[i, j] ~ dbin(tp[sites.a[i], j], v[sites.a[i], val.times[i, j]])
-#       k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
-# 
-#     } # j
-#   } # i
-# 
-#   # -------------------------------------------
-#   # Bayesian P-value
-#   # -------------------------------------------
-#   for (i in 1:R.A) {
-#     tmp.v[i] <- sum(resid.v[sites.a.v[i], 1:J.r[sites.a.v[i]]])
-#     tmp.v.pred[i] <- sum(resid.v.pred[sites.a.v[i], 1:J.r[sites.a.v[i]]])
-#   }
-#   fit.y <- sum(resid.y[sites.a, 1:J.A])
-#   fit.y.pred <- sum(resid.y.pred[sites.a, 1:J.A])
-#   fit.v <- sum(tmp.v[1:R.A])
-#   fit.v.pred <- sum(tmp.v.pred[1:R.A])
-#   bp.y <- step(fit.y.pred - fit.y)
-#   bp.v <- step(fit.v.pred - fit.v)
-# }
-# ", fill=TRUE, file="./jags_models/ARU_mod3.txt")
-# # ------------End Model-------------
-# 
-# 
-# 
-# # Fit Model
-# fm.3 <- jags(data = Wolfe14.data,
-#              inits = inits,
-#              parameters.to.save = params,
-#              model.file = "./jags_models/ARU_mod3.txt",
-#              n.iter = n.iter,
-#              n.burnin = n.burnin,
-#              n.chains = n.chains,
-#              n.thin = n.thin,
-#              parallel = TRUE,
-#              n.cores = workers,
-#              DIC = TRUE)
-# 
-# 
-
-
-# -------------------------------------------------------
-# Detection Model 4: Vegetation Density
-# -------------------------------------------------------
-cat(" model {
-  
-  # -------------------------------------------
-  # Priors 
-  # -------------------------------------------
-  beta0 ~ dnorm(0, .01)
-  alpha0 <- logit(mu.alpha)
-  mu.alpha ~ dunif(0, 1)
-  alpha1 ~ dunif(0, 1000) # Constrained to be positive
-  alpha2 ~ dnorm(0, 1)
-  omega ~ dunif(0, 1000)
-  tau.day ~ dgamma(.01, .01)
-  a.phi ~ dunif(0, 100)
-
-  for (i in 1:n.days) {
-    gamma.1[i] ~ dnorm(0, tau.day)
-  }
-
-  for (i in 1:R) {
-    for (j in 1:J.A) {
-      phi[i, j] ~ dgamma(a.phi, a.phi)
-    }
-  }
-  
-  # -------------------------------------------
-  # Likelihood and process model 
-  # -------------------------------------------
-  for (i in 1:R) {
-  
-    # Abundance Model
-    log(lambda[i]) <- beta0  
-    N[i] ~ dpois(lambda[i])
-    
-
-    
-    # Acoustic Data 
-    for (j in 1:J[i]) {
-    
-    # Detection Model
-    logit(p.a[i, j]) <- alpha0 + alpha1 * N[i] + alpha2 * X.abund[i,21]
-    
-    # Vocalization Model
-      log(delta[i, j]) <- gamma.1[days[i, j]]
-      y[i, j] ~ dbin(p.a[i, j], 1)
-      tp[i, j] <- delta[i, j] * N[i] / (delta[i, j] * N[i] + omega)
-      
-      # Posterior predictive checks for Bayesian P-value
-      y.pred[i, j] ~ dbin(p.a[i, j], 1)
-      resid.y[i, j] <- pow(pow(y[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-      resid.y.pred[i, j] <- pow(pow(y.pred[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-    } # j
-    
-    for (j in 1:J.r[i]) {
-      v[i, A.times[i, j]] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-      v.pred[i, j] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-      mu.v[i, j] <- ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]]) / (1 - exp(-1 * ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]])))
-      resid.v[i, j] <- pow(pow(v[i, A.times[i, j]], 0.5) - pow(mu.v[i, j], 0.5), 2)
-      resid.v.pred[i, j] <- pow(pow(v.pred[i, j], 0.5) - pow(mu.v[i, j], 0.5), 2)
-    } # j
-  } # i
-  
-  # ------------------------------------------- 
-  # Manual validation 
-  # -------------------------------------------
-  for (i in 1:R.val) {
-    for (j in 1:J.val[i]) {
-      K[i, j] ~ dbin(tp[sites.a[i], j], v[sites.a[i], val.times[i, j]])
-      k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
-
-    } # j
-  } # i
-  
-  # -------------------------------------------
-  # Bayesian P-value
-  # -------------------------------------------
-  for (i in 1:R.A) {
-    tmp.v[i] <- sum(resid.v[sites.a.v[i], 1:J.r[sites.a.v[i]]])
-    tmp.v.pred[i] <- sum(resid.v.pred[sites.a.v[i], 1:J.r[sites.a.v[i]]])
-  }
-  fit.y <- sum(resid.y[sites.a, 1:J.A])
-  fit.y.pred <- sum(resid.y.pred[sites.a, 1:J.A])
-  fit.v <- sum(tmp.v[1:R.A])
-  fit.v.pred <- sum(tmp.v.pred[1:R.A])
-  bp.y <- step(fit.y.pred - fit.y)
-  bp.v <- step(fit.v.pred - fit.v)
-}
-", fill=TRUE, file="./jags_models/ARU_mod4.txt")
-# ------------End Model-------------
-
-
-# Fit Model
-fm.4 <- jags(data = Wolfe14.data, 
-             inits = inits, 
-             parameters.to.save = params, 
-             model.file = "./jags_models/ARU_mod4.txt", 
-             n.iter = n.iter,
-             n.burnin = n.burnin,
-             n.chains = n.chains, 
-             n.thin = n.thin,
-             parallel = TRUE,
-             n.cores = workers,
-             DIC = TRUE) 
-
-
-# -------------------------------------------------------
-# Ranking Models
-# -------------------------------------------------------
-
-
-
+# Rhat
+fm.AV.1$Rhat
 
 # Bayesian P value
-cat("Bayesian p-value =", fm.0$summary["bp.v",1], "\n")
-cat("Bayesian p-value =", fm.1$summary["bp.v",1], "\n")
-cat("Bayesian p-value =", fm.2$summary["bp.v",1], "\n")
-#cat("Bayesian p-value =", fm.3$summary["bp.v",1], "\n")
-cat("Bayesian p-value =", fm.4$summary["bp.v",1], "\n")
-
-
-# DIC
-fm.0$DIC # null
-fm.1$DIC # temp
-fm.2$DIC # wind
-fm.3$DIC # sky cond
-fm.4$DIC # veg density
+cat("Bayesian p-value =", fm.AV.1$summary["bp.v",1], "\n")
 
 
 # Model summary
-print(fm.4, digits = 3)
-
-# Rhat
-fm.4$Rhat
-
-# Trace plots
-mcmcplot(fm.4$samples)
-
-# Average number of false positives detections
-cat("False positives =", fm.4$summary["omega",1], "\n")
-
-
-# -------------------------------------------------------
-# Model 1: Herb Pdens + Largest Woody Patch Index
-# -------------------------------------------------------
-cat(" model {
-  
-  # -------------------------------------------
-  # Priors 
-  # -------------------------------------------
-  beta0 ~ dnorm(0, 1)
-  beta1 ~ dnorm(0, 1)
-  beta2 ~ dnorm(0, 1)
-  beta3 ~ dnorm(0, 1)
-  alpha0 <- logit(mu.alpha)
-  mu.alpha ~ dunif(0, 1)
-  alpha1 ~ dunif(0, 1000) # Constrained to be positive
-  alpha2 ~ dnorm(0, 1)
-  omega ~ dunif(0, 1000)
-  tau.day ~ dgamma(.01, .01)
-  a.phi ~ dunif(0, 100)
-
-  for (i in 1:n.days) {
-    gamma.1[i] ~ dnorm(0, tau.day)
-  }
-
-  for (i in 1:R) {
-    for (j in 1:J.A) {
-      phi[i, j] ~ dgamma(a.phi, a.phi)
-    }
-  }
-  
-  # -------------------------------------------
-  # Likelihood and process model 
-  # -------------------------------------------
-  for (i in 1:R) {
-  
-    # Abundance Model
-    log(lambda[i]) <- beta0 + beta1 * X.abund[i,17] + beta2 *  X.abund[i,10] + beta3 *  X.abund[i,22]
-    N[i] ~ dpois(lambda[i])
-    
-
-    
-    # Acoustic Data 
-    for (j in 1:J[i]) {
-    
-    # Detection Model
-    logit(p.a[i, j]) <- alpha0 + alpha1 * N[i] + alpha2 * X.abund[i,21]
-    
-    # Vocalization Model
-      log(delta[i, j]) <- gamma.1[days[i, j]]
-      y[i, j] ~ dbin(p.a[i, j], 1)
-      tp[i, j] <- delta[i, j] * N[i] / (delta[i, j] * N[i] + omega)
-      
-      # Posterior predictive checks for Bayesian P-value
-      y.pred[i, j] ~ dbin(p.a[i, j], 1)
-      resid.y[i, j] <- pow(pow(y[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-      resid.y.pred[i, j] <- pow(pow(y.pred[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-    } # j
-    
-    for (j in 1:J.r[i]) {
-      v[i, A.times[i, j]] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-      v.pred[i, j] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-      mu.v[i, j] <- ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]]) / (1 - exp(-1 * ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]])))
-      resid.v[i, j] <- pow(pow(v[i, A.times[i, j]], 0.5) - pow(mu.v[i, j], 0.5), 2)
-      resid.v.pred[i, j] <- pow(pow(v.pred[i, j], 0.5) - pow(mu.v[i, j], 0.5), 2)
-    } # j
-  } # i
-  
-  # ------------------------------------------- 
-  # Manual validation 
-  # -------------------------------------------
-  for (i in 1:R.val) {
-    for (j in 1:J.val[i]) {
-      K[i, j] ~ dbin(tp[sites.a[i], j], v[sites.a[i], val.times[i, j]])
-      k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
-
-    } # j
-  } # i
-  
-  # -------------------------------------------
-  # Bayesian P-value
-  # -------------------------------------------
-  for (i in 1:R.A) {
-    tmp.v[i] <- sum(resid.v[sites.a.v[i], 1:J.r[sites.a.v[i]]])
-    tmp.v.pred[i] <- sum(resid.v.pred[sites.a.v[i], 1:J.r[sites.a.v[i]]])
-  }
-  fit.y <- sum(resid.y[sites.a, 1:J.A])
-  fit.y.pred <- sum(resid.y.pred[sites.a, 1:J.A])
-  fit.v <- sum(tmp.v[1:R.A])
-  fit.v.pred <- sum(tmp.v.pred[1:R.A])
-  bp.y <- step(fit.y.pred - fit.y)
-  bp.v <- step(fit.v.pred - fit.v)
-}
-", fill=TRUE, file="./jags_models/Wolfe_AV_mod.txt")
-# ------------End Model-------------
-
-n.iter <- 600000
-n.thin <- 15
-n.burnin <- 20000
-n.chains <- 3
-
-
-# Fit Model
-fm.1 <- jags(data = Wolfe14.data,
-             inits = inits,
-             parameters.to.save = params,
-             model.file = "./jags_models/ARU_mod6.txt",
-             n.iter = n.iter,
-             n.burnin = n.burnin,
-             n.chains = n.chains,
-             n.thin = n.thin,
-             parallel = TRUE,
-             n.cores = workers,
-             DIC = TRUE)
-
-# Rhat
-fm.1$Rhat
-
-# Trace plots
-mcmcplot(fm.1$samples)
-
-
-# Bayesian P value
-cat("Bayesian p-value =", fm.1$summary["bp.v",1], "\n")
- 
- 
-# Model summary
-print(fm.1, digits = 2)
-
-
-# Average number of false positives detections
-cat("False positives =", fm.1$summary["omega",1], "\n")
-
-
-
-# Save Environment
-save.image(file = "./ARU_AV_Wolfe14day_JAGs.RData")
-
-# -------------------------------------------------------
-# Model 1: Herb Pdens + Largest Woody Patch Index 
-# day ran eff on detection
-# -------------------------------------------------------
-cat(" model {
-  
-  # -------------------------------------------
-  # Priors 
-  # -------------------------------------------
-  beta0 ~ dnorm(0, 1)
-  beta1 ~ dnorm(0, 1)
-  beta2 ~ dnorm(0, 1)
-  beta3 ~ dnorm(0, 1)
-  alpha0 <- logit(mu.alpha)
-  mu.alpha ~ dunif(0, 1)
-  alpha1 ~ dunif(0, 1000) # Constrained to be positive
-  alpha2 ~ dnorm(0, 1)
-  omega ~ dunif(0, 1000)
-  Jraneff ~ dgamma(.01, .01)
-  tau.day.phi ~ dgamma(.01, .01)
-  a.phi ~ dunif(0, 100)
-
-  for (i in 1:n.days) {
-    Jraneff[i] ~ dnorm(0, tau.day.p)
-    gamma.1[i] ~ dnorm(0, tau.day.phi)
-  }
-
-  for (i in 1:R) {
-    for (j in 1:J.A) {
-      phi[i, j] ~ dgamma(a.phi, a.phi)
-    }
-  }
-  
-  # -------------------------------------------
-  # Likelihood and process model 
-  # -------------------------------------------
-  for (i in 1:R) {
-  
-    # Abundance Model
-    log(lambda[i]) <- beta0 + beta1 * X.abund[i,17] + beta2 *  X.abund[i,10] + beta3 *  Jraneff[i,22]
-    N[i] ~ dpois(lambda[i])
-    
-
-    
-    # Acoustic Data 
-    for (j in 1:J[i]) {
-    
-    # Detection Model
-    logit(p.a[i, j]) <- alpha0 + alpha1 * N[i] + alpha2 * X.abund[i,21] + day.raneff.p[days[i, j]]
-    
-    # Vocalization Model
-      log(delta[i, j]) <- gamma.1[days[i, j]]
-      y[i, j] ~ dbin(p.a[i, j], 1)
-      tp[i, j] <- delta[i, j] * N[i] / (delta[i, j] * N[i] + omega)
-      
-      # Posterior predictive checks for Bayesian P-value
-      y.pred[i, j] ~ dbin(p.a[i, j], 1)
-      resid.y[i, j] <- pow(pow(y[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-      resid.y.pred[i, j] <- pow(pow(y.pred[i, j], 0.5) - pow(p.a[i, j], 0.5), 2)
-    } # j
-    
-    for (j in 1:J.r[i]) {
-      v[i, A.times[i, j]] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-      v.pred[i, j] ~ dpois((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]] * y[i, A.times[i, j]]) T(1, )
-      mu.v[i, j] <- ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]]) / (1 - exp(-1 * ((delta[i, A.times[i, j]] * N[i] + omega) * phi[i, A.times[i, j]])))
-      resid.v[i, j] <- pow(pow(v[i, A.times[i, j]], 0.5) - pow(mu.v[i, j], 0.5), 2)
-      resid.v.pred[i, j] <- pow(pow(v.pred[i, j], 0.5) - pow(mu.v[i, j], 0.5), 2)
-    } # j
-  } # i
-  
-  # ------------------------------------------- 
-  # Manual validation 
-  # -------------------------------------------
-  for (i in 1:R.val) {
-    for (j in 1:J.val[i]) {
-      K[i, j] ~ dbin(tp[sites.a[i], j], v[sites.a[i], val.times[i, j]])
-      k[i, val.times[i, j]] ~ dhyper(K[i, j], v[sites.a[i], val.times[i, j]] - K[i, j], n[i, val.times[i, j]], 1)
-
-    } # j
-  } # i
-  
-  # -------------------------------------------
-  # Bayesian P-value
-  # -------------------------------------------
-  for (i in 1:R.A) {
-    tmp.v[i] <- sum(resid.v[sites.a.v[i], 1:J.r[sites.a.v[i]]])
-    tmp.v.pred[i] <- sum(resid.v.pred[sites.a.v[i], 1:J.r[sites.a.v[i]]])
-  }
-  fit.y <- sum(resid.y[sites.a, 1:J.A])
-  fit.y.pred <- sum(resid.y.pred[sites.a, 1:J.A])
-  fit.v <- sum(tmp.v[1:R.A])
-  fit.v.pred <- sum(tmp.v.pred[1:R.A])
-  bp.y <- step(fit.y.pred - fit.y)
-  bp.v <- step(fit.v.pred - fit.v)
-}
-", fill=TRUE, file="./jags_models/Wolfe_AV_mod_Jraneff.txt")
-# ------------End Model-------------
-
-# Parameters monitored
-params <- c('alpha0', 
-            'alpha1', 
-            'alpha2',
-            "Jraneff",
-            'beta0',
-            'beta1',
-            'beta2',
-            'beta3',
-            'tau', 
-            'tau.day.phi', 
-            'a.phi', 
-            'omega', 
-            'bp.y', 
-            'bp.v',
-            'lambda')
-
-# Initial Values 
-inits <- function() {
-  list(
-    N = rep(1, R), 
-    beta0 = rnorm(1),
-    beta1 = 0,
-    beta2 = 0,
-    beta3 = 0,
-    omega = runif(1, 0, 10), 
-    Jraneff = runif(1, 0.1, 1),
-    tau.day.phi = runif(1, 0.1, 1),
-    alpha1 = runif(1, 0, 1), 
-    alpha2 = 0,
-    a.phi = runif(1, 0, 5)
-  )
-}#end inits
-
-
-
-n.iter <- 600000
-n.thin <- 15
-n.burnin <- 20000
-n.chains <- 3
-
-
-# Fit Model
-fm.1 <- jags(data = Wolfe14.data,
-             inits = inits,
-             parameters.to.save = params,
-             model.file = "./jags_models/ARU_mod6.txt",
-             n.iter = n.iter,
-             n.burnin = n.burnin,
-             n.chains = n.chains,
-             n.thin = n.thin,
-             parallel = TRUE,
-             n.cores = workers,
-             DIC = TRUE)
-
-# Rhat
-fm.1$Rhat
-
-# Trace plots
-mcmcplot(fm.1$samples)
-
-
-# Bayesian P value
-cat("Bayesian p-value =", fm.1$summary["bp.v",1], "\n")
-
-
-# Model summary
-print(fm.1, digits = 2)
-
-
-# Average number of false positives detections
-cat("False positives =", fm.1$summary["omega",1], "\n")
-
-
-
-# Save Environment
-save.image(file = "./ARU_AV_Wolfe14day_JAGs.RData")
-
+print(fm.AV.1, digits = 2)
 
 # -------------------------------------------------------
 #
@@ -1264,50 +546,49 @@ save.image(file = "./ARU_AV_Wolfe14day_JAGs.RData")
 #
 # -------------------------------------------------------
 
+# load(file = "./Data/Model_Environments/ARU_AV_Wolfe14day_JAGs.RData")
+
 # Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
+combined_chains <- as.mcmc(do.call(rbind, fm.AV.1$samples))
 
-# Extract lambda estimates
-lambda_columns <- grep("^lambda\\[", colnames(combined_chains))
-lambda_samples <- combined_chains[ ,lambda_columns]
 
-# mean abundance 
-lambda_tot <- rowSums(lambda_samples)
+# Extracting Abundance
+Ntot_samples <- combined_chains[ ,"N_tot"]
 
-# Area in hectares
-#area <- pi*(200^2)/10000
+# Ntotal is the abundance based on 27 acoustic sites at a radius of 200m.
+# To correct for density, Ntotal needs to be divided by 27 * area surveyed
+area <- pi * (250^2) / 4046.86  # Area in acres
+dens_samples <- Ntot_samples / (area * 27)
 
-# Area in acres
-area <- pi*(200^2)/4046.86
-
-# Getting density
-dens_df <- as.data.frame(lambda_tot/area)
-
-# Summarize by row
-colnames(dens_df)[1] <- "Density"
-dens_df[,2] <- "ARU Wolfe 14day"
-colnames(dens_df)[2] <- "Model"
-dens_df <- dens_df[, c("Model", "Density")] # Switch the order of columns
+# Create data frame for density
+dens_df <- data.frame(Model = rep("AV Wolfe", length(dens_samples)), Density = dens_samples)
+colnames(dens_df)[2] <- "Density"
 head(dens_df)
 
-# Calculate the 95% Credible Interval
-ci_bounds <- quantile(dens_df$Density, probs = c(0.025, 0.975))
+# Calculate the mean and 95% Credible Interval
+dens_summary <- dens_df %>%
+  group_by(Model) %>%
+  summarise(
+    Mean = mean(Density),
+    Lower_CI = quantile(Density, 0.025),
+    Upper_CI = quantile(Density, 0.975)
+  )
 
-# Subset the data frame to 95% CI
-dens_df <- subset(dens_df, Density >= ci_bounds[1] & Density <= ci_bounds[2])
+# Subset the data within the 95% credible interval
+dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI & dens_df$Density <= dens_summary$Upper_CI, ]
 
 
-# Violin plot
-ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
-  geom_violin() +
-  geom_boxplot(aes(x = Model, y = Density),
-               width = 0.2, position = position_dodge(width = 0.8)) +
+# Plot density
+ggplot(dens_summary, aes(x = Model)) +
+  geom_point(aes(y = Mean), size = 3) +  # Add mean points
+  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.05) +  # Add error bars for CI
   labs(
     title = "",
     x = "Model",
-    y = "Density (N/acre)") +
-  scale_y_continuous(limits = c(0, 5),
-                     breaks = seq(0, 5, by = 1),
+    y = "Density (N/acre)"
+  ) +
+  scale_y_continuous(limits = c(0, 0.5),
+                     breaks = seq(0, 0.5, by = 0.25),
                      labels = scales::comma) +
   theme_minimal() +
   theme(
@@ -1320,10 +601,72 @@ ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
   )
 
 
-# total density
+
+# Total density
 print(mean(dens_df$Density))
 print(min(dens_df$Density))
 print(max(dens_df$Density))
+
+
+
+# Getting total abundance
+abund_summary <- dens_summary
+abund_summary[,2:4] <- abund_summary[,2:4] * 2710
+
+
+
+# Plot abundance
+ggplot(abund_summary, aes(x = Model)) +
+  geom_point(aes(y = Mean), size = 3) +  # Add mean points
+  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.05) +  # Add error bars for CI
+  labs(
+    title = "",
+    x = "Model",
+    y = "Abundance"
+  ) +
+  scale_y_continuous(limits = c(100,1000),
+                     breaks = seq(100, 1000, by = 100),
+                     labels = scales::comma) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "none"
+  )
+
+# Plot violin
+
+# Create Abundance dataframe
+abund_df <- dens_df
+abund_df$Density <- abund_df$Density * 2710
+colnames(abund_df)[2] <- 'Abundance'
+head(abund_df)
+
+# Plot violin
+ggplot(abund_df, aes(x = Model, y = Abundance, fill = Model)) + 
+  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
+  labs(x = "Model", y = "Total Abundance") +
+  scale_fill_manual(values = c("PC CMR" = "orange", 
+                               "PC HDS" = "purple", 
+                               "AV Bnet" = "blue",
+                               "AV Wolfe" = "red")) +  
+  scale_y_continuous(limits = c(0, 900),
+                     breaks = seq(0, 900, by = 100),
+                     labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
+        axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
+        axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
+        panel.grid = element_blank(),
+        legend.position = "none") 
+
+
+
+
+
 
 
 # Total abundance
@@ -1331,11 +674,14 @@ mean(dens_df$Density) * 2710
 
 
 
-# Save Environment
-save.image(file = "ARU_AV_Wolfe14day_JAGs.RData")
+
 
 # Export density dataframe
-saveRDS(dens_df, "./Data/Fitted_Models/ARU_AV_Wolfe14day_DensityDF.rds")
+saveRDS(dens_df, "./Data/Fitted_Models/ARU_WolfeAV__dens_df.rds")
+saveRDS(dens_summary, "./Data/Fitted_Models/ARU_WolfeAV_dens_summary.rds")
+saveRDS(abund_summary, "./Data/Fitted_Models/ARU_WolfeAV_abund_summary.rds")
+
+# Save Environment
+save.image(file = "./Data/Model_Environments/ARU_AV_Wolfe14day_JAGs.RData")
 
 # End Script
-
