@@ -341,7 +341,9 @@ params <- c('lambda',
              'sigma_S',
              'eta',
              'beta1',
-             'kappa',
+             #'kappa',
+             'kappa1',
+             'kappa2',
              'gamma1',
              'mu_gamma1',   
              'tau_gamma1',
@@ -353,19 +355,19 @@ params <- c('lambda',
 # Initial Values 
 inits <- function() {
   list(
-    N = rep(1, R), 
+    N = rep(1, R), # Abundance
     beta0 = rnorm(1, 0, 1),
     beta1 = rnorm(1, 0, 5),
     sigma_S = runif(1, 0.1, 2), 
     eta = rnorm(R, 0, 1),  
-    kappa = runif(1, 0.8, 1.5),
+    alpha0 = rnorm(1, 0, 1), # Detection
+    alpha1 = runif(1, 0, 1), 
+    alpha2 = rnorm(1, 0, 0.1),
+    #kappa = runif(1, 0.8, 1.5), # Call Rate
     omega = 0.001,
     mu_gamma1 = rlnorm(1, log(3), 0.5), 
     tau_gamma1 = rgamma(1, 0.1, 0.1),
-    alpha0 = rnorm(1, 0, 1),
-    alpha1 = runif(1, 0, 1), 
-    alpha2 = rnorm(1, 0, 0.1),
-    a.phi = runif(1, 0, 5)
+    a.phi = runif(1, 0, 5) # Vocalization
   )
 }#end inits
 
@@ -398,7 +400,9 @@ cat(" model {
   # ------------------------
   # Call Rate Priors
   # ------------------------
-  kappa ~ dnorm(1, 1) T(0, ) # truncated to always be positive
+  # kappa ~ dnorm(1, 1) T(0, ) # truncated to always be positive
+  kappa1 ~ dnorm(1, 1) T(0, )  # Must be positive
+  kappa2 ~ dnorm(1, 1) T(0, )  # Must be positive
   mu_gamma1 ~ dgamma(0.01, 0.01) 
   tau_gamma1 ~ dgamma(0.01, 0.01)
   
@@ -447,7 +451,11 @@ cat(" model {
       # ---------------------------------
       # Call rate submodel  
       # ---------------------------------
-      log(delta[s, j]) <-  kappa*log(N[s]) + gamma1[days[s, j]] 
+      #log(delta[s, j]) <-  kappa*log(N[s]) + gamma1[days[s, j]] 
+      
+      # Michaelis-Menten function for call rate
+      log(delta[s, j]) <- (kappa1 * N[s]) / (1 + kappa2 * N[s]) + gamma1[days[s, j]] 
+     
       y[s, j] ~ dbin(p.a[s, j], 1)
       tp[s, j] <- delta[s, j] * N[s] / (delta[s, j] * N[s] + omega)
 
@@ -488,7 +496,7 @@ cat(" model {
   } # End S
   
   # -------------------------------------------
-  # Derive Abundance/Density
+  # Derive Abundance
   # -------------------------------------------
   N_tot <- sum(N[])
 
