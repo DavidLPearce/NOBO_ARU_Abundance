@@ -172,7 +172,7 @@ print(y)
 S <- as.integer(27) 
 
 # Number of repeat visits for each site
-J <- rep(14, R)  
+J <- rep(14, S)  
 
 # J.r contains the number of surveys at each acoustic site that contains at least 1 detected vocalization. 
 J.r <- apply(v_mat, 1, function(a) {sum(a != 0)})
@@ -184,9 +184,9 @@ print(J.r)
 # specific surveys at each acoustic site that have at least one detected
 # vocalization. This determines the specific components of v[i, j] that
 # are used in the zero-truncated Poisson.
-A.times <- matrix(NA, R, max(J))
+A.times <- matrix(NA, S, max(J))
 tmp <- apply(v, 1, function(a) {which(a != 0)})
-for (i in 1:R) {
+for (i in 1:S) {
   if (length(tmp[[i]]) > 0) {
     A.times[i, 1:length(tmp[[i]])] <- tmp[[i]]
   }
@@ -217,7 +217,7 @@ val.times <- as.matrix(val.times)
 S.val <- nrow(n)
 
 # How many surveys were validate
-J.val <- rep(14, R.val)  
+J.val <- rep(14, S.val)  
 
 
 # Check
@@ -323,17 +323,17 @@ nrow(pc_dat) # 68 individuals
 
 
 # Constrain kappa1 to be between  0.6 +/- 0.4
-kappa1 <- rnorm(50, mean = 0.6, sd = 0.4)  
+kappa1 <- rnorm(50, mean = 2, sd = 1)   # rnorm(50, mean = 0.6, sd = 0.4)  
 
 # Constrain kappa2 to be between -0.06 +/- 0.04
-kappa2 <- rnorm(50, mean = -0.06, sd = 0.04)  
+kappa2 <- rnorm(50, mean = -0.4, sd = 0.4)  
 
 # Intercept: log(6) so that exp(gamma0) = 6 calls per 30 min for one individual, 2 calls per 10 mins
-gamma0 <- log(6)  
+gamma0 <- log(10)  
 exp(gamma0)
 
 # Variance of random effect: precision
-tau <- rgamma(1, shape = 10, rate = 5)
+tau <- rgamma(1, shape = 2, rate = 2) # rgamma(1, shape = 50, rate = 25) 
 
 # Convert tau to standard deviation (precision interpretation)
 sigma <- sqrt(1 / tau)
@@ -342,7 +342,10 @@ sigma <- sqrt(1 / tau)
 num_surveys <- 14 
 
 # Generate survey random effects
-raneff <- rnorm(num_surveys, mean = 0, sd = sigma)
+# raneff <- rnorm(num_surveys, mean = 0, sd = sigma)
+#raneff <- pmax(pmin(rnorm(num_surveys, mean = 0, sd = sigma), 1), -1)  
+raneff <- rt(num_surveys, df = 10) * sigma  # df = 10 gives a moderate tail
+
 
 # Define a sequence of N values to evaluate the function
 N <- 0:10
@@ -357,9 +360,9 @@ for (i in 1:length(kappa1)) {
   survey <- sample(1:num_surveys, 1, replace = TRUE)
   
   # Call rate model
-  delta <-  exp(gamma0 + raneff[survey]) + ((kappa1[i]*N) + (kappa2[i]*(N)^2)) # exp(gamma0)
+  #delta <-  exp(gamma0+ raneff[survey] ) + ((kappa1[i]*N) + (kappa2[i]*(N)^2)) # 
+  delta <- pmax(0, exp(gamma0 + raneff[survey]) + (kappa1[i] * N) + (kappa2[i] * (N)^2))
 
-  
   # Temp holding df
   tmp <- data.frame(N = N, delta = delta, kappa1 = kappa1[i], kappa2 = kappa2[i], 
                         combination = paste0("k1=", round(kappa1[i], 2), ", k2=", round(kappa2[i], 2)))
@@ -379,7 +382,7 @@ colors <- scico::scico(100, palette = "berlin")
 ggplot(results, aes(x = N, y = delta, color = combination)) +
   geom_line(linewidth = 1) +  
   labs(x = "Calling Males (N)", y = "Call Rate (δ)",
-       title = "Conspecifics on Call Rate - noncentered ran eff") +
+       title = "Conspecifics on Call Rate Simulation") +
   scale_color_manual(values = colors) +   
   theme_minimal() +   
   theme(legend.title = element_blank())   
@@ -400,8 +403,8 @@ ggplot(results, aes(x = N, y = delta, color = combination)) +
 # ----------------------------------------------------------
 
 # MCMC 
-n.iter <- 800000
-n.burnin <- 100000
+n.iter <- 300000
+n.burnin <- 60000
 n.thin <- 10
 n.chains <- 3
 n.adapt = 5000
@@ -412,19 +415,19 @@ n.adapt = 5000
 params <- c('lambda', # Abundance
              'N_tot',
              'N',
-            'beta0',
-            'beta1',
-            'S.raneff',
-             'sigma_S',
-             'eta',
+             'beta0',
+             'beta1',
+             'Sraneff',
+             'tau_s',
              'alpha0', # Detection 
              'alpha1', 
              'alpha2',
-             'kappa1', # Vocalization
+             'gamma0', #  Vocalization
+             'kappa1', 
              'kappa2',
-             'gamma1',
-             'tau_gamma1',
-             'sigma_gamma1',
+             'Jraneff',
+             'tau_j',
+             'sigma_j',
              'omega',
              'delta',
              'bp.y', # Bayes p-value
@@ -435,18 +438,18 @@ params <- c('lambda', # Abundance
 # Initial Values 
 inits <- function() {
   list(
-    N = rep(1, R), # Abundance
+    N = rep(1, S), # Abundance
     beta0 = rnorm(1, 0, 1),
     beta1 = rnorm(1, 0, 5),
-    sigma_S = runif(1, 0.1, 2), 
-    eta = rnorm(R, 0, 1),  
+    tau_s = 5,
     alpha0 = rnorm(1, 0, 1), # Detection
     alpha1 = runif(1, 0, 1), 
     alpha2 = rnorm(1, 0, 0.1),
+    gamma0 = log(6),
     kappa1 = 0.6, # Vocalization
     kappa2 = -0.06, 
     omega = 0.001,
-    tau_gamma1 = rgamma(1, 0.1, 0.1),
+    tau_j = 2
   )
 }#end inits
 
@@ -462,16 +465,16 @@ cat(" model {
   # ----------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 0.1)
+  beta0 ~ dnorm(0, 1)
   
   # Covariate effect
-  beta1 ~ dnorm(0, 0.1)
+  beta1 ~ dnorm(0, 1)
   
   # Abundance random effect - missing habitat variability
-  sigma_S ~ dunif(0, 10)  # Prior on standard deviation
+  tau_s ~ dgamma(0.5, 0.5)
+  sigma_s <- sqrt(1 / tau_s)
   for (s in 1:S) {
-    eta[s] ~ dnorm(0, 1)  # Standard normal for non-centered approach
-    S.raneff[s] <- beta0 + sigma_S * eta[s]  
+    Sraneff[s] ~ dnorm(beta0, sigma_s)  
   }
 
   # ------------------------
@@ -482,7 +485,7 @@ cat(" model {
   alpha0 ~ dnorm(0, 1)
   
   # True individuals
-  alpha1 ~ dunif(0, 1000) # Constrained to be positive
+  alpha1 ~ dunif(0, 500) # Constrained to be positive
   
   # Covariate effect
   alpha2 ~ dnorm(0, 1)
@@ -492,20 +495,20 @@ cat(" model {
   # ------------------------
   
   # False positive rate
-  omega  ~ dnorm(0, 1) T(0, ) # Truncated at 0, 0 false positive rate
+  omega  ~ dnorm(0, 1) T(0, ) # Truncated at 0; 0 false positive rate
   
   # Calls in 30 mins by 1 individual, which is 6 +/- 2
-  gamma0 ~ dnorm(log(6), 1/4)
+  gamma0 ~ dnorm(log(6), 1/2)
   
   # Conspecific density effects
-  kappa1 ~ dnorm(0.6, 6.25) T(0, 1) # mean of 0.6, sd of 0.4i.e., (1/0.4^2), constrained between 0 and 1
-  kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04; i.e., (1/0.04^2), constrained between -1 and 0
+  kappa1 ~ dnorm(2, 1) T(0, 1) # mean of 0.6, sd of 0.4 i.e., (1/1^2); constrained between 0 and 1
+  kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04 i.e., (1/0.04^2); constrained between -1 and 0
 
   # Survey random effect
-  tau_gamma1 ~ dgamma(0.01, 0.01) # Precision
-  sigma_gamma1 <- sqrt(1 / tau_gamma1) # Precision interpretation
+  tau_j ~ dgamma(2, 2) # Precision
+  sigma_j <- sqrt(1 / tau_j) # Precision interpretation
   for (j in 1:n.days) {
-    Jraneff[j] ~ dnorm(0, sigma_gamma1) 
+    Jraneff[j] ~ dnorm(0, sigma_j) 
   }
 
   # -------------------------------------------
@@ -520,7 +523,7 @@ cat(" model {
     # ---------------------------------
     # Abundance submodel  
     # ---------------------------------
-    log(lambda[s]) <- beta1 * X.abund[s,17] + S.raneff[s]
+    log(lambda[s]) <- beta1 * X.abund[s,17] + Sraneff[s]
     N[s] ~ dpois(lambda[s] * Offset)
     
     # Survey
@@ -534,10 +537,9 @@ cat(" model {
     # ---------------------------------
     # Call rate submodel  
     # ---------------------------------
-    #log(delta[s, j]) <-  kappa*log(N[s]) + gamma1[days[s, j]] 
-
-    # Quadratic  
-    delta[s, j] <- exp( gamma0 + Jraneff[days[s, j]]) + (kappa1*N[s] + kappa2*N[s]^2)
+    
+    # delta[s, j] <- exp( gamma0 + Jraneff[days[s, j]]) + (kappa1*N[s] + kappa2*N[s]^2)
+    delta[s, j] <- max(0, exp(gamma0 + Jraneff[days[s, j]]) + (kappa1 * N[s]) + (kappa2 * (N[s])^2))
 
     # ---------------------------------
     # Observations
@@ -622,17 +624,14 @@ fm.AV.1 <- jags(data = Wolfe14.data,
               n.cores = workers,
               verbose = TRUE)
 
-
-
-# Trace plots
-mcmcplot(fm.AV.1$samples)
-
 # Rhat
 fm.AV.1$Rhat
 
-# Bayesian P value
-cat("Bayesian p-value =", fm.AV.1$summary["bp.v",1], "\n")
+# N Total
+cat("Mean Abundance =", fm.AV.1$summary["N_tot",1], "\n")
 
+# Trace plots
+mcmcplot(fm.AV.1$samples)
 
 # Model summary
 print(fm.AV.1, digits = 2)
@@ -646,7 +645,7 @@ print(fm.AV.1, digits = 2)
 # -------------------------------------------------------
 
 # Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.AV.2$samples))
+combined_chains <- as.mcmc(do.call(rbind, fm.AV.1$samples))
 
 
 # -------------------------------------------------------
@@ -659,13 +658,82 @@ combined_chains <- as.mcmc(do.call(rbind, fm.AV.2$samples))
 # Call Rate 
 # --------------------
 
-# Extract delta estimates
-delta_columns <- grep("^delta\\[", colnames(combined_chains))
-delta_columns
+# Extract rows containing "delta" in the row names
+delta_rows <- fm.AV.1$summary[grepl("delta", rownames(fm.AV.1$summary)), ]
+
+# Select only mean, 2.5%, and 97.5% columns
+delta_values <- delta_rows[, c("mean", "2.5%", "97.5%")]
+
+# As data frame
+delta_values <- as.data.frame(delta_values)
+
+# Print the result
+print(delta_values)
+
+ 
+# Get site and survey
+# library(dplyr)
+# library(stringr)
+# library(tibble)
+
+# Convert row names to a column
+delta_df <- delta_values %>%
+  rownames_to_column(var = "delta_id") %>%
+  mutate(
+    site = as.numeric(str_extract(delta_id, "(?<=\\[)\\d+")),   # Extract site number
+    survey = as.numeric(str_extract(delta_id, "(?<=,)\\d+"))   # Extract survey number
+  ) %>%
+  rename(
+    LCI = `2.5%`,  # Change 2.5% to LCI
+    UCI = `97.5%`  # Change 97.5% to UCI
+  )
+
+# Print result
+head(delta_df)
 
 
+# Plot Delta Mean
+ggplot(delta_df, aes(x = survey, y = site, fill = mean)) +
+  geom_tile() +   
+  geom_text(aes(label = round(mean, 1)), color = "black", size = 3) +  
+  scale_fill_viridis_c(option = "cividis") +  
+  theme_minimal() +
+  labs(title = "Delta Mean Values",
+       x = "Survey",
+       y = "Site",
+       fill = "Mean Delta") +
+  scale_x_continuous(breaks = 1:14) +   
+  scale_y_continuous(breaks = 1:27) +   
+  theme(panel.grid = element_blank())
 
-delta_samples <- combined_chains[ ,delta_columns]
+# Plot Delta LCI
+ggplot(delta_df, aes(x = survey, y = site, fill = LCI)) +
+  geom_tile() +   
+  geom_text(aes(label = round(LCI, 1)), color = "black", size = 3) +  
+  scale_fill_viridis_c(option = "viridis") +  
+  theme_minimal() +
+  labs(title = "Delta LCI Values",
+       x = "Survey",
+       y = "Site",
+       fill = "LCI Delta") +
+  scale_x_continuous(breaks = 1:14) +   
+  scale_y_continuous(breaks = 1:27) +   
+  theme(panel.grid = element_blank())
+
+# Plot Delta UCI
+ggplot(delta_df, aes(x = survey, y = site, fill = UCI)) +
+  geom_tile() +   
+  geom_text(aes(label = round(UCI, 1)), color = "black", size = 3) +  
+  scale_fill_viridis_c(option = "plasma") +  
+  theme_minimal() +
+  labs(title = "Delta UCI Values",
+       x = "Survey",
+       y = "Site",
+       fill = "UCI Delta") +
+  scale_x_continuous(breaks = 1:14) +   
+  scale_y_continuous(breaks = 1:27) +   
+  theme(panel.grid = element_blank())
+
 
 
 # --------------------
@@ -687,13 +755,13 @@ kappa2_mean <- mean(kappa2_samples)
 kappa2_ci <- quantile(kappa2_samples, c(0.025, 0.975))
 
 N_vals <- seq(0, 10, length.out = 100)  # Simulated abundance values
-call_rate <- kappa1_mean * N_vals + kappa2_mean * (N_vals^2)
+kappa_effect <- kappa1_mean * N_vals + kappa2_mean * (N_vals^2)
 
-ggplot(data.frame(N_vals, call_rate), aes(x = N_vals, y = call_rate)) +
-  geom_line(color = "blue") +
-  labs(title = "Estimated Call Rate vs Abundance",
-       x = "Abundance (N)",
-       y = "Call Rate") +
+ggplot(data.frame(N_vals, kappa_effect), aes(x = N_vals, y = kappa_effect)) +
+  geom_line(color = "black") +
+  labs(title = "Conspecific Effect",
+       x = "Calling Males",
+       y = "Conspecific Effect on Call Rate") +
   theme_minimal()
 
 
@@ -709,8 +777,6 @@ ggplot(data.frame(N_vals, call_rate), aes(x = N_vals, y = call_rate)) +
  
 # Extract abundance posterior
 Ntot_samples <- combined_chains[ ,"N_tot"]
-
-
 
 # Ntotal is the abundance based on 27 acoustic sites at a radius of 200m.
 # To correct for density, Ntotal needs to be divided by 27 * area surveyed
@@ -769,7 +835,7 @@ print(max(dens_df$Density))
 # Getting total abundance
 abund_summary <- dens_summary
 abund_summary[,2:4] <- abund_summary[,2:4] * 2710
-
+abund_summary
 
 
 # Plot abundance
@@ -827,9 +893,7 @@ ggplot(abund_df, aes(x = Model, y = Abundance, fill = Model)) +
 
 
 # Total abundance
-abund_summary$Mean
-
-
+abund_summary
 
 
 # Export density dataframe
