@@ -31,14 +31,13 @@
 # install.packages("jagsUI")
 # install.packages("coda")
 # install.packages("mcmcplots")
-# install.packages("loo")
+
 
 # Load library
 library(tidyverse)
 library(jagsUI)
 library(coda)
 library(mcmcplots)
-library(loo)
 
 # Set seed, scientific notation options, and working directory
 set.seed(123)
@@ -104,6 +103,8 @@ weather_dat <- read.csv("./Data/Acoustic_Data/ARU_weathercovs.csv")
 # Site covariates
 site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
 
+# Or load saved data
+# load(file = "./Data/Model_Environments/ARU_AV_Wolfe14day_JAGs.RData")
 
 # -------------------------------------------------------
 #
@@ -143,11 +144,9 @@ date_order <- c("2024-05-26", "2024-05-30", "2024-06-03", "2024-06-07",
                 "2024-06-11", "2024-06-15", "2024-06-19", "2024-06-23",
                 "2024-06-27", "2024-07-01", "2024-07-05", "2024-07-09",
                 "2024-07-13", "2024-07-17")
+
 formatted_dates <- format(as.Date(date_order), "%b_%d")
 colnames(v) <- formatted_dates
-print(v) 
-write.csv(v, "v_Wolfe.csv")
-# Adding rownames
 rownames(v) <- as.numeric(1:27)
 
 # Get the site numbers with at least one call
@@ -202,12 +201,12 @@ print(A.times)
 # Validated Calls
 # Do not include sites with no calls 
 # only include occasions where at least 1 call was validated for a site
-n <- read.csv("./Data/Acoustic_Data/Wolfe14day_nTEST.csv", row.names = 1)
+n <- read.csv("./Data/Acoustic_Data/Wolfe14day_n.csv", row.names = 1)
 n <- as.matrix(n)
 
 # True Calls
 # Calls found to be true, same dimension as n
-k <- read.csv("./Data/Acoustic_Data/Wolfe14day_kTEST.csv", row.names = 1)
+k <- read.csv("./Data/Acoustic_Data/Wolfe14day_k.csv", row.names = 1)
 k <- as.matrix(k)
 
 # Survey days calls were validated, same dimension as n
@@ -301,28 +300,108 @@ Wolfe14.data <- list(S = S,
 str(Wolfe14.data)
 
 
+# ---------------------------------------
+# Conspecific Density Simulation 
+# ---------------------------------------
+
+# Getting an idea of mean calls by an individual
+# Load in capture data
+pc_dat <- read.csv("./Data/Point_Count_Data/NOBO_PC_Summer2024data.csv")
+
+# Remove rows with NA values
+pc_dat <- na.omit(pc_dat)
+
+# Sum total calls across all detected individuals
+sum(pc_dat[,c('int1', 'int2', 'int3', 'int4')]) # 164 calls
+nrow(pc_dat) # 68 individuals
+
+# so 164 calls were made by 68 individuals = 2.4 calls per individual in 12 mins
+# 2.4 calls / 12 mins = 0.2009804 calls per min
+# 0.2 calls/min * 30 mins = 6 calls in 30 mins
+# a caveat... only the first call was documented in the mental CR method, so this is a rough look
+# Lituma et al. 2017 reported a baseline (intercept) singing rate of 2.23 calls/10 mins =  6.69 calls in 30 mins
+
+
+# Constrain kappa1 to be between  0.6 +/- 0.4
+kappa1 <- rnorm(50, mean = 0.6, sd = 0.4)  
+
+# Constrain kappa2 to be between -0.06 +/- 0.04
+kappa2 <- rnorm(50, mean = -0.06, sd = 0.04)  
+
+# Intercept: log(6) so that exp(gamma0) = 6 calls per 30 min for one individual, 2 calls per 10 mins
+gamma0 <- log(6)  
+exp(gamma0)
+
+# Variance of random effect: precision
+tau <- rgamma(1, shape = 10, rate = 5)
+
+# Convert tau to standard deviation (precision interpretation)
+sigma <- sqrt(1 / tau)
+
+# Number of surveys
+num_surveys <- 14 
+
+# Generate survey random effects
+raneff <- rnorm(num_surveys, mean = 0, sd = sigma)
+
+# Define a sequence of N values to evaluate the function
+N <- 0:10
+
+# Create an empty data frame to store the results
+results <- data.frame()
+
+# Simulation
+for (i in 1:length(kappa1)) {
+  
+  # Assign a survey  
+  survey <- sample(1:num_surveys, 1, replace = TRUE)
+  
+  # Call rate model
+  delta <-  exp(gamma0 + raneff[survey]) + ((kappa1[i]*N) + (kappa2[i]*(N)^2)) # exp(gamma0)
+
+  
+  # Temp holding df
+  tmp <- data.frame(N = N, delta = delta, kappa1 = kappa1[i], kappa2 = kappa2[i], 
+                        combination = paste0("k1=", round(kappa1[i], 2), ", k2=", round(kappa2[i], 2)))
+  
+  # Combine Results
+  results <- rbind(results, tmp)
+}
+
+# Take a look
+head(results, 50)
+
+
+# Color scheme
+colors <- scico::scico(100, palette = "berlin")
+
+# Plot 
+ggplot(results, aes(x = N, y = delta, color = combination)) +
+  geom_line(linewidth = 1) +  
+  labs(x = "Calling Males (N)", y = "Call Rate (δ)",
+       title = "Conspecifics on Call Rate - noncentered ran eff") +
+  scale_color_manual(values = colors) +   
+  theme_minimal() +   
+  theme(legend.title = element_blank())   
+
+
 # ---------------------------------------------------------- 
 # 
 #           Acoustic HM with Validated Calls
 # 
 # ----------------------------------------------------------
 
-# ----------------------------- 
-# Model Specifications
-# ----------------------------- 
-
 # ----------------------------------------------------------
 #                    Model 1 
-# Abundance = Herb Patch Density + Site Ran Eff
+# Abundance (Poisson) = Herb Patch Density + Site Ran Eff
 # Detection = Vegetation Density 
 # Call Rate = Day Ran Eff + conspecific density
-# Vocal =  Site/Survey Ran Eff
-
+# Vocal (Poisson) 
 # ----------------------------------------------------------
 
-
-n.iter <- 10000
-n.burnin <- 1000
+# MCMC 
+n.iter <- 800000
+n.burnin <- 100000
 n.thin <- 10
 n.chains <- 3
 n.adapt = 5000
@@ -330,27 +409,28 @@ n.adapt = 5000
 
 
 # Parameters monitored
-params <- c('lambda',
+params <- c('lambda', # Abundance
              'N_tot',
              'N',
-             'alpha0', 
-             'alpha1', 
-             'alpha2',
-             'beta0',
-             'S.raneff',
+            'beta0',
+            'beta1',
+            'S.raneff',
              'sigma_S',
              'eta',
-             'beta1',
-             #'kappa',
-             'kappa1',
+             'alpha0', # Detection 
+             'alpha1', 
+             'alpha2',
+             'kappa1', # Vocalization
              'kappa2',
              'gamma1',
-             'mu_gamma1',   
              'tau_gamma1',
-             'a.phi',
-             'omega', 
-             'bp.y', 
+             'sigma_gamma1',
+             'omega',
+             'delta',
+             'bp.y', # Bayes p-value
              'bp.v')
+
+
 
 # Initial Values 
 inits <- function() {
@@ -363,13 +443,13 @@ inits <- function() {
     alpha0 = rnorm(1, 0, 1), # Detection
     alpha1 = runif(1, 0, 1), 
     alpha2 = rnorm(1, 0, 0.1),
-    #kappa = runif(1, 0.8, 1.5), # Call Rate
+    kappa1 = 0.6, # Vocalization
+    kappa2 = -0.06, 
     omega = 0.001,
-    mu_gamma1 = rlnorm(1, log(3), 0.5), 
     tau_gamma1 = rgamma(1, 0.1, 0.1),
-    a.phi = runif(1, 0, 5) # Vocalization
   )
 }#end inits
+
 
 
 # ----------------------------- 
@@ -380,11 +460,15 @@ cat(" model {
   # ----------------------
   # Abundance Priors
   # ----------------------
+  
+  # Intercept
   beta0 ~ dnorm(0, 0.1)
+  
+  # Covariate effect
   beta1 ~ dnorm(0, 0.1)
-  sigma_S ~ dunif(0, 10)  # Prior on standard deviation
   
   # Abundance random effect - missing habitat variability
+  sigma_S ~ dunif(0, 10)  # Prior on standard deviation
   for (s in 1:S) {
     eta[s] ~ dnorm(0, 1)  # Standard normal for non-centered approach
     S.raneff[s] <- beta0 + sigma_S * eta[s]  
@@ -393,38 +477,37 @@ cat(" model {
   # ------------------------
   # Detection Priors
   # ------------------------
+  
+  # Intercept
   alpha0 ~ dnorm(0, 1)
+  
+  # True individuals
   alpha1 ~ dunif(0, 1000) # Constrained to be positive
+  
+  # Covariate effect
   alpha2 ~ dnorm(0, 1)
   
   # ------------------------
   # Call Rate Priors
   # ------------------------
-  # kappa ~ dnorm(1, 1) T(0, ) # truncated to always be positive
-  kappa1 ~ dnorm(1, 1) T(0, )  # Must be positive
-  kappa2 ~ dnorm(1, 1) T(0, )  # Must be positive
-  mu_gamma1 ~ dgamma(0.01, 0.01) 
-  tau_gamma1 ~ dgamma(0.01, 0.01)
   
-  # Call rate random effect for survey
-  for (j in 1:n.days) {
-    gamma1[j] ~ dnorm(mu_gamma1, tau_gamma1) 
-  }
-  
-  # ------------------------
-  # Vocalization Priors
-  # ------------------------
-  a.phi ~ dgamma(0.001, 0.001)
+  # False positive rate
   omega  ~ dnorm(0, 1) T(0, ) # Truncated at 0, 0 false positive rate
+  
+  # Calls in 30 mins by 1 individual, which is 6 +/- 2
+  gamma0 ~ dnorm(log(6), 1/4)
+  
+  # Conspecific density effects
+  kappa1 ~ dnorm(0.6, 6.25) T(0, 1) # mean of 0.6, sd of 0.4i.e., (1/0.4^2), constrained between 0 and 1
+  kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04; i.e., (1/0.04^2), constrained between -1 and 0
 
-  # Vocal random effect for site and survey
-  for (s in 1:S) {
-    for (j in 1:J.A) {
-      phi[s, j] ~ dgamma(a.phi, a.phi)
-    }
+  # Survey random effect
+  tau_gamma1 ~ dgamma(0.01, 0.01) # Precision
+  sigma_gamma1 <- sqrt(1 / tau_gamma1) # Precision interpretation
+  for (j in 1:n.days) {
+    Jraneff[j] ~ dnorm(0, sigma_gamma1) 
   }
-  
-  
+
   # -------------------------------------------
   #
   # Likelihood and process model 
@@ -442,46 +525,54 @@ cat(" model {
     
     # Survey
     for (j in 1:J[s]) {
-    
-      # ---------------------------------
-      # Detection submodel  
-      # ---------------------------------
-      logit(p.a[s, j]) <- alpha0 + alpha1*N[s] + alpha2*X.det[j,2]  
+  
+    # ---------------------------------
+    # Detection submodel  
+    # ---------------------------------
+    logit(p.a[s, j]) <- alpha0 + alpha1*N[s] + alpha2*X.abund[s,21]  
 
-      # ---------------------------------
-      # Call rate submodel  
-      # ---------------------------------
-      #log(delta[s, j]) <-  kappa*log(N[s]) + gamma1[days[s, j]] 
-      
-      # Michaelis-Menten function for call rate
-      log(delta[s, j]) <- (kappa1 * N[s]) / (1 + kappa2 * N[s]) + gamma1[days[s, j]] 
-     
-      y[s, j] ~ dbin(p.a[s, j], 1)
-      tp[s, j] <- delta[s, j] * N[s] / (delta[s, j] * N[s] + omega)
+    # ---------------------------------
+    # Call rate submodel  
+    # ---------------------------------
+    #log(delta[s, j]) <-  kappa*log(N[s]) + gamma1[days[s, j]] 
 
-      # ---------------------------------
-      # Posterior Predictive Checks  
-      # ---------------------------------
-      y.pred[s, j] ~ dbin(p.a[s, j], 1)
-      resid.y[s, j] <- pow(pow(y[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
-      resid.y.pred[s, j] <- pow(pow(y.pred[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
+    # Quadratic  
+    delta[s, j] <- exp( gamma0 + Jraneff[days[s, j]]) + (kappa1*N[s] + kappa2*N[s]^2)
+
+    # ---------------------------------
+    # Observations
+    # ---------------------------------
+    y[s, j] ~ dbin(p.a[s, j], 1)
+
+    # ---------------------------------
+    # True Positives 
+    # ---------------------------------
+    tp[s, j] <- delta[s, j] * N[s] / (delta[s, j] * N[s] + omega)
+
+    # ---------------------------------
+    # Posterior Predictive Checks  
+    # ---------------------------------
+    y.pred[s, j] ~ dbin(p.a[s, j], 1)
+    resid.y[s, j] <- pow(pow(y[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
+    resid.y.pred[s, j] <- pow(pow(y.pred[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
     } # End J
     
     # Surveys with Vocalizations
     for (j in 1:J.r[s]) {
+  
+    # ---------------------------------
+    # Vocalizations  
+    # ---------------------------------
+    v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]])
     
-      # ---------------------------------
-      # Vocalizations  
-      # ---------------------------------
-      v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
-      
-      # ---------------------------------
-      # Predicted Values  
-      # ---------------------------------
-      v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
-      mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]]) / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]])))
-      resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
-      resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
+    # ---------------------------------
+    # Predicted Values  
+    # ---------------------------------
+    v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]]) 
+    mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega)  / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega)))))
+    resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
+    resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
+    
     } # End J.r
   } # End S
   
@@ -517,8 +608,6 @@ cat(" model {
 }", fill=TRUE, file="./JAGs_Models/Wolfe_AV_Mod1.txt")
 # ------------End Model-------------
 
-
-
 # Fit Model
 fm.AV.1 <- jags(data = Wolfe14.data,
               inits = inits,
@@ -548,20 +637,80 @@ cat("Bayesian p-value =", fm.AV.1$summary["bp.v",1], "\n")
 # Model summary
 print(fm.AV.1, digits = 2)
 
+
+
+# -------------------------------------------------------
+#
+#   Combine Chains for Posterior Inference 
+#
+# -------------------------------------------------------
+
+# Combine chains
+combined_chains <- as.mcmc(do.call(rbind, fm.AV.2$samples))
+
+
+# -------------------------------------------------------
+#
+#   Call Rate 
+#
+# -------------------------------------------------------
+
+# --------------------
+# Call Rate 
+# --------------------
+
+# Extract delta estimates
+delta_columns <- grep("^delta\\[", colnames(combined_chains))
+delta_columns
+
+
+
+delta_samples <- combined_chains[ ,delta_columns]
+
+
+# --------------------
+# Conspecific effects
+# --------------------
+
+# Extracting Kappa
+kappa1_samples <- combined_chains[ ,"kappa1"]
+kappa2_samples <- combined_chains[ ,"kappa2"]
+
+summary(kappa1_samples)
+summary(kappa2_samples)
+
+# Compute mean and 95% credible intervals
+kappa1_mean <- mean(kappa1_samples)
+kappa1_ci <- quantile(kappa1_samples, c(0.025, 0.975))
+
+kappa2_mean <- mean(kappa2_samples)
+kappa2_ci <- quantile(kappa2_samples, c(0.025, 0.975))
+
+N_vals <- seq(0, 10, length.out = 100)  # Simulated abundance values
+call_rate <- kappa1_mean * N_vals + kappa2_mean * (N_vals^2)
+
+ggplot(data.frame(N_vals, call_rate), aes(x = N_vals, y = call_rate)) +
+  geom_line(color = "blue") +
+  labs(title = "Estimated Call Rate vs Abundance",
+       x = "Abundance (N)",
+       y = "Call Rate") +
+  theme_minimal()
+
+
+
+
+
 # -------------------------------------------------------
 #
 #   Estimating Abundance 
 #
 # -------------------------------------------------------
 
-# load(file = "./Data/Model_Environments/ARU_AV_Wolfe14day_JAGs.RData")
-
-# Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.AV.1$samples))
-
-
-# Extracting Abundance
+ 
+# Extract abundance posterior
 Ntot_samples <- combined_chains[ ,"N_tot"]
+
+
 
 # Ntotal is the abundance based on 27 acoustic sites at a radius of 200m.
 # To correct for density, Ntotal needs to be divided by 27 * area surveyed
@@ -595,8 +744,8 @@ ggplot(dens_summary, aes(x = Model)) +
     x = "Model",
     y = "Density (N/acre)"
   ) +
-  scale_y_continuous(limits = c(0, 0.5),
-                     breaks = seq(0, 0.5, by = 0.25),
+  scale_y_continuous(limits = c(0, 2),
+                     breaks = seq(0,2, by = 0.25),
                      labels = scales::comma) +
   theme_minimal() +
   theme(
@@ -632,8 +781,8 @@ ggplot(abund_summary, aes(x = Model)) +
     x = "Model",
     y = "Abundance"
   ) +
-  scale_y_continuous(limits = c(100,1000),
-                     breaks = seq(100, 1000, by = 100),
+  scale_y_continuous(limits = c(0,3000),
+                     breaks = seq(0, 3000, by = 250),
                      labels = scales::comma) +
   theme_minimal() +
   theme(
@@ -661,8 +810,8 @@ ggplot(abund_df, aes(x = Model, y = Abundance, fill = Model)) +
                                "PC HDS" = "purple", 
                                "AV Bnet" = "blue",
                                "AV Wolfe" = "red")) +  
-  scale_y_continuous(limits = c(0, 900),
-                     breaks = seq(0, 900, by = 100),
+  scale_y_continuous(limits = c(0, 3000),
+                     breaks = seq(0, 3000, by = 250),
                      labels = scales::comma) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
@@ -678,8 +827,7 @@ ggplot(abund_df, aes(x = Model, y = Abundance, fill = Model)) +
 
 
 # Total abundance
-mean(dens_df$Density) * 2710
-
+abund_summary$Mean
 
 
 
