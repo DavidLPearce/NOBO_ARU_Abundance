@@ -392,24 +392,24 @@ for (row in 1:NROW(site_dat)) {
   # ------------------------------
   
   # Brush between 0.5 and 2 meters, heights above and below are in separate classes
-  optim_chm <- classify(chm, c(0, 0.5, 2, Inf), c(0, 1, 0))
-  optim_chm <- (optim_chm == 1)  # This returns a boolean mask
-  optim_chm <- as.numeric(optim_chm)  # Convert TRUE/FALSE to 1/0
-  #plot(optim_chm)
+  shrub_chm <- classify(chm, c(0, 0.5, 2, Inf), c(0, 1, 0))
+  shrub_chm <- (shrub_chm == 1)  # This returns a boolean mask
+  shrub_chm <- as.numeric(shrub_chm)  # Convert TRUE/FALSE to 1/0
+  #plot(shrub_chm)
 
   # Convert CHM raster to a dataframe
-  optim_chm_df <- as.data.frame(optim_chm, xy = TRUE)
-  colnames(optim_chm_df) <- c("x", "y", "Class")
-  optim_chm_df <- optim_chm_df[which(optim_chm_df[,'Class'] == 1),]
+  shrub_chm_df <- as.data.frame(shrub_chm, xy = TRUE)
+  colnames(shrub_chm_df) <- c("x", "y", "Class")
+  shrub_chm_df <- shrub_chm_df[which(shrub_chm_df[,'Class'] == 1),]
   
-  # Reproject lulc_clip to the CRS of optim_chm
-  lulc_clip_utm <- project(lulc_clip, terra::crs(optim_chm))
+  # Reproject lulc_clip to the CRS of shrub_chm
+  lulc_clip_utm <- project(lulc_clip, terra::crs(shrub_chm))
   
-  # Resample lulc_clip to match the resolution and extent of optim_chm
-  lulc_clip__utm <- resample(lulc_clip_utm, optim_chm, method = "near")
+  # Resample lulc_clip to match the resolution and extent of shrub_chm
+  lulc_clip__utm <- resample(lulc_clip_utm, shrub_chm, method = "near")
   lulc_utm_df <- as.data.frame(lulc_clip__utm, xy = TRUE)
   
-  # Plot LULC with optimal CHM overlay
+  # Plot LULC with shrubal CHM overlay
   overlayPlotfile <- paste0(output_dir, SiteID, "_Overlay.png")
   overlayPlot <- ggplot() +
     geom_raster(data = lulc_utm_df, aes(x = x, y = y, fill = factor(Classvalue))) +
@@ -420,7 +420,7 @@ for (row in 1:NROW(site_dat)) {
                       labels = c("1" = "Woody",
                                  "2" = "Herbaceous",
                                  "3" = "Bareground")) +
-    geom_tile(data = optim_chm_df, aes(x = x, y = y), fill = "yellow", alpha = 0.50) + 
+    geom_tile(data = shrub_chm_df, aes(x = x, y = y), fill = "yellow", alpha = 0.50) + 
     coord_fixed() +
     labs(title = paste("LULC and CHM (0.5-2m [grey]) Overlay for Site", SiteID )) +
     theme_minimal() +
@@ -435,9 +435,9 @@ for (row in 1:NROW(site_dat)) {
   
   # 30m at Focal Statistics
   kernel30m <- focalMat(chm, d = 15, type = "circle")  
-  optim_focal30m <- focal(optim_chm, w = kernel30m, fun = sum, na.rm = TRUE)
-  mean_optim_focal30m <- global(optim_focal30m$focal_sum, fun = "mean", na.rm = TRUE)
-  site_dat[row, "optim_mnFocal30m"] <- mean_optim_focal30m[1,1]
+  shrub_focal30m <- focal(shrub_chm, w = kernel30m, fun = sum, na.rm = TRUE)
+  mean_shrub_focal30m <- global(shrub_focal30m$focal_sum, fun = "mean", na.rm = TRUE)
+  site_dat[row, "woody_shrubmnFocal30m"] <- mean_shrub_focal30m[1,1]
 
   # ------------------------------
   # Update the progress bar
@@ -461,7 +461,10 @@ write.csv(site_dat, "./Data/Point_Count_Data/PointCount_siteCovs.csv")# .csv
 # ------------------------------
 
 site_dat <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
-site_dat <- site_dat[-c(25:27)]
+site_dat <- site_dat[-c(25:26)]# remove elevation & veg density 
+colnames(site_dat)[25] <- "woody_shrubmnFocal30m"
+
+
 # Checking correlation
 pairs.panels(site_dat[-c((1:4))],
              gap = 0,
