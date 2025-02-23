@@ -687,6 +687,8 @@ mcmcplot(fm.3$samples)
 mcmcplot(fm.4$samples) 
 mcmcplot(fm.5$samples)
 
+# Save Environment
+save.image(file = "./Model_Environments/CMR_JAGs.RData")
 
 # -------------------------------------------------------
 # Ranking Models
@@ -732,9 +734,6 @@ mcmcplot(bm$samples)# Visually inspect trace plots
 
 # Model summary
 summary(bm$samples)
-
-# Save Environment
-save.image(file = "./CMR_JAGs.RData")
 
 
 # -------------------------------------------------------
@@ -992,6 +991,6 @@ saveRDS(dens_summary, "./Data/Fitted_Models/PC_CMR_dens_summary.rds")
 saveRDS(abund_summary, "./Data/Fitted_Models/PC_CMR_abund_summary.rds")
 
 # Save Environment
-save.image(file = "./CMR_bm_JAGs.RData")
+save.image(file = "./Model_Environments/CMR_JAGs.RData")
 
 # End Script
