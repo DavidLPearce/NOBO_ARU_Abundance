@@ -790,6 +790,9 @@ ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
   theme_minimal() +
   scale_fill_brewer(palette = "Set2")  # Nice color scheme
 
+# Export beta dataframe
+saveRDS(beta_df, "./Data/Fitted_Models/PC_CMR_beta_df.rds")
+
 # -------------------------------------------------------
 # Covariate Effects
 # -------------------------------------------------------
@@ -943,31 +946,6 @@ print(dens_summary)
 abund_summary <- dens_summary
 abund_summary[,2:4] <- abund_summary[,2:4] * 2710
 
-
-
-# Plot abundance
-ggplot(abund_summary, aes(x = Model)) +
-  geom_point(aes(y = Mean), size = 3) +  # Add mean points
-  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.05) +  # Add error bars for CI
-  labs(
-    title = "",
-    x = "Model",
-    y = "Abundance"
-  ) +
-  scale_y_continuous(limits = c(0, 700),
-                     breaks = seq(0, 700, by = 100),
-                     labels = scales::comma) +
-  theme_minimal() +
-  theme(
-    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
-    axis.text.y = element_text(size = 12),
-    plot.title = element_text(hjust = 0.5),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    legend.position = "none"
-  )
-
-
 # Plot Abundance - Violin
 abund_df <- dens_df
 abund_df$Density <- abund_df$Density * 2710
@@ -987,9 +965,6 @@ ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) +
         axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
         panel.grid = element_blank(),
         legend.position = "none")  # Removes legend
-
-
-
 
 
 

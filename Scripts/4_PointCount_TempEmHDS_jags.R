@@ -227,6 +227,7 @@ params <- c("r",
             "phi0", 
             "beta0", 
             "beta1",
+            "beta2",
             "gamma1", 
             "logit.gamma1",
             "gamma2",
@@ -268,6 +269,7 @@ model {
   # Priors
   beta0 ~ dnorm(0, 1)
   beta1 ~ dnorm(0, 1)
+  beta2 ~ dnorm(0, 1)
 
   # Availability parameters
   phi0 ~ dunif(0.1, 0.9)
@@ -337,7 +339,7 @@ model {
     } # End k loop
 
     # Abundance Model
-    log(lambda[s]) <- beta0 + beta1*X.abund[s,17] 
+    log(lambda[s]) <- beta0 + beta1*X.abund[s,2] + beta2*X.abund[s,23]
 
     # Population size follows a negative binomial distribution
     # M[s] ~ dnegbin(prob[s], r)
@@ -398,6 +400,69 @@ summary(fm.1$samples)
 # Save Environment
 save.image(file = "./HDS_JAGs.RData")
 
+# -------------------------------------------------------
+#
+#   Beta Estimates and Covariate Effects 
+#
+# -------------------------------------------------------
+
+# Combine chains
+combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
+
+# -------------------------------------------------------
+# Beta Estimates
+# -------------------------------------------------------
+
+# Extract beta estimates
+beta0_samples <- combined_chains[, "beta0"]
+beta1_samples <- combined_chains[, "beta1"]
+beta2_samples <- combined_chains[, "beta2"]
+
+# Means
+beta0 <- mean(beta0_samples)
+beta1 <- mean(beta1_samples)
+beta2 <- mean(beta2_samples)
+
+# Credible Intervals
+# beta0_CI_lower <- quantile(beta0_samples, probs = 0.025)
+# beta0_CI_upper <- quantile(beta0_samples, probs = 0.975)
+# 
+# beta1_CI_lower <- quantile(beta1_samples, probs = 0.025)
+# beta1_CI_upper <- quantile(beta1_samples, probs = 0.975)
+# 
+# beta2_CI_lower <- quantile(beta2_samples, probs = 0.025)
+# beta2_CI_upper <- quantile(beta2_samples, probs = 0.975)
+
+
+# Compute 95% CI for each beta
+beta_df <- data.frame(
+  value = c(beta0_samples, beta1_samples, beta2_samples),
+  parameter = rep(c("beta0", "beta1", "beta2"), each = length(beta0_samples))
+) %>%
+  group_by(parameter) %>%
+  filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
+
+# Add model
+beta_df$Model <- "PC HDS"
+
+# Plot density
+ggplot(beta_df, aes(x = value, fill = parameter)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Posterior Density Plots for Beta Estimates", x = "Estimate", y = "Density") +
+  theme_minimal()
+
+# Create violin plot
+ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
+  geom_violin(alpha = 0.5, trim = TRUE) +  # Violin plot with smoothing
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) +  # Line at y = 0
+  labs(title = "Violin Plots for Beta Estimates", x
+       = "Parameter", 
+       y = "Estimate") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2")  # Nice color scheme
+
+# Export beta dataframe
+saveRDS(beta_df, "./Data/Fitted_Models/PC_HDS_beta_df.rds")
 
 # -------------------------------------------------------
 #
@@ -405,13 +470,6 @@ save.image(file = "./HDS_JAGs.RData")
 #
 # -------------------------------------------------------
  
-#load(file = "./Data/Model_Environments/HDS_JAGs.RData")
-
-
-# Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
-
-
 # Extracting Abundance
 Ntot_samples <- combined_chains[ ,"N_tot"]  
 
@@ -435,74 +493,63 @@ dens_summary <- dens_df %>%
   )
 
 # Subset the data within the 95% credible interval
-dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI & dens_df$Density <= dens_summary$Upper_CI, ]
+dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI 
+                   & dens_df$Density <= dens_summary$Upper_CI, ]
 
 
-# Plot density
-ggplot(dens_summary, aes(x = Model)) +
-  geom_point(aes(y = Mean), size = 3) +  # Add mean points
-  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.05) +  # Add error bars for CI
-  labs(
-    title = "",
-    x = "Model",
-    y = "Density (N/acre)"
-  ) +
+# Plot density violin
+ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) + 
+  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
+  labs(x = "Model", y = "Density (N/acre)") +
+  scale_fill_manual(values = c("PC CMR" = "orange", 
+                               "PC HDS" = "purple", 
+                               "AV Bnet" = "blue")) +  # Custom colors
   scale_y_continuous(limits = c(0, 0.5),
                      breaks = seq(0, 0.5, by = 0.25),
                      labels = scales::comma) +
   theme_minimal() +
-  theme(
-    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
-    axis.text.y = element_text(size = 12),
-    plot.title = element_text(hjust = 0.5),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    legend.position = "none"
-  )
-
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
+        axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
+        axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
+        panel.grid = element_blank(),
+        legend.position = "none")  # Removes legend
 
 
 # Total density
-print(mean(dens_df$Density))
-print(min(dens_df$Density))
-print(max(dens_df$Density))
-
+print(dens_summary)
 
 
 # Getting total abundance
 abund_summary <- dens_summary
 abund_summary[,2:4] <- abund_summary[,2:4] * 2710
 
+# Plot Abundance - Violin
+abund_df <- dens_df
+abund_df$Density <- abund_df$Density * 2710
 
-
-# Plot abundance
-ggplot(abund_summary, aes(x = Model)) +
-  geom_point(aes(y = Mean), size = 3) +  # Add mean points
-  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.05) +  # Add error bars for CI
-  labs(
-    title = "",
-    x = "Model",
-    y = "Abundance"
-  ) +
-  scale_y_continuous(limits = c(400,800),
-                     breaks = seq(400, 800, by = 25),
+ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) + 
+  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
+  labs(x = "Model", y = "Density (N/acre)") +
+  scale_fill_manual(values = c("PC CMR" = "orange", 
+                               "PC HDS" = "purple", 
+                               "AV Bnet" = "blue")) +  # Custom colors
+  scale_y_continuous(limits = c(0, 1000),
+                     breaks = seq(0, 1000, by = 100),
                      labels = scales::comma) +
   theme_minimal() +
-  theme(
-    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
-    axis.text.y = element_text(size = 12),
-    plot.title = element_text(hjust = 0.5),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    legend.position = "none"
-  )
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
+        axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
+        axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
+        panel.grid = element_blank(),
+        legend.position = "none")  # Removes legend
+
 
 
 
 
 
 # Total abundance
-mean(dens_df$Density) * 2710
+abund_summary
 
 
 
