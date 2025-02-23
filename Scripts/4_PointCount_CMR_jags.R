@@ -147,8 +147,8 @@ data <- list(J = J,
              M = M,
              nsites = nsites,
              y = y,
-             X.abund = X.abund,
-             X.det = X.det,
+             X.abund = as.matrix(X.abund),
+             X.det = as.matrix(X.det),
              group = site,
              area = area)
  
@@ -731,12 +731,16 @@ summary(bm$samples)
 
 # -------------------------------------------------------
 #
-#   Covariate Effects 
+#   Beta Estimates and Covariate Effects 
 #
 # -------------------------------------------------------
 
 # Combine chains
-combined_chains <- as.mcmc(do.call(rbind, bm$samples))
+combined_chains <- as.mcmc(do.call(rbind, fm.2$samples))
+
+# -------------------------------------------------------
+# Beta Estimates
+# -------------------------------------------------------
 
 # Extract beta estimates
 beta0_samples <- combined_chains[, "beta0"]
@@ -747,25 +751,59 @@ beta2_samples <- combined_chains[, "beta2"]
 beta0 <- mean(beta0_samples)
 beta1 <- mean(beta1_samples)
 beta2 <- mean(beta2_samples)
-
-# # Credible Intervals
+ 
+# Credible Intervals
 # beta0_CI_lower <- quantile(beta0_samples, probs = 0.025)
 # beta0_CI_upper <- quantile(beta0_samples, probs = 0.975)
-#
+# 
 # beta1_CI_lower <- quantile(beta1_samples, probs = 0.025)
 # beta1_CI_upper <- quantile(beta1_samples, probs = 0.975)
-#
+# 
 # beta2_CI_lower <- quantile(beta2_samples, probs = 0.025)
 # beta2_CI_upper <- quantile(beta2_samples, probs = 0.975)
 
 
+# Compute 95% CI for each beta
+beta_df <- data.frame(
+  value = c(beta0_samples, beta1_samples, beta2_samples),
+  parameter = rep(c("beta0", "beta1", "beta2"), each = length(beta0_samples))
+) %>%
+  group_by(parameter) %>%
+  filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
+
+# Add model
+beta_df$Model <- "PC CMR"
+
+# Plot density
+ggplot(beta_df, aes(x = value, fill = parameter)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Posterior Density Plots for Beta Estimates", x = "Estimate", y = "Density") +
+  theme_minimal()
+
+# Create violin plot
+ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
+  geom_violin(alpha = 0.5, trim = TRUE) +  # Violin plot with smoothing
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) +  # Line at y = 0
+  labs(title = "Violin Plots for Beta Estimates", x
+       = "Parameter", 
+       y = "Estimate") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2")  # Nice color scheme
+
+# -------------------------------------------------------
+# Covariate Effects
+# -------------------------------------------------------
+ 
+herbCov_name <- "herb_prp"
+woodyCov_name <- 'Woody_shrub_mnFocal30m'
+
 # Create a prediction of covariate values
-herb_cov_pred_vals <- seq(min(site_covs[,'herb_Pdens']), max(site_covs[,'herb_Pdens']), length.out = 1000)
-woody_cov_pred_vals <- seq(min(site_covs[,'woody_lrgPInx']), max(site_covs[,'woody_lrgPInx']), length.out = 1000)
+herb_cov_pred_vals <- seq(min(site_covs[, herbCov_name]), max(site_covs[, herbCov_name]), length.out = 1000)
+woody_cov_pred_vals <- seq(min(site_covs[, woodyCov_name]), max(site_covs[, woodyCov_name]), length.out = 1000)
 
 # Scale to have a mean of 0
-herb_cov_pred_vals_scaled <- (herb_cov_pred_vals - mean(site_covs[,'herb_Pdens'])) / sd(site_covs[,'herb_Pdens'])
-woody_cov_pred_vals_scaled <- (woody_cov_pred_vals - mean(site_covs[,'woody_lrgPInx'])) / sd(site_covs[,'woody_lrgPInx'])
+herb_cov_pred_vals_scaled <- (herb_cov_pred_vals - mean(site_covs[, herbCov_name])) / sd(site_covs[, herbCov_name])
+woody_cov_pred_vals_scaled <- (woody_cov_pred_vals - mean(site_covs[, woodyCov_name])) / sd(site_covs[, woodyCov_name])
 
 # Matrices for storing predictions
 herb_preds <- matrix(NA, nrow = length(beta1_samples), ncol = length(herb_cov_pred_vals_scaled))
@@ -806,7 +844,7 @@ woody_data <- data.frame(
 
 
 # Plot Herbaceous Patch
-herbcovEff_plot <- ggplot(herbaceous_data, aes(x = herb_cov_pred_vals_scaled, y = herbPdens_mean)) +
+herbcovEff_plot <- ggplot(herbaceous_data, aes(x = herb_cov_pred_vals_scaled, y = herb_preds_mean)) +
                   geom_line(color = "lightgreen", linewidth = 1.5) +  # Line plot
                   geom_ribbon(aes(ymin = herb_preds_CI_lower, ymax = herb_preds_CI_upper), 
                               fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
@@ -815,6 +853,9 @@ herbcovEff_plot <- ggplot(herbaceous_data, aes(x = herb_cov_pred_vals_scaled, y 
                        title = "Predicted Effect of Herbaceous Covariate") +
                   theme_minimal() +
                   theme(panel.grid = element_blank())
+# View
+herbcovEff_plot
+
 # Export                
 ggsave(plot = herbcovEff_plot, "Figures/CMR_HerbCovEffect_plot.jpeg",  
        width = 8, height = 5, dpi = 300) 
@@ -822,15 +863,17 @@ ggsave(plot = herbcovEff_plot, "Figures/CMR_HerbCovEffect_plot.jpeg",
 
 # Plot Woody Largest Patch Index
 woodycovEff_plot <- ggplot(woody_data, aes(x = woody_cov_pred_vals_scaled, y = woody_preds_mean)) +
-                  geom_line(color = "forestgreen", size = 1.5) +  # Line plot
-                  geom_ribbon(aes(ymin = woodylrgPInx_CI_lower, 
-                                  ymax = woodylrgPInx_CI_upper), 
+                  geom_line(color = "forestgreen", linewidth = 1.5) +  # Line plot
+                  geom_ribbon(aes(ymin = woody_preds_CI_lower, 
+                                  ymax = woody_preds_CI_upper), 
                               fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
                   labs(x = "Woody Covariate", 
                        y = "", 
                        title = "Predicted Effect of Woody Covariate") +
                   theme_minimal() +
                   theme(panel.grid = element_blank())
+# View
+woodycovEff_plot
 
 # Export                
 ggsave(plot = woodycovEff_plot, "Figures/CMR_WoodyCovEffect_plot.jpeg",  
@@ -841,8 +884,6 @@ ggsave(plot = woodycovEff_plot, "Figures/CMR_WoodyCovEffect_plot.jpeg",
 #   Estimating Abundance 
 #
 # -------------------------------------------------------
-
-#load(file = "./Data/Model_Environments/CMR_bm_JAGs.RData")
 
 
 # Extracting Abundance
@@ -858,11 +899,6 @@ dens_df <- data.frame(Model = rep("PC CMR", length(dens_samples)), Density = den
 colnames(dens_df)[2] <- "Density"
 head(dens_df)
 
-dens_df <- dens_df %>%
-  group_by(Model) %>%
-  filter(Density >= quantile(Density, 0.25) & Density <= quantile(Density, 0.975))
-
-
 # Calculate the mean and 95% Credible Interval
 dens_summary <- dens_df %>%
   group_by(Model) %>%
@@ -873,33 +909,11 @@ dens_summary <- dens_df %>%
   )
 
 # Subset the data within the 95% credible interval
-dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI & dens_df$Density <= dens_summary$Upper_CI, ]
+dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI 
+                   & dens_df$Density <= dens_summary$Upper_CI, ]
 
 
-
-# Plot density
-ggplot(dens_summary, aes(x = Model)) +
-  geom_point(aes(y = Mean), size = 3) +  # Add mean points
-  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.05) +  # Add error bars for CI
-  labs(
-    title = "",
-    x = "Model",
-    y = "Density (N/acre)"
-  ) +
-  scale_y_continuous(limits = c(0, 0.5),
-                     breaks = seq(0, 0.5, by = 0.25),
-                     labels = scales::comma) +
-  theme_minimal() +
-  theme(
-    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
-    axis.text.y = element_text(size = 12),
-    plot.title = element_text(hjust = 0.5),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    legend.position = "none"
-  )
-
-# Plot violin
+# Plot density violin
 ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) + 
   geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
   labs(x = "Model", y = "Density (N/acre)") +
@@ -920,9 +934,8 @@ ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) +
 
 
 # Total density
-print(mean(dens_df$Density))
-print(min(dens_df$Density))
-print(max(dens_df$Density))
+print(dens_summary)
+
 
 
 
@@ -955,7 +968,7 @@ ggplot(abund_summary, aes(x = Model)) +
   )
 
 
-# Plot violin
+# Plot Abundance - Violin
 abund_df <- dens_df
 abund_df$Density <- abund_df$Density * 2710
 
@@ -981,7 +994,7 @@ ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) +
 
 
 # Total abundance
-mean(dens_df$Density) * 2710
+abund_summary
   
 
 
