@@ -31,7 +31,7 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- Ncores  * 0.8 # For low background use 80%, for medium use 50% of Ncores
+workers <- Ncores  * 0.5 # For low background use 80%, for medium use 50% of Ncores
 
 # Source custom function for checking Rhat values > 1.1
 source("./Scripts/Rhat_check_function.R")
@@ -680,15 +680,15 @@ check_rhat(fm.4$Rhat, threshold = 1.0)
 check_rhat(fm.5$Rhat, threshold = 1.0)
 
 # Trace plots
-mcmcplot(fm.0$samples) 
-mcmcplot(fm.1$samples) 
-mcmcplot(fm.2$samples)
-mcmcplot(fm.3$samples) 
-mcmcplot(fm.4$samples) 
-mcmcplot(fm.5$samples)
+# mcmcplot(fm.0$samples) 
+# mcmcplot(fm.1$samples) 
+# mcmcplot(fm.2$samples)
+# mcmcplot(fm.3$samples) 
+# mcmcplot(fm.4$samples) 
+# mcmcplot(fm.5$samples)
 
 # Save Environment
-save.image(file = "./Model_Environments/CMR_JAGs.RData")
+save.image(file = "./Data/Model_Environments/CMR_bm_JAGs.RData")
 
 # -------------------------------------------------------
 # Ranking Models
@@ -725,13 +725,6 @@ print(WAIC_df)
 # Best model?
 bm <- get(WAIC_df[1,1]) 
 
-# Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
-cat("Bayesian p-value =", bm$summary["p_Bayes",1], "\n")
-
-# Check convergence
-bm$Rhat # Rhat: less than 1.1 means good convergence
-mcmcplot(bm$samples)# Visually inspect trace plots
-
 # Model summary
 summary(bm$samples)
 
@@ -767,73 +760,80 @@ beta2 <- mean(beta2_samples)
 
 
 # Create a prediction of covariate values
-herb_Pdens_pred_vals <- seq(min(site_covs[,'herb_Pdens']), max(site_covs[,'herb_Pdens']), length.out = 1000)
-woody_lrgPInx_pred_vals <- seq(min(site_covs[,'woody_lrgPInx']), max(site_covs[,'woody_lrgPInx']), length.out = 1000)
+herb_cov_pred_vals <- seq(min(site_covs[,'herb_Pdens']), max(site_covs[,'herb_Pdens']), length.out = 1000)
+woody_cov_pred_vals <- seq(min(site_covs[,'woody_lrgPInx']), max(site_covs[,'woody_lrgPInx']), length.out = 1000)
 
 # Scale to have a mean of 0
-herb_Pdens_pred_vals_scaled <- (herb_Pdens_pred_vals - mean(site_covs[,'herb_Pdens'])) / sd(site_covs[,'herb_Pdens'])
-woody_lrgPInx_pred_vals_scaled <- (woody_lrgPInx_pred_vals - mean(site_covs[,'woody_lrgPInx'])) / sd(site_covs[,'woody_lrgPInx'])
+herb_cov_pred_vals_scaled <- (herb_cov_pred_vals - mean(site_covs[,'herb_Pdens'])) / sd(site_covs[,'herb_Pdens'])
+woody_cov_pred_vals_scaled <- (woody_cov_pred_vals - mean(site_covs[,'woody_lrgPInx'])) / sd(site_covs[,'woody_lrgPInx'])
 
 # Matrices for storing predictions
-herbPdens_preds <- matrix(NA, nrow = length(beta1_samples), ncol = length(herb_Pdens_pred_vals_scaled))
-woodylrgPInx_preds <- matrix(NA, nrow = length(beta2_samples), ncol = length(woody_lrgPInx_pred_vals_scaled))
+herb_preds <- matrix(NA, nrow = length(beta1_samples), ncol = length(herb_cov_pred_vals_scaled))
+woody_preds <- matrix(NA, nrow = length(beta2_samples), ncol = length(woody_cov_pred_vals_scaled))
 
 # Generate predictions
 for (i in 1:length(beta0_samples)) {
-  herbPdens_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * herb_Pdens_pred_vals_scaled
-  woodylrgPInx_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * woody_lrgPInx_pred_vals_scaled
+  herb_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * herb_cov_pred_vals_scaled
+  woody_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * woody_cov_pred_vals_scaled
 }
 
 # Calculate credible intervals
-herbPdens_CI_lower <- apply(herbPdens_preds, 2, quantile, probs = 0.025)
-herbPdens_CI_upper <- apply(herbPdens_preds, 2, quantile, probs = 0.975)
+herb_preds_CI_lower <- apply(herb_preds, 2, quantile, probs = 0.025)
+herb_preds_CI_upper <- apply(herb_preds, 2, quantile, probs = 0.975)
 
-woodylrgPInx_CI_lower <- apply(woodylrgPInx_preds, 2, quantile, probs = 0.025)
-woodylrgPInx_CI_upper <- apply(woodylrgPInx_preds, 2, quantile, probs = 0.975)
+woody_preds_CI_lower <- apply(woody_preds, 2, quantile, probs = 0.025)
+woody_preds_CI_upper <- apply(woody_preds, 2, quantile, probs = 0.975)
 
 # Calculate mean predictions
-herbPdens_mean <- apply(herbPdens_preds, 2, mean)
-woodylrgPInx_mean <- apply(woodylrgPInx_preds, 2, mean)
+herb_preds_mean <- apply(herb_preds, 2, mean)
+woody_preds_mean <- apply(woody_preds, 2, mean)
 
 # Combine into a single data frame
 herbaceous_data <- data.frame(
-  herb_Pdens_pred_vals_scaled = herb_Pdens_pred_vals_scaled,
-  herbPdens_mean = herbPdens_mean,
-  herbPdens_CI_lower = herbPdens_CI_lower,
-  herbPdens_CI_upper = herbPdens_CI_upper
+  herb_cov_pred_vals_scaled = herb_cov_pred_vals_scaled,
+  herb_preds_mean = herb_preds_mean,
+  herb_preds_CI_lower = herb_preds_CI_lower,
+  herb_preds_CI_upper = herb_preds_CI_upper
 )
 
 woody_data <- data.frame(
-  woody_lrgPInx_pred_vals_scaled = woody_lrgPInx_pred_vals_scaled,
-  woodylrgPInx_mean = woodylrgPInx_mean,
-  woodylrgPInx_CI_lower = woodylrgPInx_CI_lower,
-  woodylrgPInx_CI_upper = woodylrgPInx_CI_upper
+  woody_cov_pred_vals_scaled = woody_cov_pred_vals_scaled,
+  woody_preds_mean = woody_preds_mean,
+  woody_preds_CI_lower = woody_preds_CI_lower,
+  woody_preds_CI_upper = woody_preds_CI_upper
 )
 
 
 
 # Plot Herbaceous Patch
-hebPdens_plot <- ggplot(herbaceous_data, aes(x = herb_Pdens_pred_vals_scaled, y = herbPdens_mean)) +
+herbcovEff_plot <- ggplot(herbaceous_data, aes(x = herb_cov_pred_vals_scaled, y = herbPdens_mean)) +
                   geom_line(color = "lightgreen", linewidth = 1.5) +  # Line plot
-                  geom_ribbon(aes(ymin = herbPdens_CI_lower, ymax = herbPdens_CI_upper), fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
-                  labs(x = "Herbaceous Patch Density", y = "Predicted Effect", title = "Effect of Herbaceous Patch Density") +
+                  geom_ribbon(aes(ymin = herb_preds_CI_lower, ymax = herb_preds_CI_upper), 
+                              fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
+                  labs(x = "Herbaceous Covariate", 
+                       y = "Predicted Effect", 
+                       title = "Predicted Effect of Herbaceous Covariate") +
                   theme_minimal() +
                   theme(panel.grid = element_blank())
 # Export                
-ggsave(plot = hebPdens_plot, "Figures/hebPdens_plot.jpeg",  
+ggsave(plot = herbcovEff_plot, "Figures/CMR_HerbCovEffect_plot.jpeg",  
        width = 8, height = 5, dpi = 300) 
 
 
 # Plot Woody Largest Patch Index
-woodyPindx_plot <- ggplot(woody_data, aes(x = woody_lrgPInx_pred_vals_scaled, y = woodylrgPInx_mean)) +
+woodycovEff_plot <- ggplot(woody_data, aes(x = woody_cov_pred_vals_scaled, y = woody_preds_mean)) +
                   geom_line(color = "forestgreen", size = 1.5) +  # Line plot
-                  geom_ribbon(aes(ymin = woodylrgPInx_CI_lower, ymax = woodylrgPInx_CI_upper), fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
-                  labs(x = "Woody Largest Patch Index", y = "", title = "Effect of Woody Largest Patch Index") +
+                  geom_ribbon(aes(ymin = woodylrgPInx_CI_lower, 
+                                  ymax = woodylrgPInx_CI_upper), 
+                              fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
+                  labs(x = "Woody Covariate", 
+                       y = "", 
+                       title = "Predicted Effect of Woody Covariate") +
                   theme_minimal() +
                   theme(panel.grid = element_blank())
 
 # Export                
-ggsave(plot = woodyPindx_plot, "Figures/woodyPindx_plot.jpeg",  
+ggsave(plot = woodycovEff_plot, "Figures/CMR_WoodyCovEffect_plot.jpeg",  
        width = 8, height = 5, dpi = 300) 
 
 # -------------------------------------------------------
@@ -991,6 +991,6 @@ saveRDS(dens_summary, "./Data/Fitted_Models/PC_CMR_dens_summary.rds")
 saveRDS(abund_summary, "./Data/Fitted_Models/PC_CMR_abund_summary.rds")
 
 # Save Environment
-save.image(file = "./Model_Environments/CMR_JAGs.RData")
+save.image(file = "./Data/Model_Environments/CMR_bm_JAGs.RData")
 
 # End Script
