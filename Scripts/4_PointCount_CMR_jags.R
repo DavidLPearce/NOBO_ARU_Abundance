@@ -672,12 +672,12 @@ fm.5 <- jags(data = data,
 # -------------------------------------------------------
 
 # Rhat values
-check_rhat(fm.0$Rhat, threshold = 1.0)
-check_rhat(fm.1$Rhat, threshold = 1.0)
-check_rhat(fm.2$Rhat, threshold = 1.0)
-check_rhat(fm.3$Rhat, threshold = 1.0)
-check_rhat(fm.4$Rhat, threshold = 1.0)
-check_rhat(fm.5$Rhat, threshold = 1.0)
+check_rhat(fm.0$Rhat, threshold = 1.1)
+check_rhat(fm.1$Rhat, threshold = 1.1)
+check_rhat(fm.2$Rhat, threshold = 1.1)
+check_rhat(fm.3$Rhat, threshold = 1.1)
+check_rhat(fm.4$Rhat, threshold = 1.1)
+check_rhat(fm.5$Rhat, threshold = 1.1)
 
 # Trace plots
 # mcmcplot(fm.0$samples) 
@@ -853,7 +853,7 @@ herbcovEff_plot <- ggplot(herbaceous_data, aes(x = herb_cov_pred_vals_scaled, y 
                               fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
                   labs(x = "Herbaceous Covariate", 
                        y = "Predicted Effect", 
-                       title = "Predicted Effect of Herbaceous Covariate") +
+                       title = "Predicted Effect of Herbaceous Proportion") +
                   theme_minimal() +
                   theme(panel.grid = element_blank())
 # View
@@ -872,7 +872,7 @@ woodycovEff_plot <- ggplot(woody_data, aes(x = woody_cov_pred_vals_scaled, y = w
                               fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
                   labs(x = "Woody Covariate", 
                        y = "", 
-                       title = "Predicted Effect of Woody Covariate") +
+                       title = "Predicted Effect of Shrub Focal") +
                   theme_minimal() +
                   theme(panel.grid = element_blank())
 # View

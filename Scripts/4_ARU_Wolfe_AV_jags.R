@@ -304,24 +304,6 @@ str(Wolfe14.data)
 # Conspecific Density Simulation 
 # ---------------------------------------
 
-# Getting an idea of mean calls by an individual
-# Load in capture data
-pc_dat <- read.csv("./Data/Point_Count_Data/NOBO_PC_Summer2024data.csv")
-
-# Remove rows with NA values
-pc_dat <- na.omit(pc_dat)
-
-# Sum total calls across all detected individuals
-sum(pc_dat[,c('int1', 'int2', 'int3', 'int4')]) # 164 calls
-nrow(pc_dat) # 68 individuals
-
-# so 164 calls were made by 68 individuals = 2.4 calls per individual in 12 mins
-# 2.4 calls / 12 mins = 0.2009804 calls per min
-# 0.2 calls/min * 30 mins = 6 calls in 30 mins
-# a caveat... only the first call was documented in the mental CR method, so this is a rough look
-# Lituma et al. 2017 reported a baseline (intercept) singing rate of 2.23 calls/10 mins =  6.69 calls in 30 mins
-
-
 # Constrain kappa1 to be between  0.6 +/- 0.4
 kappa1 <- rnorm(50, mean = 2, sd = 1)   # rnorm(50, mean = 0.6, sd = 0.4)  
 
@@ -329,7 +311,7 @@ kappa1 <- rnorm(50, mean = 2, sd = 1)   # rnorm(50, mean = 0.6, sd = 0.4)
 kappa2 <- rnorm(50, mean = -0.4, sd = 0.4)  
 
 # Intercept: log(6) so that exp(gamma0) = 6 calls per 30 min for one individual, 2 calls per 10 mins
-gamma0 <- log(10)  
+gamma0 <- log(2)  
 exp(gamma0)
 
 # Variance of random effect: precision
@@ -394,22 +376,18 @@ ggplot(results, aes(x = N, y = delta, color = combination)) +
 # 
 # ----------------------------------------------------------
 
-# ----------------------------------------------------------
-#                    Model 1 
-# Abundance (Poisson) = Herb Patch Density + Site Ran Eff
-# Detection = Vegetation Density 
-# Call Rate = Day Ran Eff + conspecific density
-# Vocal (Poisson) 
-# ----------------------------------------------------------
-
-# MCMC 
-n.iter <- 300000
-n.burnin <- 60000
-n.thin <- 10
-n.chains <- 3
+# -------------------
+# MCMC Specifications
+# -------------------
+n.iter = 300000
+n.burnin = 20000
+n.chains = 3
+n.thin = 10
 n.adapt = 5000
 
-
+# -------------------------------------------------------
+# Model Specifications
+# -------------------------------------------------------
 
 # Parameters monitored
 params <- c('lambda', # Abundance
@@ -417,8 +395,11 @@ params <- c('lambda', # Abundance
              'N',
              'beta0',
              'beta1',
+             'beta2',
              'Sraneff',
+             'mu_s',
              'tau_s',
+             'sigma_s',
              'alpha0', # Detection 
              'alpha1', 
              'alpha2',
@@ -440,19 +421,19 @@ inits <- function() {
   list(
     N = rep(1, S), # Abundance
     beta0 = rnorm(1, 0, 1),
-    beta1 = rnorm(1, 0, 5),
+    beta1 = 0,
+    beta2 = 0,
     tau_s = 5,
-    alpha0 = rnorm(1, 0, 1), # Detection
-    alpha1 = runif(1, 0, 1), 
-    alpha2 = rnorm(1, 0, 0.1),
-    gamma0 = log(6),
+    alpha0 = 0, # Detection
+    alpha1 = 0, 
+    alpha2 = 0,
+    gamma0 = log(3),
     kappa1 = 0.6, # Vocalization
     kappa2 = -0.06, 
     omega = 0.001,
     tau_j = 2
   )
 }#end inits
-
 
 
 # ----------------------------- 
@@ -469,13 +450,15 @@ cat(" model {
   
   # Covariate effect
   beta1 ~ dnorm(0, 1)
+  beta2 ~ dnorm(0, 1)
   
-  # Abundance random effect - missing habitat variability
-  tau_s ~ dgamma(0.5, 0.5)
-  sigma_s <- sqrt(1 / tau_s)
-  for (s in 1:S) {
-    Sraneff[s] ~ dnorm(beta0, sigma_s)  
-  }
+  # # Abundance random effect - missing habitat variability
+  # mu_s ~ dnorm(0, 0.1)
+  # tau_s ~ dgamma(1, 1)
+  # sigma_s <- sqrt(1 / tau_s)
+  # for (s in 1:S) {
+  #   Sraneff[s] ~ dnorm(mu_s, tau_s)  
+  # }
 
   # ------------------------
   # Detection Priors
@@ -497,15 +480,15 @@ cat(" model {
   # False positive rate
   omega  ~ dnorm(0, 1) T(0, ) # Truncated at 0; 0 false positive rate
   
-  # Calls in 30 mins by 1 individual, which is 6 +/- 2
-  gamma0 ~ dnorm(log(6), 1/2)
+  # Calls in 30 mins by 1 individual, which is 18 +/- 9
+  gamma0 ~ dnorm(log(6), 1/4)
   
   # Conspecific density effects
   kappa1 ~ dnorm(2, 1) T(0, 1) # mean of 0.6, sd of 0.4 i.e., (1/1^2); constrained between 0 and 1
   kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04 i.e., (1/0.04^2); constrained between -1 and 0
 
   # Survey random effect
-  tau_j ~ dgamma(2, 2) # Precision
+  tau_j ~ dgamma(5, 5) # Precision
   sigma_j <- sqrt(1 / tau_j) # Precision interpretation
   for (j in 1:n.days) {
     Jraneff[j] ~ dnorm(0, sigma_j) 
@@ -523,7 +506,7 @@ cat(" model {
     # ---------------------------------
     # Abundance submodel  
     # ---------------------------------
-    log(lambda[s]) <- beta1 * X.abund[s,17] + Sraneff[s]
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 2] + beta1 * X.abund[s, 23]  
     N[s] ~ dpois(lambda[s] * Offset)
     
     # Survey
@@ -532,14 +515,14 @@ cat(" model {
     # ---------------------------------
     # Detection submodel  
     # ---------------------------------
-    logit(p.a[s, j]) <- alpha0 + alpha1*N[s] + alpha2*X.abund[s,21]  
+    logit(p.a[s, j]) <- alpha0 + alpha1*N[s] + alpha2 * X.abund[s,21]  
 
     # ---------------------------------
     # Call rate submodel  
     # ---------------------------------
     
-    # delta[s, j] <- exp( gamma0 + Jraneff[days[s, j]]) + (kappa1*N[s] + kappa2*N[s]^2)
-    delta[s, j] <- max(0, exp(gamma0 + Jraneff[days[s, j]]) + (kappa1 * N[s]) + (kappa2 * (N[s])^2))
+    # delta[s, j] <- exp(gamma0 + Jraneff[days[s, j]]) + (kappa1*N[s] + kappa2*N[s]^2)
+    delta[s, j] <- max(0, exp(gamma0 + Jraneff[days[s, j]]) ) #+ (kappa1 * N[s]) + (kappa2 * (N[s])^2))
 
     # ---------------------------------
     # Observations
@@ -624,29 +607,74 @@ fm.AV.1 <- jags(data = Wolfe14.data,
               n.cores = workers,
               verbose = TRUE)
 
-# Rhat
-fm.AV.1$Rhat
-
-# N Total
-cat("Mean Abundance =", fm.AV.1$summary["N_tot",1], "\n")
-
-# Trace plots
-mcmcplot(fm.AV.1$samples)
-
-# Model summary
-print(fm.AV.1, digits = 2)
-
+# Check Convergence
+fm.AV.1$Rhat # Rhat
+mcmcplot(fm.AV.1$samples) # Trace plots
 
 
 # -------------------------------------------------------
 #
-#   Combine Chains for Posterior Inference 
+#   Beta Estimates and Covariate Effects 
 #
 # -------------------------------------------------------
 
 # Combine chains
 combined_chains <- as.mcmc(do.call(rbind, fm.AV.1$samples))
 
+# -------------------------------------------------------
+# Beta Estimates
+# -------------------------------------------------------
+
+# Extract beta estimates
+beta0_samples <- combined_chains[, "beta0"]
+beta1_samples <- combined_chains[, "beta1"]
+beta2_samples <- combined_chains[, "beta2"]
+
+# Means
+beta0 <- mean(beta0_samples)
+beta1 <- mean(beta1_samples)
+beta2 <- mean(beta2_samples)
+
+# Credible Intervals
+# beta0_CI_lower <- quantile(beta0_samples, probs = 0.025)
+# beta0_CI_upper <- quantile(beta0_samples, probs = 0.975)
+# 
+# beta1_CI_lower <- quantile(beta1_samples, probs = 0.025)
+# beta1_CI_upper <- quantile(beta1_samples, probs = 0.975)
+# 
+# beta2_CI_lower <- quantile(beta2_samples, probs = 0.025)
+# beta2_CI_upper <- quantile(beta2_samples, probs = 0.975)
+
+
+# Compute 95% CI for each beta
+beta_df <- data.frame(
+  value = c(beta0_samples, beta1_samples, beta2_samples),
+  parameter = rep(c("beta0", "beta1", "beta2"), each = length(beta0_samples))
+) %>%
+  group_by(parameter) %>%
+  filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
+
+# Add model
+beta_df$Model <- "Wolfe AV"
+
+# Plot density
+ggplot(beta_df, aes(x = value, fill = parameter)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Posterior Density Plots for Beta Estimates", x = "Estimate", y = "Density") +
+  theme_minimal()
+
+# Create violin plot
+ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
+  geom_violin(alpha = 0.5, trim = TRUE) +  # Violin plot with smoothing
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) +  # Line at y = 0
+  labs(title = "Violin Plots for Beta Estimates", x
+       = "Parameter", 
+       y = "Estimate") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2")  # Nice color scheme
+
+# Export beta dataframe
+saveRDS(beta_df, "./Data/Fitted_Models/ARU_WolfeAV_beta_df.rds")
 
 # -------------------------------------------------------
 #
@@ -661,22 +689,16 @@ combined_chains <- as.mcmc(do.call(rbind, fm.AV.1$samples))
 # Extract rows containing "delta" in the row names
 delta_rows <- fm.AV.1$summary[grepl("delta", rownames(fm.AV.1$summary)), ]
 
-# Select only mean, 2.5%, and 97.5% columns
-delta_values <- delta_rows[, c("mean", "2.5%", "97.5%")]
+# Select only mean and standard deviation
+delta_values <- delta_rows[, c("mean", "sd")]
 
-# As data frame
+# Convert to data frame
 delta_values <- as.data.frame(delta_values)
 
 # Print the result
 print(delta_values)
 
- 
-# Get site and survey
-# library(dplyr)
-# library(stringr)
-# library(tibble)
-
-# Convert row names to a column
+# Convert row names to a column and extract site/survey numbers
 delta_df <- delta_values %>%
   rownames_to_column(var = "delta_id") %>%
   mutate(
@@ -684,13 +706,11 @@ delta_df <- delta_values %>%
     survey = as.numeric(str_extract(delta_id, "(?<=,)\\d+"))   # Extract survey number
   ) %>%
   rename(
-    LCI = `2.5%`,  # Change 2.5% to LCI
-    UCI = `97.5%`  # Change 97.5% to UCI
+    SD = sd  # Rename standard deviation column
   )
 
 # Print result
 head(delta_df)
-
 
 # Plot Delta Mean
 ggplot(delta_df, aes(x = survey, y = site, fill = mean)) +
@@ -706,30 +726,16 @@ ggplot(delta_df, aes(x = survey, y = site, fill = mean)) +
   scale_y_continuous(breaks = 1:27) +   
   theme(panel.grid = element_blank())
 
-# Plot Delta LCI
-ggplot(delta_df, aes(x = survey, y = site, fill = LCI)) +
+# Plot Delta SD
+ggplot(delta_df, aes(x = survey, y = site, fill = SD)) +
   geom_tile() +   
-  geom_text(aes(label = round(LCI, 1)), color = "black", size = 3) +  
+  geom_text(aes(label = round(SD, 2)), color = "black", size = 3) +  
   scale_fill_viridis_c(option = "viridis") +  
   theme_minimal() +
-  labs(title = "Delta LCI Values",
+  labs(title = "Delta Standard Deviation",
        x = "Survey",
        y = "Site",
-       fill = "LCI Delta") +
-  scale_x_continuous(breaks = 1:14) +   
-  scale_y_continuous(breaks = 1:27) +   
-  theme(panel.grid = element_blank())
-
-# Plot Delta UCI
-ggplot(delta_df, aes(x = survey, y = site, fill = UCI)) +
-  geom_tile() +   
-  geom_text(aes(label = round(UCI, 1)), color = "black", size = 3) +  
-  scale_fill_viridis_c(option = "plasma") +  
-  theme_minimal() +
-  labs(title = "Delta UCI Values",
-       x = "Survey",
-       y = "Site",
-       fill = "UCI Delta") +
+       fill = "SD Delta") +
   scale_x_continuous(breaks = 1:14) +   
   scale_y_continuous(breaks = 1:27) +   
   theme(panel.grid = element_blank())
@@ -737,7 +743,7 @@ ggplot(delta_df, aes(x = survey, y = site, fill = UCI)) +
 
 
 # --------------------
-# Conspecific effects
+# Conspecific effects *** not finished??
 # --------------------
 
 # Extracting Kappa
@@ -754,7 +760,7 @@ kappa1_ci <- quantile(kappa1_samples, c(0.025, 0.975))
 kappa2_mean <- mean(kappa2_samples)
 kappa2_ci <- quantile(kappa2_samples, c(0.025, 0.975))
 
-N_vals <- seq(0, 10, length.out = 100)  # Simulated abundance values
+N_vals <- seq(0, 10, length.out = 1000)  # Simulated abundance values
 kappa_effect <- kappa1_mean * N_vals + kappa2_mean * (N_vals^2)
 
 ggplot(data.frame(N_vals, kappa_effect), aes(x = N_vals, y = kappa_effect)) +
@@ -780,7 +786,7 @@ Ntot_samples <- combined_chains[ ,"N_tot"]
 
 # Ntotal is the abundance based on 27 acoustic sites at a radius of 200m.
 # To correct for density, Ntotal needs to be divided by 27 * area surveyed
-area <- pi * (250^2) / 4046.86  # Area in acres
+area <- pi * (200^2) / 4046.86  # Area in acres
 dens_samples <- Ntot_samples / (area * 27)
 
 # Create data frame for density
@@ -801,99 +807,57 @@ dens_summary <- dens_df %>%
 dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI & dens_df$Density <= dens_summary$Upper_CI, ]
 
 
-# Plot density
-ggplot(dens_summary, aes(x = Model)) +
-  geom_point(aes(y = Mean), size = 3) +  # Add mean points
-  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.05) +  # Add error bars for CI
-  labs(
-    title = "",
-    x = "Model",
-    y = "Density (N/acre)"
-  ) +
-  scale_y_continuous(limits = c(0, 2),
-                     breaks = seq(0,2, by = 0.25),
-                     labels = scales::comma) +
-  theme_minimal() +
-  theme(
-    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
-    axis.text.y = element_text(size = 12),
-    plot.title = element_text(hjust = 0.5),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    legend.position = "none"
-  )
-
-
-
-# Total density
-print(mean(dens_df$Density))
-print(min(dens_df$Density))
-print(max(dens_df$Density))
-
-
-
-# Getting total abundance
-abund_summary <- dens_summary
-abund_summary[,2:4] <- abund_summary[,2:4] * 2710
-abund_summary
-
-
-# Plot abundance
-ggplot(abund_summary, aes(x = Model)) +
-  geom_point(aes(y = Mean), size = 3) +  # Add mean points
-  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.05) +  # Add error bars for CI
-  labs(
-    title = "",
-    x = "Model",
-    y = "Abundance"
-  ) +
-  scale_y_continuous(limits = c(0,3000),
-                     breaks = seq(0, 3000, by = 250),
-                     labels = scales::comma) +
-  theme_minimal() +
-  theme(
-    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
-    axis.text.y = element_text(size = 12),
-    plot.title = element_text(hjust = 0.5),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    legend.position = "none"
-  )
-
-# Plot violin
-
-# Create Abundance dataframe
-abund_df <- dens_df
-abund_df$Density <- abund_df$Density * 2710
-colnames(abund_df)[2] <- 'Abundance'
-head(abund_df)
-
-# Plot violin
-ggplot(abund_df, aes(x = Model, y = Abundance, fill = Model)) + 
+# Plot density violin
+ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) + 
   geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
-  labs(x = "Model", y = "Total Abundance") +
+  labs(x = "Model", y = "Density (N/acre)") +
   scale_fill_manual(values = c("PC CMR" = "orange", 
                                "PC HDS" = "purple", 
                                "AV Bnet" = "blue",
-                               "AV Wolfe" = "red")) +  
-  scale_y_continuous(limits = c(0, 3000),
-                     breaks = seq(0, 3000, by = 250),
+                               "AV Wolfe" = "red")) +  # Custom colors
+  scale_y_continuous(limits = c(0, 0.5),
+                     breaks = seq(0, 0.5, by = 0.25),
                      labels = scales::comma) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
         axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
         axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
         panel.grid = element_blank(),
-        legend.position = "none") 
+        legend.position = "none")  # Removes legend
 
+# Plot Density
+dens_summary
 
+# Getting total abundance
+abund_summary <- dens_summary
+abund_summary[,2:4] <- abund_summary[,2:4] * 2710
 
+# Plot Abundance - Violin
+abund_df <- dens_df
+abund_df$Density <- abund_df$Density * 2710
 
+ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) + 
+  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
+  labs(x = "Model", y = "Density (N/acre)") +
+  scale_fill_manual(values = c("PC CMR" = "orange", 
+                               "PC HDS" = "purple", 
+                               "AV Bnet" = "blue",
+                               "AV Wolfe" = "red")) +  # Custom colors
+  scale_y_continuous(limits = c(0, 1000),
+                     breaks = seq(0, 1000, by = 100),
+                     labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
+        axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
+        axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
+        panel.grid = element_blank(),
+        legend.position = "none")  # Removes legend
 
 
 
 # Total abundance
 abund_summary
+
 
 
 # Export density dataframe
