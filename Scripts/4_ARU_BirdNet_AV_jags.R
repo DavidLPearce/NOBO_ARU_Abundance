@@ -607,7 +607,7 @@ beta_df <- data.frame(
   filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
 
 # Add model
-beta_df$Model <- "Bnet AV"
+beta_df$Model <- "AV Bnet"
 
 # Plot density
 ggplot(beta_df, aes(x = value, fill = parameter)) +
@@ -644,7 +644,7 @@ area <- pi * (250^2) / 4046.86  # Area in acres
 dens_samples <- Ntot_samples / (area * 10)
 
 # Create data frame for density
-dens_df <- data.frame(Model = rep("Bnet AV", length(dens_samples)), Density = dens_samples)
+dens_df <- data.frame(Model = rep("AV Bnet", length(dens_samples)), Density = dens_samples)
 colnames(dens_df)[2] <- "Density"
 head(dens_df)
 
