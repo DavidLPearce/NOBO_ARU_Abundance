@@ -47,8 +47,11 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- Ncores * 0.7 # For low background use 80%, for medium use 50% of Ncores
+workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
 print(workers)
+
+# Source custom function for checking Rhat values > 1.1
+source("./Scripts/Rhat_check_function.R")
 
 # -------------------------------------------------------
 #
@@ -300,76 +303,6 @@ Wolfe14.data <- list(S = S,
 str(Wolfe14.data)
 
 
-# ---------------------------------------
-# Conspecific Density Simulation 
-# ---------------------------------------
-
-# Constrain kappa1 to be between  0.6 +/- 0.4
-kappa1 <- rnorm(50, mean = 2, sd = 1)   # rnorm(50, mean = 0.6, sd = 0.4)  
-
-# Constrain kappa2 to be between -0.06 +/- 0.04
-kappa2 <- rnorm(50, mean = -0.4, sd = 0.4)  
-
-# Intercept: log(6) so that exp(gamma0) = 6 calls per 30 min for one individual, 2 calls per 10 mins
-gamma0 <- log(2)  
-exp(gamma0)
-
-# Variance of random effect: precision
-tau <- rgamma(1, shape = 2, rate = 2) # rgamma(1, shape = 50, rate = 25) 
-
-# Convert tau to standard deviation (precision interpretation)
-sigma <- sqrt(1 / tau)
-
-# Number of surveys
-num_surveys <- 14 
-
-# Generate survey random effects
-# raneff <- rnorm(num_surveys, mean = 0, sd = sigma)
-#raneff <- pmax(pmin(rnorm(num_surveys, mean = 0, sd = sigma), 1), -1)  
-raneff <- rt(num_surveys, df = 10) * sigma  # df = 10 gives a moderate tail
-
-
-# Define a sequence of N values to evaluate the function
-N <- 0:10
-
-# Create an empty data frame to store the results
-results <- data.frame()
-
-# Simulation
-for (i in 1:length(kappa1)) {
-  
-  # Assign a survey  
-  survey <- sample(1:num_surveys, 1, replace = TRUE)
-  
-  # Call rate model
-  #delta <-  exp(gamma0+ raneff[survey] ) + ((kappa1[i]*N) + (kappa2[i]*(N)^2)) # 
-  delta <- pmax(0, exp(gamma0 + raneff[survey]) + (kappa1[i] * N) + (kappa2[i] * (N)^2))
-
-  # Temp holding df
-  tmp <- data.frame(N = N, delta = delta, kappa1 = kappa1[i], kappa2 = kappa2[i], 
-                        combination = paste0("k1=", round(kappa1[i], 2), ", k2=", round(kappa2[i], 2)))
-  
-  # Combine Results
-  results <- rbind(results, tmp)
-}
-
-# Take a look
-head(results, 50)
-
-
-# Color scheme
-colors <- scico::scico(100, palette = "berlin")
-
-# Plot 
-ggplot(results, aes(x = N, y = delta, color = combination)) +
-  geom_line(linewidth = 1) +  
-  labs(x = "Calling Males (N)", y = "Call Rate (δ)",
-       title = "Conspecifics on Call Rate Simulation") +
-  scale_color_manual(values = colors) +   
-  theme_minimal() +   
-  theme(legend.title = element_blank())   
-
-
 # ---------------------------------------------------------- 
 # 
 #           Acoustic HM with Validated Calls
@@ -446,11 +379,11 @@ cat(" model {
   # ----------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 1)
+  beta0 ~ dnorm(0, 10)
   
   # Covariate effect
-  beta1 ~ dnorm(0, 1)
-  beta2 ~ dnorm(0, 1)
+  beta1 ~ dnorm(0, 10)
+  beta2 ~ dnorm(0, 5)
   
   # # Abundance random effect - missing habitat variability
   # mu_s ~ dnorm(0, 0.1)
@@ -506,7 +439,7 @@ cat(" model {
     # ---------------------------------
     # Abundance submodel  
     # ---------------------------------
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 2] + beta1 * X.abund[s, 23]  
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 1] + beta2 * X.abund[s, 1]^2  
     N[s] ~ dpois(lambda[s] * Offset)
     
     # Survey
@@ -608,7 +541,7 @@ fm.AV.1 <- jags(data = Wolfe14.data,
               verbose = TRUE)
 
 # Check Convergence
-fm.AV.1$Rhat # Rhat
+check_rhat(fm.AV.1$Rhat, threshold = 1.1)  # Rhat
 mcmcplot(fm.AV.1$samples) # Trace plots
 
 
@@ -655,7 +588,7 @@ beta_df <- data.frame(
   filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
 
 # Add model
-beta_df$Model <- "Wolfe AV"
+beta_df$Model <- "AV Wolfe"
 
 # Plot density
 ggplot(beta_df, aes(x = value, fill = parameter)) +
@@ -677,10 +610,65 @@ ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
 saveRDS(beta_df, "./Data/Fitted_Models/ARU_WolfeAV_beta_df.rds")
 
 # -------------------------------------------------------
-#
-#   Call Rate 
-#
+# Covariate Effects
 # -------------------------------------------------------
+
+# Set covariate name 
+woodyCov_name <- "woody_prp"
+
+# Create a prediction of covariate values
+woody_cov_pred_vals <- seq(min(site_covs[, woodyCov_name]), max(site_covs[, woodyCov_name]), length.out = 1000)
+
+# Matrices for storing predictions
+woody_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(woody_cov_pred_vals))
+
+# Generate predictions
+for (i in 1:length(beta0_samples)) {
+  woody_preds[i, ] <- beta0_samples[i] + 
+    beta1_samples[i] * woody_cov_pred_vals + 
+    beta2_samples[i] * woody_cov_pred_vals^2
+}
+
+# Calculate credible intervals
+woody_preds_CI_lower <- apply(woody_preds, 2, quantile, probs = 0.025)
+woody_preds_CI_upper <- apply(woody_preds, 2, quantile, probs = 0.975)
+
+# Calculate mean predictions
+woody_preds_mean <- apply(woody_preds, 2, mean)
+
+# Combine into a single data frame
+woody_data <- data.frame(
+  woody_cov_pred_vals = woody_cov_pred_vals,
+  woody_preds_mean = woody_preds_mean,
+  woody_preds_CI_lower = woody_preds_CI_lower,
+  woody_preds_CI_upper = woody_preds_CI_upper
+)
+
+# Check structure
+head(woody_data)
+
+
+
+# Plot Woody Largest Patch Index
+woodycovEff_plot <- ggplot(woody_data, aes(x = woody_cov_pred_vals, y = woody_preds_mean)) +
+  geom_line(color = "forestgreen", linewidth = 1.5) +  # Line plot
+  geom_ribbon(aes(ymin = woody_preds_CI_lower, 
+                  ymax = woody_preds_CI_upper), 
+              fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
+  labs(x = "Covariate Value", 
+       y = "Effect Estimate", 
+       title = "Predicted Effect of Woody Proportion") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+# View
+woodycovEff_plot
+
+# Export                
+ggsave(plot = woodycovEff_plot, "Figures/AV_Wolfe_WoodyCovEffect_plot.jpeg",  
+       width = 8, height = 5, dpi = 300) 
+
+
 
 # --------------------
 # Call Rate 

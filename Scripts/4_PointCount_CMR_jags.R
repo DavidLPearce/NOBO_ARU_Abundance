@@ -195,7 +195,7 @@ params <- c("lambda",
  inits  <- function() {
   list (p0 = runif(1),
         alpha1 = 0,
-        beta0 = 0,
+        beta0 = 1,
         beta1 = 0,
         beta2 = 0,
         tau = 1,
@@ -666,6 +666,85 @@ fm.5 <- jags(data = data,
              n.cores = workers,
              DIC = FALSE)  
 
+# -------------------------------------------------------
+# Model 6: Woody PrP Linear + Woody PrP Quadratic
+# -------------------------------------------------------
+cat("
+model {
+
+  # Prior distributions
+  p0 ~ dunif(0,1)
+  alpha0 <- log(p0/(1-p0)) 
+  alpha1 ~ dnorm(0, 0.01)
+  beta0 ~ dnorm(0, 10)
+  beta1 ~ dnorm(0, 10)
+  beta2 ~ dnorm(0, 5)
+  psi <- sum(lambda[])/M
+
+  # Precision for survey-level random effect
+  tau ~ dgamma(0.1, 0.1)  
+
+  # Site-level random effect
+  for(s in 1:nsites){  
+    S.raneff[s] ~ dnorm(0, tau)  
+  }
+
+  # Abundance model 
+  for(s in 1:nsites){
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 1] + beta2 * X.abund[s, 1]^2
+    
+    probs[s] <- lambda[s] / sum(lambda[])
+    N[s] <- sum(group[] == s)  # Estimated abundance at site s
+  }
+
+
+  # Model for individual encounter histories
+  for(i in 1:M){
+    group[i] ~ dcat(probs[])  # Group == site membership
+    z[i] ~ dbern(psi)         # Data augmentation variables
+    
+    # Detection model = intercept + wind + site random effect
+    for(j in 1:J){
+      logit(p[i,j]) <- alpha0 + alpha1 *  X.det[group[i],3] + S.raneff[group[i]]
+      pz[i,j] <- p[i,j] * z[i]
+      y[i,j] ~ dbern(pz[i,j])
+      
+    # Posterior predictive checks
+    y_rep[i,j] ~ dbern(pz[i,j])  # Generate replicated data
+    discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j])  # Discrepancy for observed data
+    discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  # Discrepancy for replicated data  
+    
+    # Log-Likelihood
+    log_lik[i,j] <- logdensity.bern(y[i,j], pz[i,j])
+    }
+  }
+  
+  # Total estimated population
+  N_tot <- sum(z[])
+  
+  # Bayesian p-value
+  sum_obs <- sum(discrepancy_obs[,])  # Sum of discrepancies for observed data
+  sum_rep <- sum(discrepancy_rep[,])  # Sum of discrepancies for replicated data
+  p_Bayes <- step(sum_rep - sum_obs)  # Proportion of times replicated > observed
+}
+", fill=TRUE, file = "./jags_models/CMR_mod6.txt")
+# ------------End Model-------------
+
+# Fit Model
+fm.6 <- jags(data = data, 
+             parameters.to.save = params,
+             inits = inits, 
+             model.file = "./jags_models/CMR_mod5.txt",
+             n.iter = n.iter,
+             n.burnin = n.burnin,
+             n.chains = n.chains, 
+             n.thin = n.thin,
+             parallel = TRUE,
+             n.cores = workers,
+             DIC = FALSE)
+
+check_rhat(fm.6$Rhat, threshold = 1.1)
+
 
 # -------------------------------------------------------
 # Check Convergence Models
@@ -736,7 +815,7 @@ summary(bm$samples)
 # -------------------------------------------------------
 
 # Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.2$samples))
+combined_chains <- as.mcmc(do.call(rbind, fm.6$samples))
 
 # -------------------------------------------------------
 # Beta Estimates
@@ -797,82 +876,51 @@ saveRDS(beta_df, "./Data/Fitted_Models/PC_CMR_beta_df.rds")
 # Covariate Effects
 # -------------------------------------------------------
  
-herbCov_name <- "herb_prp"
-woodyCov_name <- 'Woody_shrub_mnFocal30m'
+# Set covariate name 
+woodyCov_name <- "woody_prp"
 
 # Create a prediction of covariate values
-herb_cov_pred_vals <- seq(min(site_covs[, herbCov_name]), max(site_covs[, herbCov_name]), length.out = 1000)
 woody_cov_pred_vals <- seq(min(site_covs[, woodyCov_name]), max(site_covs[, woodyCov_name]), length.out = 1000)
 
-# Scale to have a mean of 0
-herb_cov_pred_vals_scaled <- (herb_cov_pred_vals - mean(site_covs[, herbCov_name])) / sd(site_covs[, herbCov_name])
-woody_cov_pred_vals_scaled <- (woody_cov_pred_vals - mean(site_covs[, woodyCov_name])) / sd(site_covs[, woodyCov_name])
-
 # Matrices for storing predictions
-herb_preds <- matrix(NA, nrow = length(beta1_samples), ncol = length(herb_cov_pred_vals_scaled))
-woody_preds <- matrix(NA, nrow = length(beta2_samples), ncol = length(woody_cov_pred_vals_scaled))
+woody_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(woody_cov_pred_vals))
 
 # Generate predictions
 for (i in 1:length(beta0_samples)) {
-  herb_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * herb_cov_pred_vals_scaled
-  woody_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * woody_cov_pred_vals_scaled
+  woody_preds[i, ] <- beta0_samples[i] + 
+    beta1_samples[i] * woody_cov_pred_vals + 
+    beta2_samples[i] * woody_cov_pred_vals^2
 }
 
 # Calculate credible intervals
-herb_preds_CI_lower <- apply(herb_preds, 2, quantile, probs = 0.025)
-herb_preds_CI_upper <- apply(herb_preds, 2, quantile, probs = 0.975)
-
 woody_preds_CI_lower <- apply(woody_preds, 2, quantile, probs = 0.025)
 woody_preds_CI_upper <- apply(woody_preds, 2, quantile, probs = 0.975)
 
 # Calculate mean predictions
-herb_preds_mean <- apply(herb_preds, 2, mean)
 woody_preds_mean <- apply(woody_preds, 2, mean)
 
 # Combine into a single data frame
-herbaceous_data <- data.frame(
-  herb_cov_pred_vals_scaled = herb_cov_pred_vals_scaled,
-  herb_preds_mean = herb_preds_mean,
-  herb_preds_CI_lower = herb_preds_CI_lower,
-  herb_preds_CI_upper = herb_preds_CI_upper
-)
-
 woody_data <- data.frame(
-  woody_cov_pred_vals_scaled = woody_cov_pred_vals_scaled,
+  woody_cov_pred_vals = woody_cov_pred_vals,
   woody_preds_mean = woody_preds_mean,
   woody_preds_CI_lower = woody_preds_CI_lower,
   woody_preds_CI_upper = woody_preds_CI_upper
 )
 
+# Check structure
+head(woody_data)
 
-
-# Plot Herbaceous Patch
-herbcovEff_plot <- ggplot(herbaceous_data, aes(x = herb_cov_pred_vals_scaled, y = herb_preds_mean)) +
-                  geom_line(color = "lightgreen", linewidth = 1.5) +  # Line plot
-                  geom_ribbon(aes(ymin = herb_preds_CI_lower, ymax = herb_preds_CI_upper), 
-                              fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
-                  labs(x = "Herbaceous Covariate", 
-                       y = "Predicted Effect", 
-                       title = "Predicted Effect of Herbaceous Proportion") +
-                  theme_minimal() +
-                  theme(panel.grid = element_blank())
-# View
-herbcovEff_plot
-
-# Export                
-ggsave(plot = herbcovEff_plot, "Figures/CMR_HerbCovEffect_plot.jpeg",  
-       width = 8, height = 5, dpi = 300) 
 
 
 # Plot Woody Largest Patch Index
-woodycovEff_plot <- ggplot(woody_data, aes(x = woody_cov_pred_vals_scaled, y = woody_preds_mean)) +
+woodycovEff_plot <- ggplot(woody_data, aes(x = woody_cov_pred_vals, y = woody_preds_mean)) +
                   geom_line(color = "forestgreen", linewidth = 1.5) +  # Line plot
                   geom_ribbon(aes(ymin = woody_preds_CI_lower, 
                                   ymax = woody_preds_CI_upper), 
                               fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
-                  labs(x = "Woody Covariate", 
-                       y = "", 
-                       title = "Predicted Effect of Shrub Focal") +
+                  labs(x = "Covariate Value", 
+                       y = "Effect Estimate", 
+                       title = "Predicted Effect of Woody Proportion") +
                   theme_minimal() +
                   theme(panel.grid = element_blank())
 # View

@@ -26,8 +26,11 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- 2 #Ncores * 0.60 # For low background use 80%, for medium use 50% of Ncores
+workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
 print(workers)
+
+# Source custom function for checking Rhat values > 1.1
+source("./Scripts/Rhat_check_function.R")
 
 # -------------------------------------------------------
 #
@@ -249,7 +252,7 @@ inits  <- function() {
     sigma0 = 200,
     gamma1 = rep(0.5, 4),
     gamma2 = 0,
-    beta0 = 0,
+    beta0 = 1,
     beta1 = 0,
     beta2 = 0,
     alpha1 = 0,
@@ -267,9 +270,9 @@ cat("
 model {
 
   # Priors
-  beta0 ~ dnorm(0, 1)
-  beta1 ~ dnorm(0, 1)
-  beta2 ~ dnorm(0, 1)
+  beta0 ~ dnorm(0, 10)
+  beta1 ~ dnorm(0, 10)
+  beta2 ~ dnorm(0, 5)
 
   # Availability parameters
   phi0 ~ dunif(0.1, 0.9)
@@ -339,7 +342,7 @@ model {
     } # End k loop
 
     # Abundance Model
-    log(lambda[s]) <- beta0 + beta1*X.abund[s,2] + beta2*X.abund[s,23]
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 1] + beta2 * X.abund[s, 1]^2
 
     # Population size follows a negative binomial distribution
     # M[s] ~ dnegbin(prob[s], r)
@@ -389,10 +392,9 @@ fm.1 <- jags(data = data,
 
 
 # Check convergence
-fm.1$Rhat # Rhat: less than 1.1 means good convergence
+check_rhat(fm.1$Rhat, threshold = 1.1) # Rhat: less than 1.1 means good convergence
 mcmcplot(fm.1$samples)# Visually inspect trace plots
 cat("Bayesian p-value =", fm.1$summary["p_Bayes",1], "\n")# Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
-
 
 # Model summary
 summary(fm.1$samples)
@@ -463,6 +465,66 @@ ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
 
 # Export beta dataframe
 saveRDS(beta_df, "./Data/Fitted_Models/PC_HDS_beta_df.rds")
+
+# -------------------------------------------------------
+# Covariate Effects
+# -------------------------------------------------------
+
+# Set covariate name 
+woodyCov_name <- "woody_prp"
+
+# Create a prediction of covariate values
+woody_cov_pred_vals <- seq(min(site_covs[, woodyCov_name]), max(site_covs[, woodyCov_name]), length.out = 1000)
+
+# Matrices for storing predictions
+woody_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(woody_cov_pred_vals))
+
+# Generate predictions
+for (i in 1:length(beta0_samples)) {
+  woody_preds[i, ] <- beta0_samples[i] + 
+    beta1_samples[i] * woody_cov_pred_vals + 
+    beta2_samples[i] * woody_cov_pred_vals^2
+}
+
+# Calculate credible intervals
+woody_preds_CI_lower <- apply(woody_preds, 2, quantile, probs = 0.025)
+woody_preds_CI_upper <- apply(woody_preds, 2, quantile, probs = 0.975)
+
+# Calculate mean predictions
+woody_preds_mean <- apply(woody_preds, 2, mean)
+
+# Combine into a single data frame
+woody_data <- data.frame(
+  woody_cov_pred_vals = woody_cov_pred_vals,
+  woody_preds_mean = woody_preds_mean,
+  woody_preds_CI_lower = woody_preds_CI_lower,
+  woody_preds_CI_upper = woody_preds_CI_upper
+)
+
+# Check structure
+head(woody_data)
+
+
+
+# Plot Woody Largest Patch Index
+woodycovEff_plot <- ggplot(woody_data, aes(x = woody_cov_pred_vals, y = woody_preds_mean)) +
+  geom_line(color = "forestgreen", linewidth = 1.5) +  # Line plot
+  geom_ribbon(aes(ymin = woody_preds_CI_lower, 
+                  ymax = woody_preds_CI_upper), 
+              fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
+  labs(x = "Covariate Value", 
+       y = "Effect Estimate", 
+       title = "Predicted Effect of Woody Proportion") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+# View
+woodycovEff_plot
+
+# Export                
+ggsave(plot = woodycovEff_plot, "Figures/HDS_WoodyCovEffect_plot.jpeg",  
+       width = 8, height = 5, dpi = 300) 
+
+
 
 # -------------------------------------------------------
 #
