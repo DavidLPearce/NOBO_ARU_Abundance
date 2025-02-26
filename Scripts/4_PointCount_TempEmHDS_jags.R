@@ -102,7 +102,7 @@ for (i in 1:nrow(pc_dat)) {
   temp_mat[point_num, occasion] <-  pc_dat$Temp.deg.F[i]
   wind_mat[point_num, occasion] <-  pc_dat$Wind.Beau.Code[i]
   sky_mat[point_num, occasion] <-  pc_dat$Sky.Beau.Code[i]
-  doy_mat[point_num, occasion] <-  pc_dat$DOY[i]
+  doy_mat[point_num, occasion] <-  as.integer(pc_dat$DOY[i])
   
 }# end loop
 
@@ -130,12 +130,14 @@ X.det[, , "Observer"] <- as.matrix(Observer_numeric)
 X.det[, , "Temp"] <- as.matrix(scale(temp_mat))  # Scaled
 X.det[, , "Wind"] <- as.matrix(scale(wind_mat))
 X.det[, , "Sky"] <- as.matrix(sky_mat)
-X.det[, , "DOY"] <- as.matrix(scale(doy_mat)) # Scaled
+X.det[, , "DOY"] <- as.matrix(doy_mat)  
 print(X.det)
 X.det[, , 1]  # Observer
 X.det[1, 2, 1] # Row 1, column 2, Observer
-                    
-                    
+
+# For day random effect
+nDOY = 
+
 # Extract and scale site covariates for X.abund
 X.abund <- site_covs[,-c(1:4)] 
 X.abund$woody_lrgPInx <- scale(X.abund$woody_lrgPInx)
@@ -183,11 +185,11 @@ data <- list(y3d = y3d,
              nobs = nobs, 
              area = area,
              X.det = X.det,
-             X.abund = X.abund)
+             X.abund = X.abund,
+             nDOY = nDOY)
 
 # Look at structure
 str(data)
-
 
 # ---------------------------------------------------------- 
 # 
@@ -210,8 +212,8 @@ str(data)
 # MCMC Specifications
 # -------------------
 
-n.iter = 300000
-n.burnin = 20000
+n.iter = 600000
+n.burnin = 50000
 n.chains = 3 
 n.thin = 10
 
@@ -224,41 +226,36 @@ n.thin = 10
 # ----------------------------------------------------------
 
 # Parameters monitored
-params <- c("r",
-            "sigma0",
-            "theta", 
-            "phi0", 
-            "beta0", 
+params <- c("beta0", # Abundance
             "beta1",
-            "beta2",
-            "gamma1", 
-            "logit.gamma1",
-            "gamma2",
-            "alpha1",
             "lambda",
             "N",
             "N_tot",
-            "Davail",
-            "log_lik",
+            "sigma0", # Detection
+            "alpha1",
+            "pdet",
+            "gamma0", # Availability
+            "Jraneff",
+            "tau_j",
+            "sigma_j",
+            "theta",
+            "phi",
+            "pmarg",
+            "log_lik",# Bayes p-value
             "p_Bayes")
-
 
 
 # Initial values
 inits  <- function() {
   list(
-    M = apply(y3d, 1, max) + 5,
-    Navail = apply(y3d, c(1, 3), sum),
-    sigma0 = 200,
-    gamma1 = rep(0.5, 4),
-    gamma2 = 0,
-    beta0 = 1,
+    M = apply(y3d, 1, max) + 5, # Abundance
+    beta0 = 0,
     beta1 = 0,
-    beta2 = 0,
+    sigma0 = 100, # Detection
     alpha1 = 0,
-    phi0 = 0.5,
-    theta = 1,
-    r = 5
+    Navail = apply(y3d, c(1, 3), sum), # Availability
+    gamma0 = 0,
+    gamma2 = 0
   )
 }
 
@@ -269,42 +266,76 @@ inits  <- function() {
 cat("
 model {
 
-  # Priors
-  beta0 ~ dnorm(0, 10)
-  beta1 ~ dnorm(0, 10)
-  beta2 ~ dnorm(0, 5)
-
-  # Availability parameters
-  phi0 ~ dunif(0.1, 0.9)
-  logit.phi0 <- log(phi0/(1-phi0))
-  gamma2 ~ dnorm(0, 0.01)
+  # ---------------------------------
+  # Abundance Priors
+  # ---------------------------------
   
-  for(k in 1:K){
-    gamma1[k] ~ dunif(0.1, 0.9) # Availability effects of surveys 1 - 4
-    logit.gamma1[k] <- log(gamma1[k]/(1-gamma1[k]))
+  # Intercept
+  beta0 ~ dnorm(0, 0.01)
+  
+  # Covariate
+  beta1 ~ dnorm(0, 0.01)
+
+  
+  # ---------------------------------
+  # Availability Priors
+  # ---------------------------------
+  
+  # Intercept
+  gamma0 ~ dnorm(0, 0.01)
+  
+  # Survey random effect
+  tau_j ~ dgamma(5, 5) # variance
+  sigma_j <- sqrt(1 / tau_j) # standard deviation  
+  for (k in 1:K) {
+    Jraneff[k] ~ dnorm(0, sigma_j) 
   }
 
-  # Detection parameters
-  sigma0 ~ dunif(0.1,200)   # Intercept
-  theta ~ dgamma(0.1, 0.1)
-  r ~ dunif(0, 10)
+  # ---------------------------------
+  # Detection Priors
+  # ---------------------------------
+
+  # Intercept
+  sigma0 ~ dunif(0.1,200)
+  
+  # Covariate
   alpha1 ~ dnorm(0, 0.01)
+  alpha2 ~ dnorm(0, 0.01)
+  
+  # Hazard Rate Detection Function
+  theta ~ dgamma(0.1, 0.1)
+  
+  # -------------------------------------------
+  #
+  # Likelihood and Process Model 
+  #
+  # -------------------------------------------
 
   for (s in 1:nsites) {
     for (k in 1:K) {
-
-      # Availability Model
-      logit.phi[s,k] <- logit.gamma1[k]
+    
+  # ---------------------------------
+  # Availability Model
+  # ---------------------------------
+ 
+      logit.phi[s,k] <- gamma0 + Jraneff[k]
       phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
-
+      
+  # ---------------------------------
+  # Detection Model
+  # ---------------------------------
+  
       # Distance Sampling
-      log(sigma[s,k]) <- log(sigma0) + alpha1*X.det[s,k,3]
+      log(sigma[s,k]) <- log(sigma0) + alpha1*X.abund[s,21]  
       
       # Multinomial cell probability construction
       for(b in 1:nD){
-        # Half-normal or hazard rate detection functions
-        log(g[s,b,k]) <- -midpt[b]*midpt[b]/(2*sigma[s,k]*sigma[s,k]) # half-normal
-        #cloglog(g[s,b,k]) <- theta*log(sigma[s,k])  - theta*log(midpt[b])  # hazard
+      
+        # Half-normal Detection Function
+        log(g[s,b,k]) <- -midpt[b]*midpt[b]/(2*sigma[s,k]*sigma[s,k]) 
+        
+        # Hazard Rate Detection Function
+        #cloglog(g[s,b,k]) <- theta*log(sigma[s,k])  - theta*log(midpt[b]) 
         
         # Density function for distance bins
         f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
@@ -318,8 +349,11 @@ model {
       # Detection probabilities
       pdet[s,k] <- sum(cellprobs[s,1:nD,k])
       pmarg[s,k] <- pdet[s,k] * phi[s,k]
-
-      # Observation model (Multinomial likelihood)
+      
+    # ---------------------------------
+    # Observation Model
+    # ---------------------------------
+ 
       y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
 
       # Number of detected individuals
@@ -328,10 +362,16 @@ model {
       # Number of available individuals
       Navail[s,k] ~ dbin(phi[s,k], M[s])
 
-      # Log-Likelihood Calculation
-      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+    # ---------------------------------
+    # Log-Likelihood
+    # ---------------------------------
 
-      # Posterior Predictive Checks (Bayesian p-value)
+      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+      
+    # ---------------------------------
+    # Posterior Predictive Checks
+    # ---------------------------------
+
       y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
 
       for (b in 1:nD) {
@@ -341,31 +381,33 @@ model {
       
     } # End k loop
 
-    # Abundance Model
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 1] + beta2 * X.abund[s, 1]^2
+  # ---------------------------------
+  # Abundance Model
+  # ---------------------------------
 
-    # Population size follows a negative binomial distribution
-    # M[s] ~ dnegbin(prob[s], r)
-    # prob[s] <- r / (r + lambda[s])
-    
     # Poisson
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 1] 
     M[s] ~ dpois(lambda[s])
+
   } # End s loop
 
+  # ---------------------------------
   # Derived Quantities
-  for (k in 1:K){
-    Davail[k] <- mean(phi[,k]) * exp(beta0) / area
-  }
-  
+  # ---------------------------------
+
   for (s in 1:nsites) {
       for (k in 1:K) {
         N_site_k[s,k] <- pdet[s,k] * phi[s,k] * M[s]    
       }
     N[s] <- sum(N_site_k[s,])
   }
-  # Abundance and Density
+  
+  # Abundance
   N_tot <- sum(N[])
 
+  # ---------------------------------
+  # Derived Quantities
+  # ---------------------------------
   # Bayesian p-value Computation
   sum_obs <- sum(discrepancy_obs[, ,])
   sum_rep <- sum(discrepancy_rep[, ,])
@@ -393,14 +435,21 @@ fm.1 <- jags(data = data,
 
 # Check convergence
 check_rhat(fm.1$Rhat, threshold = 1.1) # Rhat: less than 1.1 means good convergence
-mcmcplot(fm.1$samples)# Visually inspect trace plots
+#mcmcplot(fm.1$samples)# Visually inspect trace plots
+
+# Check autocorrelation
+#mcmc_list <- as.mcmc.list(lapply(fm.1$samples, as.mcmc))  # Convert each chain separately
+#autocorr.diag(mcmc_list)  # Check autocorrelation per chain
+
+# Check Effective Sample Size
+#effectiveSize(mcmc_list)
+
+# Check Fit
 cat("Bayesian p-value =", fm.1$summary["p_Bayes",1], "\n")# Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
 
 # Model summary
-summary(fm.1$samples)
-
-# Save Environment
-save.image(file = "./HDS_JAGs.RData")
+#summary(fm.1$samples)
+ 
 
 # -------------------------------------------------------
 #
@@ -418,28 +467,17 @@ combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
 # Extract beta estimates
 beta0_samples <- combined_chains[, "beta0"]
 beta1_samples <- combined_chains[, "beta1"]
-beta2_samples <- combined_chains[, "beta2"]
+ 
 
 # Means
 beta0 <- mean(beta0_samples)
 beta1 <- mean(beta1_samples)
-beta2 <- mean(beta2_samples)
-
-# Credible Intervals
-# beta0_CI_lower <- quantile(beta0_samples, probs = 0.025)
-# beta0_CI_upper <- quantile(beta0_samples, probs = 0.975)
-# 
-# beta1_CI_lower <- quantile(beta1_samples, probs = 0.025)
-# beta1_CI_upper <- quantile(beta1_samples, probs = 0.975)
-# 
-# beta2_CI_lower <- quantile(beta2_samples, probs = 0.025)
-# beta2_CI_upper <- quantile(beta2_samples, probs = 0.975)
-
+ 
 
 # Compute 95% CI for each beta
 beta_df <- data.frame(
-  value = c(beta0_samples, beta1_samples, beta2_samples),
-  parameter = rep(c("beta0", "beta1", "beta2"), each = length(beta0_samples))
+  value = c(beta0_samples, beta1_samples),
+  parameter = rep(c("beta0", "beta1"), each = length(beta0_samples))
 ) %>%
   group_by(parameter) %>%
   filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
@@ -447,89 +485,59 @@ beta_df <- data.frame(
 # Add model
 beta_df$Model <- "PC HDS"
 
-# Plot density
-ggplot(beta_df, aes(x = value, fill = parameter)) +
-  geom_density(alpha = 0.5) +
-  labs(title = "Posterior Density Plots for Beta Estimates", x = "Estimate", y = "Density") +
-  theme_minimal()
-
-# Create violin plot
-ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
-  geom_violin(alpha = 0.5, trim = TRUE) +  # Violin plot with smoothing
-  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) +  # Line at y = 0
-  labs(title = "Violin Plots for Beta Estimates", x
-       = "Parameter", 
-       y = "Estimate") +
-  theme_minimal() +
-  scale_fill_brewer(palette = "Set2")  # Nice color scheme
-
 # Export beta dataframe
 saveRDS(beta_df, "./Data/Fitted_Models/PC_HDS_beta_df.rds")
+
 
 # -------------------------------------------------------
 # Covariate Effects
 # -------------------------------------------------------
 
 # Set covariate name 
-woodyCov_name <- "woody_prp"
+Cov_name <- "herb_mnParea"
 
 # Create a prediction of covariate values
-woody_cov_pred_vals <- seq(min(site_covs[, woodyCov_name]), max(site_covs[, woodyCov_name]), length.out = 1000)
+cov_pred_vals <- seq(min(site_covs[, Cov_name]), max(site_covs[, Cov_name]), length.out = 100)
 
 # Matrices for storing predictions
-woody_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(woody_cov_pred_vals))
+cov_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov_pred_vals))
 
 # Generate predictions
 for (i in 1:length(beta0_samples)) {
-  woody_preds[i, ] <- beta0_samples[i] + 
-    beta1_samples[i] * woody_cov_pred_vals + 
-    beta2_samples[i] * woody_cov_pred_vals^2
+  cov_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov_pred_vals
 }
 
-# Calculate credible intervals
-woody_preds_CI_lower <- apply(woody_preds, 2, quantile, probs = 0.025)
-woody_preds_CI_upper <- apply(woody_preds, 2, quantile, probs = 0.975)
-
 # Calculate mean predictions
-woody_preds_mean <- apply(woody_preds, 2, mean)
+cov_preds_mean <- apply(cov_preds, 2, mean)# mean
+cov_preds_LCI <- apply(cov_preds, 2, quantile, probs = 0.025) # LCI
+cov_preds_HCI <- apply(cov_preds, 2, quantile, probs = 0.975) # HCI
 
 # Combine into a single data frame
-woody_data <- data.frame(
-  woody_cov_pred_vals = woody_cov_pred_vals,
-  woody_preds_mean = woody_preds_mean,
-  woody_preds_CI_lower = woody_preds_CI_lower,
-  woody_preds_CI_upper = woody_preds_CI_upper
+cov_pred_df <- data.frame(
+  cov_pred_vals = cov_pred_vals,
+  cov_preds_mean = cov_preds_mean,
+  cov_preds_LCI = cov_preds_LCI,
+  cov_preds_HCI = cov_preds_HCI
 )
 
-# Check structure
-head(woody_data)
 
 
-
-# Plot Woody Largest Patch Index
-woodycovEff_plot <- ggplot(woody_data, aes(x = woody_cov_pred_vals, y = woody_preds_mean)) +
-  geom_line(color = "forestgreen", linewidth = 1.5) +  # Line plot
-  geom_ribbon(aes(ymin = woody_preds_CI_lower, 
-                  ymax = woody_preds_CI_upper), 
-              fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
-  labs(x = "Covariate Value", 
-       y = "Effect Estimate", 
-       title = "Predicted Effect of Woody Proportion") +
-  theme_minimal() +
-  theme(panel.grid = element_blank())
-# View
-woodycovEff_plot
-
-# Export                
-ggsave(plot = woodycovEff_plot, "Figures/HDS_WoodyCovEffect_plot.jpeg",  
-       width = 8, height = 5, dpi = 300) 
+# Plot Cov effect
+ggplot(cov_pred_df, aes(x = cov_pred_vals, y = cov_preds_mean)) +
+        geom_line(color = "black", linewidth = 1.5) +   
+        geom_ribbon(aes(ymin = cov_preds_LCI, 
+                        ymax = cov_preds_HCI), 
+                    fill = "forestgreen", alpha = 0.3) +
+        labs(x = "Covariate Value", 
+             y = "Effect Estimate", 
+             title = paste0("Predicted Effect of ", Cov_name)) +
+        theme_minimal() +
+        theme(panel.grid = element_blank())
 
 
 
 # -------------------------------------------------------
-#
 #   Estimating Abundance 
-#
 # -------------------------------------------------------
  
 # Extracting Abundance
@@ -559,28 +567,6 @@ dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI
                    & dens_df$Density <= dens_summary$Upper_CI, ]
 
 
-# Plot density violin
-ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) + 
-  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
-  labs(x = "Model", y = "Density (N/acre)") +
-  scale_fill_manual(values = c("PC CMR" = "orange", 
-                               "PC HDS" = "purple", 
-                               "AV Bnet" = "blue")) +  # Custom colors
-  scale_y_continuous(limits = c(0, 0.5),
-                     breaks = seq(0, 0.5, by = 0.25),
-                     labels = scales::comma) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
-        axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
-        axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
-        panel.grid = element_blank(),
-        legend.position = "none")  # Removes legend
-
-
-# Total density
-print(dens_summary)
-
-
 # Getting total abundance
 abund_summary <- dens_summary
 abund_summary[,2:4] <- abund_summary[,2:4] * 2710
@@ -606,10 +592,6 @@ ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) +
         legend.position = "none")  # Removes legend
 
 
-
-
-
-
 # Total abundance
 abund_summary
 
@@ -622,6 +604,6 @@ saveRDS(dens_summary, "./Data/Fitted_Models/PC_HDS_dens_summary.rds")
 saveRDS(abund_summary, "./Data/Fitted_Models/PC_HDS_abund_summary.rds")
 
 # Save Environment
-save.image(file = "./HDS_JAGs.RData")
+#save.image(file = "./HDS_JAGs.RData")
 
 # End Script

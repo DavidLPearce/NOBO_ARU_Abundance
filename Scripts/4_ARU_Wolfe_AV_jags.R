@@ -235,8 +235,9 @@ dim(val.times)
 # ---------------------------------------
 
 # For day random effect on cue production rate
-days <- matrix(rep(1:14, each = 27), nrow = 27, ncol = 14, byrow = TRUE)
+days <- matrix(rep(1:14, times = 27), nrow = 27, ncol = 14, byrow = TRUE)
 print(days)
+
 
 ## Extract and scale site covariates for X.abund ##
 X.abund <- site_covs[,-c(1:4)] 
@@ -312,8 +313,8 @@ str(Wolfe14.data)
 # -------------------
 # MCMC Specifications
 # -------------------
-n.iter = 300000
-n.burnin = 20000
+n.iter = 500000
+n.burnin = 60000
 n.chains = 3
 n.thin = 10
 n.adapt = 5000
@@ -379,11 +380,11 @@ cat(" model {
   # ----------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 10)
+  beta0 ~ dnorm(0, 1)
   
   # Covariate effect
-  beta1 ~ dnorm(0, 10)
-  beta2 ~ dnorm(0, 5)
+  beta1 ~ dnorm(0, 1)
+  #beta2 ~ dnorm(0, 5)
   
   # # Abundance random effect - missing habitat variability
   # mu_s ~ dnorm(0, 0.1)
@@ -421,15 +422,16 @@ cat(" model {
   kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04 i.e., (1/0.04^2); constrained between -1 and 0
 
   # Survey random effect
-  tau_j ~ dgamma(5, 5) # Precision
-  sigma_j <- sqrt(1 / tau_j) # Precision interpretation
+  tau_j ~ dgamma(5, 5) # variance
+  sigma_j <- sqrt(1 / tau_j) # standard deviation  
   for (j in 1:n.days) {
     Jraneff[j] ~ dnorm(0, sigma_j) 
   }
 
+
   # -------------------------------------------
   #
-  # Likelihood and process model 
+  # Likelihood and Process Model 
   #
   # -------------------------------------------
   
@@ -439,7 +441,7 @@ cat(" model {
     # ---------------------------------
     # Abundance submodel  
     # ---------------------------------
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 1] + beta2 * X.abund[s, 1]^2  
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 1]
     N[s] ~ dpois(lambda[s] * Offset)
     
     # Survey
@@ -561,28 +563,16 @@ combined_chains <- as.mcmc(do.call(rbind, fm.AV.1$samples))
 # Extract beta estimates
 beta0_samples <- combined_chains[, "beta0"]
 beta1_samples <- combined_chains[, "beta1"]
-beta2_samples <- combined_chains[, "beta2"]
+ 
 
 # Means
 beta0 <- mean(beta0_samples)
 beta1 <- mean(beta1_samples)
-beta2 <- mean(beta2_samples)
-
-# Credible Intervals
-# beta0_CI_lower <- quantile(beta0_samples, probs = 0.025)
-# beta0_CI_upper <- quantile(beta0_samples, probs = 0.975)
-# 
-# beta1_CI_lower <- quantile(beta1_samples, probs = 0.025)
-# beta1_CI_upper <- quantile(beta1_samples, probs = 0.975)
-# 
-# beta2_CI_lower <- quantile(beta2_samples, probs = 0.025)
-# beta2_CI_upper <- quantile(beta2_samples, probs = 0.975)
-
-
+ 
 # Compute 95% CI for each beta
 beta_df <- data.frame(
-  value = c(beta0_samples, beta1_samples, beta2_samples),
-  parameter = rep(c("beta0", "beta1", "beta2"), each = length(beta0_samples))
+  value = c(beta0_samples, beta1_samples ),
+  parameter = rep(c("beta0", "beta1" ), each = length(beta0_samples))
 ) %>%
   group_by(parameter) %>%
   filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
@@ -590,11 +580,6 @@ beta_df <- data.frame(
 # Add model
 beta_df$Model <- "AV Wolfe"
 
-# Plot density
-ggplot(beta_df, aes(x = value, fill = parameter)) +
-  geom_density(alpha = 0.5) +
-  labs(title = "Posterior Density Plots for Beta Estimates", x = "Estimate", y = "Density") +
-  theme_minimal()
 
 # Create violin plot
 ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
@@ -614,65 +599,51 @@ saveRDS(beta_df, "./Data/Fitted_Models/ARU_WolfeAV_beta_df.rds")
 # -------------------------------------------------------
 
 # Set covariate name 
-woodyCov_name <- "woody_prp"
+Cov_name <- "herb_mnParea"
 
 # Create a prediction of covariate values
-woody_cov_pred_vals <- seq(min(site_covs[, woodyCov_name]), max(site_covs[, woodyCov_name]), length.out = 1000)
+cov_pred_vals <- seq(min(site_covs[, Cov_name]), max(site_covs[, Cov_name]), length.out = 100)
 
 # Matrices for storing predictions
-woody_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(woody_cov_pred_vals))
+cov_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov_pred_vals))
 
 # Generate predictions
 for (i in 1:length(beta0_samples)) {
-  woody_preds[i, ] <- beta0_samples[i] + 
-    beta1_samples[i] * woody_cov_pred_vals + 
-    beta2_samples[i] * woody_cov_pred_vals^2
+  cov_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov_pred_vals
 }
 
-# Calculate credible intervals
-woody_preds_CI_lower <- apply(woody_preds, 2, quantile, probs = 0.025)
-woody_preds_CI_upper <- apply(woody_preds, 2, quantile, probs = 0.975)
-
 # Calculate mean predictions
-woody_preds_mean <- apply(woody_preds, 2, mean)
+cov_preds_mean <- apply(cov_preds, 2, mean)# mean
+cov_preds_LCI <- apply(cov_preds, 2, quantile, probs = 0.025) # LCI
+cov_preds_HCI <- apply(cov_preds, 2, quantile, probs = 0.975) # HCI
 
 # Combine into a single data frame
-woody_data <- data.frame(
-  woody_cov_pred_vals = woody_cov_pred_vals,
-  woody_preds_mean = woody_preds_mean,
-  woody_preds_CI_lower = woody_preds_CI_lower,
-  woody_preds_CI_upper = woody_preds_CI_upper
+cov_pred_df <- data.frame(
+  cov_pred_vals = cov_pred_vals,
+  cov_preds_mean = cov_preds_mean,
+  cov_preds_LCI = cov_preds_LCI,
+  cov_preds_HCI = cov_preds_HCI
 )
 
-# Check structure
-head(woody_data)
-
-
-
-# Plot Woody Largest Patch Index
-woodycovEff_plot <- ggplot(woody_data, aes(x = woody_cov_pred_vals, y = woody_preds_mean)) +
-  geom_line(color = "forestgreen", linewidth = 1.5) +  # Line plot
-  geom_ribbon(aes(ymin = woody_preds_CI_lower, 
-                  ymax = woody_preds_CI_upper), 
-              fill = rgb(0.2, 0.6, 0.2, 0.2), alpha = 0.5) +  # CI shading
+# Plot Cov effect
+ggplot(cov_pred_df, aes(x = cov_pred_vals, y = cov_preds_mean)) +
+  geom_line(color = "black", linewidth = 1.5) +   
+  geom_ribbon(aes(ymin = cov_preds_LCI, 
+                  ymax = cov_preds_HCI), 
+              fill = "forestgreen", alpha = 0.3) +
   labs(x = "Covariate Value", 
        y = "Effect Estimate", 
-       title = "Predicted Effect of Woody Proportion") +
+       title = paste0("Predicted Effect of ", Cov_name)) +
   theme_minimal() +
   theme(panel.grid = element_blank())
 
-# View
-woodycovEff_plot
-
-# Export                
-ggsave(plot = woodycovEff_plot, "Figures/AV_Wolfe_WoodyCovEffect_plot.jpeg",  
-       width = 8, height = 5, dpi = 300) 
 
 
 
-# --------------------
+
+# -------------------------------------------------------
 # Call Rate 
-# --------------------
+# -------------------------------------------------------
 
 # Extract rows containing "delta" in the row names
 delta_rows <- fm.AV.1$summary[grepl("delta", rownames(fm.AV.1$summary)), ]
@@ -730,9 +701,9 @@ ggplot(delta_df, aes(x = survey, y = site, fill = SD)) +
 
 
 
-# --------------------
+# -------------------------------------------------------
 # Conspecific effects *** not finished??
-# --------------------
+# -------------------------------------------------------
 
 # Extracting Kappa
 kappa1_samples <- combined_chains[ ,"kappa1"]
@@ -758,17 +729,10 @@ ggplot(data.frame(N_vals, kappa_effect), aes(x = N_vals, y = kappa_effect)) +
        y = "Conspecific Effect on Call Rate") +
   theme_minimal()
 
-
-
-
-
 # -------------------------------------------------------
-#
-#   Estimating Abundance 
-#
+#  Estimating Abundance 
 # -------------------------------------------------------
 
- 
 # Extract abundance posterior
 Ntot_samples <- combined_chains[ ,"N_tot"]
 
@@ -793,28 +757,6 @@ dens_summary <- dens_df %>%
 
 # Subset the data within the 95% credible interval
 dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI & dens_df$Density <= dens_summary$Upper_CI, ]
-
-
-# Plot density violin
-ggplot(dens_df, aes(x = Model, y = Density, fill = Model)) + 
-  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
-  labs(x = "Model", y = "Density (N/acre)") +
-  scale_fill_manual(values = c("PC CMR" = "orange", 
-                               "PC HDS" = "purple", 
-                               "AV Bnet" = "blue",
-                               "AV Wolfe" = "red")) +  # Custom colors
-  scale_y_continuous(limits = c(0, 0.5),
-                     breaks = seq(0, 0.5, by = 0.25),
-                     labels = scales::comma) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
-        axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
-        axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
-        panel.grid = element_blank(),
-        legend.position = "none")  # Removes legend
-
-# Plot Density
-dens_summary
 
 # Getting total abundance
 abund_summary <- dens_summary
@@ -854,6 +796,6 @@ saveRDS(dens_summary, "./Data/Fitted_Models/ARU_WolfeAV_dens_summary.rds")
 saveRDS(abund_summary, "./Data/Fitted_Models/ARU_WolfeAV_abund_summary.rds")
 
 # Save Environment
-save.image(file = "./Data/Model_Environments/ARU_AV_Wolfe14day_JAGs.RData")
+#save.image(file = "./Data/Model_Environments/ARU_AV_Wolfe14day_JAGs.RData")
 
 # End Script
