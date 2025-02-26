@@ -492,7 +492,7 @@ ggplot(cor_mat_melted, aes(Var1, Var2, fill = value)) +
 
 
 # Filter to less than 30% correlated
-low_corr <- which(abs(cor_mat) < 0.3, arr.ind = TRUE)
+low_corr <- which(abs(cor_mat) < 0.4, arr.ind = TRUE)
 
 # Remove redundant and diagonal elements
 low_corr <- low_corr[low_corr[, 1] > low_corr[, 2], ]

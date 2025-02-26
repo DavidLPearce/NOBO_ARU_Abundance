@@ -310,11 +310,11 @@ for (row in 1:NROW(site_dat)) {
   # ------------------------------
   
   # # Custom Cloth Simulation Function
-  sub_las_mycsf <- classify_ground(sub_las_200m,
-                                   csf(sloop_smooth = TRUE,
-                                       class_threshold = 1,
-                                       cloth_resolution = 1,
-                                       time_step = 1))
+  # sub_las_mycsf <- classify_ground(sub_las_200m,
+  #                                  csf(sloop_smooth = TRUE,
+  #                                      class_threshold = 1,
+  #                                      cloth_resolution = 1,
+  #                                      time_step = 1))
   
   # Take a look
   #plot(sub_las_mycsf, color = "Classification", bg = "black", size = 5)
@@ -488,7 +488,7 @@ pairs.panels(site_dat[-c((1:4))],
              pch = 21, main = "ARU Site Covs Correlations")
 
 # Filter to less than 30% correlated
-low_corr <- which(abs(cor_mat) < 0.3, arr.ind = TRUE)
+low_corr <- which(abs(cor_mat) < 0.4, arr.ind = TRUE)
 
 # Remove redundant and diagonal elements
 low_corr <- low_corr[low_corr[, 1] > low_corr[, 2], ]
