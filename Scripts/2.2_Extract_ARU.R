@@ -375,7 +375,7 @@ print(site_dat)
 unique(colnames(site_dat))
 
 # Remove site, lat, long
-X.abund <- site_dat[,-c(1:3)]
+X.abund <- site_dat[,-c(2:3)]
 
 # Mean and center scale values
 X.abund$woody_prp <- scale(site_dat$woody_prp, center = TRUE, scale = TRUE)
@@ -399,7 +399,6 @@ X.abund$woody_Npatches <- scale(site_dat$woody_Npatches, center = TRUE, scale = 
 X.abund$herb_Npatches  <- scale(site_dat$herb_Npatches, center = TRUE, scale = TRUE)
 X.abund$woody_mnFocal30m  <- scale(site_dat$woody_mnFocal30m, center = TRUE, scale = TRUE)
 X.abund$vegDens50m  <- scale(site_dat$vegDens50m, center = TRUE, scale = TRUE)
-X.abund <- as.matrix(X.abund)
 print(X.abund)
 
 
