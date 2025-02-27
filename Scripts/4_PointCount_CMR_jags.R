@@ -36,6 +36,9 @@ workers <- Ncores  * 0.5 # For low background use 80%, for medium use 50% of Nco
 # Source custom function for checking Rhat values > 1.1
 source("./Scripts/Rhat_check_function.R")
 
+# Model name object
+model_name <- "PC CMR"
+
 # -------------------------------------------------------
 #
 #                    Load Data
@@ -112,7 +115,7 @@ site <- c(site, rep(NA, M-nind))
 print(site)
 
 # Extract and scale site covariates for X.abund
-X.abund <- site_covs[,-c(1:4,25:26)] 
+X.abund <- site_covs[,-c(1:4)] 
 X.abund$woody_lrgPInx <- scale(X.abund$woody_lrgPInx)
 X.abund$herb_lrgPInx  <- scale(X.abund$herb_lrgPInx)
 X.abund$woody_AggInx <- scale(X.abund$woody_AggInx)
@@ -172,6 +175,15 @@ str(data)
 # ggdistribution(dnorm, seq(0, 0.01, 0.0001)) # alpha's and beta's 
 # ggdistribution(dgamma, seq(0, 5, 0.01), shape = 0.1, rate = 0.1) # tau
 
+# -------------------
+# MCMC Specifications
+# -------------------
+
+n.iter = 800000
+n.burnin = 50000
+n.chains = 3 
+n.thin = 10
+
 # Parameters monitored
 params <- c("lambda",
             "N",
@@ -183,6 +195,7 @@ params <- c("lambda",
             "beta0", 
             "beta1",
             "beta2",
+            "beta3",
             "psi",
             "S.raneff",
             "tau",
@@ -195,23 +208,17 @@ params <- c("lambda",
  inits  <- function() {
   list (p0 = runif(1),
         alpha1 = 0,
-        beta0 = 1,
+        beta0 = 0,
         beta1 = 0,
         beta2 = 0,
+        beta3 = 0,
         tau = 1,
         z = c( rep(1,nind), rep(0, (M-nind)))
 )}
 
-# MCMC 
-n.iter = 300000
-n.burnin = 20000
-n.chains = 3 
-n.thin = 10
-
-
 
 # -------------------------------------------------------
-# Model 1: Woody N patches
+# Model 1 Statement
 # -------------------------------------------------------
 cat("
 model {
@@ -221,14 +228,15 @@ model {
   # ---------------------------------
   beta0 ~ dnorm(0, 10)
   beta1 ~ dnorm(0, 10)
-  beta2 ~ dnorm(0, 5)
-  
+  beta2 ~ dnorm(0, 10)
+  beta3 ~ dnorm(0, 10)
+
   # ---------------------------------
   # Detection Priors
   # ---------------------------------
   p0 ~ dunif(0,1)
   alpha0 <- log(p0/(1-p0)) 
-  alpha1 ~ dnorm(0, 0.01)
+  alpha1 ~ dnorm(0, 10)
   
   # Precision for survey-level random effect
   tau ~ dgamma(0.1, 0.1)  
@@ -250,11 +258,11 @@ model {
   # -------------------------------------------
 
   # ---------------------------------
-  # Abundance Model
+  # Abundance Submodel
   # ---------------------------------
 
   for(s in 1:nsites){
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 2] 
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 10] + beta3 * X.abund[s, 7] * X.abund[s, 10]
     
     # Individual site probability
     probs[s] <- lambda[s] / sum(lambda[])
@@ -264,7 +272,7 @@ model {
   }
 
   # ---------------------------------
-  # Presence Model 
+  # Presence Submodel 
   # ---------------------------------
 
   for(i in 1:M){
@@ -276,11 +284,11 @@ model {
     z[i] ~ dbern(psi)         
     
   # ---------------------------------
-  # Detection Model
+  # Detection Submodel
   # ---------------------------------
 
     for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1 *  X.det[group[i],3] + S.raneff[group[i]]
+      logit(p[i,j]) <- alpha0 + alpha1 *  X.det[group[i],6] + S.raneff[group[i]]
       pz[i,j] <- p[i,j] * z[i]
       y[i,j] ~ dbern(pz[i,j])
       
@@ -348,6 +356,12 @@ fm.1 <- jags(data = data,
 check_rhat(fm.1$Rhat, threshold = 1.1) # Rhat values
 # mcmcplot(fm.1$samples) # Trace plots
 
+# Check Fit
+cat("Bayesian p-value =", fm.1$summary["p_Bayes",1], "\n")# P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+
+# Model summary
+#summary(fm.1$samples)
+
 # -------------------------------------------------------
 #
 #   Beta Estimates and Covariate Effects 
@@ -364,23 +378,38 @@ combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
 # Extract beta estimates
 beta0_samples <- combined_chains[, "beta0"]
 beta1_samples <- combined_chains[, "beta1"]
- 
+beta2_samples <- combined_chains[, "beta2"]
+beta3_samples <- combined_chains[, "beta3"]
 
 # Means
 beta0 <- mean(beta0_samples)
 beta1 <- mean(beta1_samples)
- 
+beta2 <- mean(beta2_samples)
+beta3 <- mean(beta3_samples)
 
 # Compute 95% CI for each beta
 beta_df <- data.frame(
-  value = c(beta0_samples, beta1_samples),
-  parameter = rep(c("beta0", "beta1"), each = length(beta0_samples))
+  value = c(beta0_samples, beta1_samples, beta2_samples, beta3_samples),
+  parameter = rep(c("beta0", "beta1", "beta2", "beta3"), each = length(beta0_samples))
 ) %>%
   group_by(parameter) %>%
   filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
 
 # Add model
-beta_df$Model <- "PC CMR"
+beta_df$Model <- model_name
+
+# Plot
+ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
+  geom_violin(alpha = 0.5, trim = TRUE) +   
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) + 
+  labs(title = "Violin Plots for Beta Estimates", x
+       = "Parameter", 
+       y = "Estimate") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2") 
+
+
+
 
 # Export beta dataframe
 saveRDS(beta_df, "./Data/Fitted_Models/PC_CMR_beta_df.rds")
@@ -389,52 +418,124 @@ saveRDS(beta_df, "./Data/Fitted_Models/PC_CMR_beta_df.rds")
 # Covariate Effects
 # -------------------------------------------------------
 
+
 # Set covariate name 
-Cov_name <- "herb_mnParea"
+Cov1_name <- colnames(X.abund)[7]
+Cov2_name <- colnames(X.abund)[10]
 
 # Create a prediction of covariate values
-cov_pred_vals <- seq(min(site_covs[, Cov_name]), max(site_covs[, Cov_name]), length.out = 100)
+cov1_pred_vals <- seq(min(site_covs[, Cov1_name]), max(site_covs[, Cov1_name]), length.out = 100)
+cov2_pred_vals <- seq(min(site_covs[, Cov2_name]), max(site_covs[, Cov2_name]), length.out = 100)
+
+# Mean scaling covariates
+cov1_scaled <- (site_covs[, Cov1_name] - mean(site_covs[, Cov1_name])) / (max(site_covs[, Cov1_name]) - min(site_covs[, Cov1_name]))
+cov2_scaled <- (site_covs[, Cov2_name] - mean(site_covs[, Cov2_name])) / (max(site_covs[, Cov2_name]) - min(site_covs[, Cov2_name]))
 
 # Matrices for storing predictions
-cov_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov_pred_vals))
+cov1_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov1_scaled))
+cov2_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov2_scaled))
+
+# Create a meshgrid of covariate values for interaction predictions
+interaction_grid <- expand.grid(cov1_scaled = cov1_scaled, cov2_scaled = cov2_scaled)
+interaction_grid$interaction_term <- interaction_grid$cov1_scaled * interaction_grid$cov2_scaled
+
+# Initialize matrix to store predictions
+interaction_preds <- matrix(NA, nrow = length(beta0_samples), ncol = nrow(interaction_grid))
+
 
 # Generate predictions
 for (i in 1:length(beta0_samples)) {
-  cov_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov_pred_vals
+  cov1_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov1_scaled # Linear
+  cov2_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * cov2_scaled
+  
+  interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction 
+    beta1_samples[i] * interaction_grid$cov1_scaled + 
+    beta2_samples[i] * interaction_grid$cov2_scaled + 
+    beta3_samples[i] * interaction_grid$interaction_term
 }
 
+
 # Calculate mean predictions
-cov_preds_mean <- apply(cov_preds, 2, mean)# mean
-cov_preds_LCI <- apply(cov_preds, 2, quantile, probs = 0.025) # LCI
-cov_preds_HCI <- apply(cov_preds, 2, quantile, probs = 0.975) # HCI
+cov1_preds_mean <- apply(cov1_preds, 2, mean)# mean
+cov1_preds_LCI <- apply(cov1_preds, 2, quantile, probs = 0.025) # LCI
+cov1_preds_HCI <- apply(cov1_preds, 2, quantile, probs = 0.975) # HCI
+
+cov2_preds_mean <- apply(cov2_preds, 2, mean) 
+cov2_preds_LCI <- apply(cov2_preds, 2, quantile, probs = 0.025) 
+cov2_preds_HCI <- apply(cov2_preds, 2, quantile, probs = 0.975) 
+
+interaction_preds_mean <- apply(interaction_preds, 2, mean)
+interaction_preds_LCI <- apply(interaction_preds, 2, quantile, probs = 0.025)
+interaction_preds_HCI <- apply(interaction_preds, 2, quantile, probs = 0.975)
 
 # Combine into a single data frame
-cov_pred_df <- data.frame(
-  cov_pred_vals = cov_pred_vals,
-  cov_preds_mean = cov_preds_mean,
-  cov_preds_LCI = cov_preds_LCI,
-  cov_preds_HCI = cov_preds_HCI
-)
+cov1_pred_df <- data.frame(
+  cov1_scaled = cov1_scaled,
+  cov1_preds_mean = cov1_preds_mean,
+  cov1_preds_LCI = cov1_preds_LCI,
+  cov1_preds_HCI = cov1_preds_HCI)
+
+cov2_pred_df <- data.frame(
+  cov2_scaled = cov2_scaled,
+  cov2_preds_mean = cov2_preds_mean,
+  cov2_preds_LCI = cov2_preds_LCI,
+  cov2_preds_HCI = cov2_preds_HCI)
+
+interaction_pred_df <- data.frame(
+  interaction_term = interaction_grid$interaction_term,
+  cov1_scaled = interaction_grid$cov1_scaled,
+  cov2_scaled = interaction_grid$cov2_scaled,
+  interaction_preds_mean = interaction_preds_mean,
+  interaction_preds_LCI = interaction_preds_LCI,
+  interaction_preds_HCI = interaction_preds_HCI)
 
 
+# Plot effect
 
-# Plot Cov effect
-ggplot(cov_pred_df, aes(x = cov_pred_vals, y = cov_preds_mean)) +
+# Cov 1
+ggplot(cov1_pred_df, aes(x = cov1_scaled, y = cov1_preds_mean)) +
   geom_line(color = "black", linewidth = 1.5) +   
-  geom_ribbon(aes(ymin = cov_preds_LCI, 
-                  ymax = cov_preds_HCI), 
+  geom_ribbon(aes(ymin = cov1_preds_LCI, 
+                  ymax = cov1_preds_HCI), 
               fill = "forestgreen", alpha = 0.3) +
   labs(x = "Covariate Value", 
        y = "Effect Estimate", 
-       title = paste0("Predicted Effect of ", Cov_name)) +
+       title = paste0(model_name, " | Predicted Effect of ", Cov1_name)) +
   theme_minimal() +
   theme(panel.grid = element_blank())
+
+# Cov 2
+ggplot(cov2_pred_df, aes(x = cov2_scaled, y = cov2_preds_mean)) +
+  geom_line(color = "black", linewidth = 1.5) +   
+  geom_ribbon(aes(ymin = cov2_preds_LCI, 
+                  ymax = cov2_preds_HCI), 
+              fill = "forestgreen", alpha = 0.3) +
+  labs(x = "Covariate Value", 
+       y = "Effect Estimate", 
+       title = paste0(model_name, " | Predicted Effect of ", Cov2_name)) +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+
+library(plotly)
+
+plot_ly(x = interaction_pred_df$cov1_scaled, 
+        y = interaction_pred_df$cov2_scaled, 
+        z = interaction_pred_df$interaction_preds_mean, 
+        type = "mesh3d",
+        intensity = interaction_pred_df$interaction_preds_mean,
+        colorscale = "Viridis") %>%
+  layout(scene = list(
+    xaxis = list(title = Cov1_name),
+    yaxis = list(title = Cov2_name),
+    zaxis = list(title = "Predicted Effect")
+  ))
+
 
 
 # -------------------------------------------------------
 #   Estimating Abundance 
 # -------------------------------------------------------
-
 
 # Extracting Abundance
 Ntot_samples <- combined_chains[ ,"N_tot"]
@@ -445,7 +546,7 @@ area <- pi * (250^2) / 4046.86  # Area in acres
 dens_samples <- Ntot_samples / (area * 10)
 
 # Create data frame for density
-dens_df <- data.frame(Model = rep("PC CMR", length(dens_samples)), Density = dens_samples)
+dens_df <- data.frame(Model = rep(model_name, length(dens_samples)), Density = dens_samples)
 colnames(dens_df)[2] <- "Density"
 head(dens_df)
 
@@ -468,16 +569,14 @@ dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI
 abund_summary <- dens_summary
 abund_summary[,2:4] <- abund_summary[,2:4] * 2710
 
-# Plot Abundance - Violin
+# Plot Abundance - Violin model_name
 abund_df <- dens_df
 abund_df$Density <- abund_df$Density * 2710
 
 ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) + 
-  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
+  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +
   labs(x = "Model", y = "Density (N/acre)") +
-  scale_fill_manual(values = c("PC CMR" = "orange", 
-                               "PC HDS" = "purple", 
-                               "AV Bnet" = "blue")) +  # Custom colors
+  scale_fill_manual(values = c("PC CMR" = "orange")) +  
   scale_y_continuous(limits = c(0, 1000),
                      breaks = seq(0, 1000, by = 100),
                      labels = scales::comma) +
@@ -486,7 +585,7 @@ ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) +
         axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
         axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
         panel.grid = element_blank(),
-        legend.position = "none")  # Removes legend
+        legend.position = "none")   
 
 
 

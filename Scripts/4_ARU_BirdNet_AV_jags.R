@@ -48,11 +48,14 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
+workers <- Ncores * 0.4 # For low background use 80%, for medium use 50% of Ncores
 workers
 
 # Source custom function for checking Rhat values > 1.1
 source("./Scripts/Rhat_check_function.R")
+
+# Model name object
+model_name <- "AV Bnet"
 
 # -------------------------------------------------------
 #
@@ -323,9 +326,9 @@ str(Bnet14.data)
 # -------------------
 # MCMC Specifications
 # -------------------
-n.iter = 300000
-n.burnin = 20000
-n.chains = 3
+n.iter = 600000
+n.burnin = 50000
+n.chains = 3 
 n.thin = 5
 n.adapt = 5000
 
@@ -348,6 +351,7 @@ params <- c('lambda', # Abundance
             'beta0',
             'beta1',
             'beta2',
+            'beta3',
             'Sraneff',
             'mu_s',
             'tau_s',
@@ -375,6 +379,7 @@ inits <- function() {
     beta0 = rnorm(1, 0, 1),
     beta1 = 0,
     beta2 = 0,
+    beta3 = 0,
     tau_s = 5,
     alpha0 = 0, # Detection
     alpha1 = 0, 
@@ -399,12 +404,13 @@ cat(" model {
   # ----------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 1)
+  beta0 ~ dnorm(0, 10)
   
   # Covariate effect
-  beta1 ~ dnorm(0, 1)
-  #beta2 ~ dnorm(0, 5)
-  
+  beta1 ~ dnorm(0, 10)
+  beta2 ~ dnorm(0, 10)
+  beta3 ~ dnorm(0, 10)
+
   # # Abundance random effect - missing habitat variability
   # mu_s ~ dnorm(0, 0.1)
   # tau_s ~ dgamma(1, 1)
@@ -418,7 +424,7 @@ cat(" model {
   # ------------------------
   
   # Intercept
-  alpha0 ~ dnorm(0, 1)
+  alpha0 ~ dnorm(0, 10)
   
   # True individuals
   alpha1 ~ dunif(0, 500) # Constrained to be positive
@@ -457,25 +463,25 @@ cat(" model {
   for (s in 1:S) {
     
     # ---------------------------------
-    # Abundance submodel  
+    # Abundance Submodel  
     # ---------------------------------
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 2]
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 17] + beta2 * X.abund[s, 14] + beta3 * X.abund[s, 17] * X.abund[s, 14]
     N[s] ~ dpois(lambda[s] * Offset)
     
     # Survey
     for (j in 1:J[s]) {
   
     # ---------------------------------
-    # Detection submodel  
+    # Detection Submodel  
     # ---------------------------------
     logit(p.a[s, j]) <- alpha0 + alpha1*N[s] + alpha2 * X.abund[s,21]  
 
     # ---------------------------------
-    # Call rate submodel  
+    # Call rate Submodel  
     # ---------------------------------
     
     # delta[s, j] <- exp(gamma0 + Jraneff[days[s, j]]) + (kappa1*N[s] + kappa2*N[s]^2)
-    delta[s, j] <- max(0, exp(gamma0 + Jraneff[days[s, j]]) ) #+ (kappa1 * N[s]) + (kappa2 * (N[s])^2))
+    delta[s, j] <- max(0, exp(gamma0 + Jraneff[days[s, j]]) + (kappa1 * N[s]) + (kappa2 * (N[s])^2))
 
     # ---------------------------------
     # Observations
@@ -562,6 +568,7 @@ fm.1 <- jags(data = Bnet14.data,
  
 # Check convergence
 check_rhat(fm.1$Rhat, threshold = 1.1) # Rhat: less than 1.1 means good convergence
+
 #mcmcplot(fm.1$samples)# Visually inspect trace plots
 
 # Check autocorrelation
@@ -594,22 +601,37 @@ combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
 # Extract beta estimates
 beta0_samples <- combined_chains[, "beta0"]
 beta1_samples <- combined_chains[, "beta1"]
+beta2_samples <- combined_chains[, "beta2"]
+beta3_samples <- combined_chains[, "beta3"]
 
 # Means
 beta0 <- mean(beta0_samples)
 beta1 <- mean(beta1_samples)
-
+beta2 <- mean(beta2_samples)
+beta3 <- mean(beta3_samples)
 
 # Compute 95% CI for each beta
 beta_df <- data.frame(
-  value = c(beta0_samples, beta1_samples),
-  parameter = rep(c("beta0", "beta1"), each = length(beta0_samples))
+  value = c(beta0_samples, beta1_samples, beta2_samples, beta3_samples),
+  parameter = rep(c("beta0", "beta1", "beta2", "beta3"), each = length(beta0_samples))
 ) %>%
   group_by(parameter) %>%
   filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
 
 # Add model
-beta_df$Model <- "AV Bnet"
+beta_df$Model <- model_name
+
+# Plot
+ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
+  geom_violin(alpha = 0.5, trim = TRUE) +   
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) + 
+  labs(title = "Violin Plots for Beta Estimates", x
+       = "Parameter", 
+       y = "Estimate") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2") 
+
+
 
 # Export beta dataframe
 saveRDS(beta_df, "./Data/Fitted_Models/ARU_BnetAV_beta_df.rds")
@@ -617,47 +639,123 @@ saveRDS(beta_df, "./Data/Fitted_Models/ARU_BnetAV_beta_df.rds")
 # -------------------------------------------------------
 # Covariate Effects
 # -------------------------------------------------------
-
+ 
 # Set covariate name 
-Cov_name <- "herb_mnParea"
+Cov1_name <- colnames(X.abund)[17]
+Cov2_name <- colnames(X.abund)[14]
 
 # Create a prediction of covariate values
-cov_pred_vals <- seq(min(site_covs[, Cov_name]), max(site_covs[, Cov_name]), length.out = 100)
+cov1_pred_vals <- seq(min(site_covs[, Cov1_name]), max(site_covs[, Cov1_name]), length.out = 100)
+cov2_pred_vals <- seq(min(site_covs[, Cov2_name]), max(site_covs[, Cov2_name]), length.out = 100)
+
+# Mean scaling covariates
+cov1_scaled <- (site_covs[, Cov1_name] - mean(site_covs[, Cov1_name])) / (max(site_covs[, Cov1_name]) - min(site_covs[, Cov1_name]))
+cov2_scaled <- (site_covs[, Cov2_name] - mean(site_covs[, Cov2_name])) / (max(site_covs[, Cov2_name]) - min(site_covs[, Cov2_name]))
 
 # Matrices for storing predictions
-cov_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov_pred_vals))
+cov1_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov1_scaled))
+cov2_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov2_scaled))
+
+# Create a meshgrid of covariate values for interaction predictions
+interaction_grid <- expand.grid(cov1_scaled = cov1_scaled, cov2_scaled = cov2_scaled)
+interaction_grid$interaction_term <- interaction_grid$cov1_scaled * interaction_grid$cov2_scaled
+
+# Initialize matrix to store predictions
+interaction_preds <- matrix(NA, nrow = length(beta0_samples), ncol = nrow(interaction_grid))
+
 
 # Generate predictions
 for (i in 1:length(beta0_samples)) {
-  cov_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov_pred_vals
+  cov1_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov1_scaled # Linear
+  cov2_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * cov2_scaled
+  
+  interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction 
+                                beta1_samples[i] * interaction_grid$cov1_scaled + 
+                                beta2_samples[i] * interaction_grid$cov2_scaled + 
+                                beta3_samples[i] * interaction_grid$interaction_term
 }
 
+
 # Calculate mean predictions
-cov_preds_mean <- apply(cov_preds, 2, mean)# mean
-cov_preds_LCI <- apply(cov_preds, 2, quantile, probs = 0.025) # LCI
-cov_preds_HCI <- apply(cov_preds, 2, quantile, probs = 0.975) # HCI
+cov1_preds_mean <- apply(cov1_preds, 2, mean)# mean
+cov1_preds_LCI <- apply(cov1_preds, 2, quantile, probs = 0.025) # LCI
+cov1_preds_HCI <- apply(cov1_preds, 2, quantile, probs = 0.975) # HCI
+
+cov2_preds_mean <- apply(cov2_preds, 2, mean) 
+cov2_preds_LCI <- apply(cov2_preds, 2, quantile, probs = 0.025) 
+cov2_preds_HCI <- apply(cov2_preds, 2, quantile, probs = 0.975) 
+
+interaction_preds_mean <- apply(interaction_preds, 2, mean)
+interaction_preds_LCI <- apply(interaction_preds, 2, quantile, probs = 0.025)
+interaction_preds_HCI <- apply(interaction_preds, 2, quantile, probs = 0.975)
 
 # Combine into a single data frame
-cov_pred_df <- data.frame(
-  cov_pred_vals = cov_pred_vals,
-  cov_preds_mean = cov_preds_mean,
-  cov_preds_LCI = cov_preds_LCI,
-  cov_preds_HCI = cov_preds_HCI
-)
+cov1_pred_df <- data.frame(
+  cov1_scaled = cov1_scaled,
+  cov1_preds_mean = cov1_preds_mean,
+  cov1_preds_LCI = cov1_preds_LCI,
+  cov1_preds_HCI = cov1_preds_HCI)
+
+cov2_pred_df <- data.frame(
+  cov2_scaled = cov2_scaled,
+  cov2_preds_mean = cov2_preds_mean,
+  cov2_preds_LCI = cov2_preds_LCI,
+  cov2_preds_HCI = cov2_preds_HCI)
+
+interaction_pred_df <- data.frame(
+  interaction_term = interaction_grid$interaction_term,
+  cov1_scaled = interaction_grid$cov1_scaled,
+  cov2_scaled = interaction_grid$cov2_scaled,
+  interaction_preds_mean = interaction_preds_mean,
+  interaction_preds_LCI = interaction_preds_LCI,
+  interaction_preds_HCI = interaction_preds_HCI)
 
 
+# Plot effect
 
-# Plot Cov effect
-ggplot(cov_pred_df, aes(x = cov_pred_vals, y = cov_preds_mean)) +
+# Cov 1
+ggplot(cov1_pred_df, aes(x = cov1_scaled, y = cov1_preds_mean)) +
   geom_line(color = "black", linewidth = 1.5) +   
-  geom_ribbon(aes(ymin = cov_preds_LCI, 
-                  ymax = cov_preds_HCI), 
+  geom_ribbon(aes(ymin = cov1_preds_LCI, 
+                  ymax = cov1_preds_HCI), 
               fill = "forestgreen", alpha = 0.3) +
   labs(x = "Covariate Value", 
        y = "Effect Estimate", 
-       title = paste0("Predicted Effect of ", Cov_name)) +
+       title = paste0(model_name, " | Predicted Effect of ", Cov1_name)) +
   theme_minimal() +
   theme(panel.grid = element_blank())
+
+# Cov 2
+ggplot(cov2_pred_df, aes(x = cov2_scaled, y = cov2_preds_mean)) +
+  geom_line(color = "black", linewidth = 1.5) +   
+  geom_ribbon(aes(ymin = cov2_preds_LCI, 
+                  ymax = cov2_preds_HCI), 
+              fill = "forestgreen", alpha = 0.3) +
+  labs(x = "Covariate Value", 
+       y = "Effect Estimate", 
+       title = paste0(model_name, " | Predicted Effect of ", Cov2_name)) +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+
+
+# Choose representative values for cov 1 (low, medium, high)
+cov1_levels <- quantile(interaction_pred_df$cov2_scaled, probs = c(0.1, 0.5, 0.9))
+
+# Filter data for these levels
+interaction_pred_subset <- interaction_pred_df %>%
+  filter(cov2_scaled %in% cov1_levels)
+
+# Plot interaction effect
+ggplot(interaction_pred_subset, aes(x = cov1_scaled, y = interaction_preds_mean, color = as.factor(cov2_scaled))) +
+  geom_line(size = 1.2) +
+  geom_ribbon(aes(ymin = interaction_preds_LCI, ymax = interaction_preds_HCI, fill = as.factor(cov2_scaled)), alpha = 0.2) +
+  labs(x = "Cov2 (Scaled)", 
+       y = "Predicted Effect", 
+       color = "Cov1 Level", 
+       fill = "Cov1 Level",
+       title = "Effect of Cov2 at Different Cov1 Levels") +
+  theme_minimal()
 
 
 
@@ -675,7 +773,7 @@ area <- pi * (250^2) / 4046.86  # Area in acres
 dens_samples <- Ntot_samples / (area * 10)
 
 # Create data frame for density
-dens_df <- data.frame(Model = rep("AV Bnet", length(dens_samples)), Density = dens_samples)
+dens_df <- data.frame(Model = rep(model_name, length(dens_samples)), Density = dens_samples)
 colnames(dens_df)[2] <- "Density"
 head(dens_df)
 
@@ -704,9 +802,7 @@ abund_df$Density <- abund_df$Density * 2710
 ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) + 
   geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
   labs(x = "Model", y = "Density (N/acre)") +
-  scale_fill_manual(values = c("PC CMR" = "orange", 
-                               "PC HDS" = "purple", 
-                               "AV Bnet" = "blue")) +  # Custom colors
+  scale_fill_manual(values = c("AV Bnet" = "blue")) +  # Custom colors
   scale_y_continuous(limits = c(0, 1000),
                      breaks = seq(0, 1000, by = 100),
                      labels = scales::comma) +

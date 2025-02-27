@@ -1,4 +1,3 @@
-
 # -------------------------------------------------------
 #
 #                    Load libraries
@@ -31,6 +30,9 @@ print(workers)
 
 # Source custom function for checking Rhat values > 1.1
 source("./Scripts/Rhat_check_function.R")
+
+# Model name object
+model_name <- "PC HDS"
 
 # -------------------------------------------------------
 #
@@ -135,22 +137,35 @@ print(X.det)
 X.det[, , 1]  # Observer
 X.det[1, 2, 1] # Row 1, column 2, Observer
 
-# For day random effect
-nDOY = 
+# For day random effect on availability 
+days <- matrix(rep(1:4, times = 10), nrow = 10, ncol = 4, byrow = TRUE)
+print(days)
 
 # Extract and scale site covariates for X.abund
 X.abund <- site_covs[,-c(1:4)] 
-X.abund$woody_lrgPInx <- scale(X.abund$woody_lrgPInx)
-X.abund$herb_lrgPInx  <- scale(X.abund$herb_lrgPInx)
-X.abund$woody_AggInx <- scale(X.abund$woody_AggInx)
-X.abund$herb_AggInx  <- scale(X.abund$herb_AggInx)
-X.abund$woody_EdgDens <- scale(X.abund$woody_EdgDens)
-X.abund$herb_EdgDens  <- scale(X.abund$herb_EdgDens)
-X.abund$woody_Pdens <- scale(X.abund$woody_Pdens)
-X.abund$herb_Pdens  <- scale(X.abund$herb_Pdens)
-X.abund$woody_Npatches <- scale(X.abund$woody_Npatches)
-X.abund$herb_Npatches  <- scale(X.abund$herb_Npatches)
-X.abund$mnElev  <- scale(X.abund$mnElev)
+
+unique(colnames(X.abund))
+
+X.abund$woody_prp <- scale(X.abund$woody_prp, center = TRUE, scale = TRUE)
+X.abund$herb_prp <- scale(X.abund$herb_prp, center = TRUE, scale = TRUE)
+X.abund$open_prp <- scale(X.abund$open_prp, center = TRUE, scale = TRUE)
+X.abund$woody_mnParea <- scale(X.abund$woody_mnParea, center = TRUE, scale = TRUE)
+X.abund$herb_mnParea <- scale(X.abund$herb_mnParea, center = TRUE, scale = TRUE)
+X.abund$woody_ClmIdx <- scale(X.abund$woody_ClmIdx, center = TRUE, scale = TRUE)
+X.abund$herb_ClmIdx <- scale(X.abund$herb_ClmIdx, center = TRUE, scale = TRUE)
+X.abund$woody_ShpInx <- scale(X.abund$woody_ShpInx, center = TRUE, scale = TRUE)
+X.abund$herb_ShpInx <- scale(X.abund$herb_ShpInx, center = TRUE, scale = TRUE)
+X.abund$woody_lrgPInx <- scale(X.abund$woody_lrgPInx, center = TRUE, scale = TRUE)
+X.abund$herb_lrgPInx  <- scale(X.abund$herb_lrgPInx, center = TRUE, scale = TRUE)
+X.abund$woody_AggInx <- scale(X.abund$woody_AggInx, center = TRUE, scale = TRUE)
+X.abund$herb_AggInx  <- scale(X.abund$herb_AggIn, center = TRUE, scale = TRUE)
+X.abund$woody_EdgDens <- scale(X.abund$woody_EdgDens, center = TRUE, scale = TRUE)
+X.abund$herb_EdgDens  <- scale(X.abund$herb_EdgDens, center = TRUE, scale = TRUE)
+X.abund$woody_Pdens <- scale(X.abund$woody_Pdens, center = TRUE, scale = TRUE)
+X.abund$herb_Pdens  <- scale(X.abund$herb_Pdens, center = TRUE, scale = TRUE)
+X.abund$woody_Npatches <- scale(X.abund$woody_Npatches, center = TRUE, scale = TRUE)
+X.abund$herb_Npatches  <- scale(X.abund$herb_Npatches, center = TRUE, scale = TRUE)
+X.abund <- as.matrix(X.abund)
 print(X.abund)
 
 # Create a 3D array
@@ -164,8 +179,8 @@ y3d[,,3] <- det_mat[,9:12]
 y3d[,,4] <- det_mat[,13:16]
 
 # Constances 
-K <- 4                          # Number of primary occasions
-nsites <- nrow(det_mat)         # Number of sites
+J <- 4                          # Number of occasions
+S <- nrow(det_mat)              # Number of sites
 nD <- 4                         # Number of distance classes
 delta <- 50                     # Class width
 B <- 200                        # Maximum distance
@@ -176,8 +191,8 @@ area <- pi*(200^2)/4046.86      # Area in acres
 
 # Bundle data for nimble
 data <- list(y3d = y3d, 
-             nsites = nsites, 
-             K = K, 
+             S = S, 
+             J = J, 
              nD = nD, 
              midpt = midpt, 
              delta = delta, 
@@ -186,7 +201,7 @@ data <- list(y3d = y3d,
              area = area,
              X.det = X.det,
              X.abund = X.abund,
-             nDOY = nDOY)
+             days = days)
 
 # Look at structure
 str(data)
@@ -212,10 +227,10 @@ str(data)
 # MCMC Specifications
 # -------------------
 
-n.iter = 600000
+n.iter = 400000
 n.burnin = 50000
 n.chains = 3 
-n.thin = 10
+n.thin = 5
 
 
 # ----------------------------------------------------------
@@ -228,19 +243,21 @@ n.thin = 10
 # Parameters monitored
 params <- c("beta0", # Abundance
             "beta1",
+            "beta2",
+            "beta3",
             "lambda",
             "N",
             "N_tot",
             "sigma0", # Detection
             "alpha1",
-            "pdet",
+            "pdet_mean",
             "gamma0", # Availability
             "Jraneff",
             "tau_j",
             "sigma_j",
             "theta",
-            "phi",
-            "pmarg",
+            "phi_mean",
+            "pmarg_mean",
             "log_lik",# Bayes p-value
             "p_Bayes")
 
@@ -251,6 +268,8 @@ inits  <- function() {
     M = apply(y3d, 1, max) + 5, # Abundance
     beta0 = 0,
     beta1 = 0,
+    beta2 = 0,
+    beta3 = 0,
     sigma0 = 100, # Detection
     alpha1 = 0,
     Navail = apply(y3d, c(1, 3), sum), # Availability
@@ -271,24 +290,25 @@ model {
   # ---------------------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 0.01)
+  beta0 ~ dnorm(0, 10)
   
   # Covariate
-  beta1 ~ dnorm(0, 0.01)
-
+  beta1 ~ dnorm(0, 10)
+  beta2 ~ dnorm(0, 10)
+  beta3 ~ dnorm(0, 10)
   
   # ---------------------------------
   # Availability Priors
   # ---------------------------------
   
   # Intercept
-  gamma0 ~ dnorm(0, 0.01)
+  gamma0 ~ dnorm(0, 10)
   
   # Survey random effect
   tau_j ~ dgamma(5, 5) # variance
   sigma_j <- sqrt(1 / tau_j) # standard deviation  
-  for (k in 1:K) {
-    Jraneff[k] ~ dnorm(0, sigma_j) 
+  for (j in 1:J) {
+    Jraneff[j] ~ dnorm(0, sigma_j) 
   }
 
   # ---------------------------------
@@ -299,11 +319,10 @@ model {
   sigma0 ~ dunif(0.1,200)
   
   # Covariate
-  alpha1 ~ dnorm(0, 0.01)
-  alpha2 ~ dnorm(0, 0.01)
-  
+  alpha1 ~ dnorm(0, 10)
+
   # Hazard Rate Detection Function
-  theta ~ dgamma(0.1, 0.1)
+  theta ~ dgamma(1, 1)
   
   # -------------------------------------------
   #
@@ -311,82 +330,82 @@ model {
   #
   # -------------------------------------------
 
-  for (s in 1:nsites) {
-    for (k in 1:K) {
+  for (s in 1:S) {
+    for (j in 1:J) {
     
   # ---------------------------------
-  # Availability Model
+  # Availability Submodel
   # ---------------------------------
  
-      logit.phi[s,k] <- gamma0 + Jraneff[k]
-      phi[s,k] <- exp(logit.phi[s,k]) / (1 + exp(logit.phi[s,k]))
+      logit.phi[s,j] <- gamma0 + Jraneff[days[s, j]]
+      phi[s,j] <- exp(logit.phi[s,j]) / (1 + exp(logit.phi[s,j]))
       
   # ---------------------------------
-  # Detection Model
+  # Detection Submodel
   # ---------------------------------
   
       # Distance Sampling
-      log(sigma[s,k]) <- log(sigma0) + alpha1*X.abund[s,21]  
+      log(sigma[s,j]) <- log(sigma0) + alpha1*X.abund[s,21]  
       
       # Multinomial cell probability construction
       for(b in 1:nD){
       
         # Half-normal Detection Function
-        log(g[s,b,k]) <- -midpt[b]*midpt[b]/(2*sigma[s,k]*sigma[s,k]) 
+        log(g[s,b,j]) <- -midpt[b]*midpt[b]/(2*sigma[s,j]*sigma[s,j]) 
         
         # Hazard Rate Detection Function
-        #cloglog(g[s,b,k]) <- theta*log(sigma[s,k])  - theta*log(midpt[b]) 
+        #cloglog(g[s,b,j]) <- theta*log(sigma[s,j])  - theta*log(midpt[b]) 
         
         # Density function for distance bins
-        f[s,b,k] <- (2 * midpt[b] * delta) / (B * B)
-        cellprobs[s,b,k] <- g[s,b,k] * f[s,b,k]
-        cellprobs.cond[s,b,k] <- cellprobs[s,b,k] / sum(cellprobs[s,1:nD,k])
+        f[s,b,j] <- (2 * midpt[b] * delta) / (B * B)
+        cellprobs[s,b,j] <- g[s,b,j] * f[s,b,j]
+        cellprobs.cond[s,b,j] <- cellprobs[s,b,j] / sum(cellprobs[s,1:nD,j])
       }
       
       # Add probability of undetected individuals
-      cellprobs[s,nD+1,k] <- 1 - sum(cellprobs[s,1:nD,k])
+      cellprobs[s,nD+1,j] <- 1 - sum(cellprobs[s,1:nD,j])
 
       # Detection probabilities
-      pdet[s,k] <- sum(cellprobs[s,1:nD,k])
-      pmarg[s,k] <- pdet[s,k] * phi[s,k]
+      pdet[s,j] <- sum(cellprobs[s,1:nD,j])
+      pmarg[s,j] <- pdet[s,j] * phi[s,j]
       
     # ---------------------------------
-    # Observation Model
+    # Observation Submodel
     # ---------------------------------
  
-      y3d[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+      y3d[s,1:nD,j] ~ dmulti(cellprobs.cond[s,1:nD,j], nobs[s,j])
 
       # Number of detected individuals
-      nobs[s,k] ~ dbin(pmarg[s,k], M[s])
+      nobs[s,j] ~ dbin(pmarg[s,j], M[s])
 
       # Number of available individuals
-      Navail[s,k] ~ dbin(phi[s,k], M[s])
+      Navail[s,j] ~ dbin(phi[s,j], M[s])
 
     # ---------------------------------
     # Log-Likelihood
     # ---------------------------------
 
-      log_lik[s,k] <- logdensity.multi(y3d[s,1:nD,k], cellprobs.cond[s,1:nD,k], nobs[s,k])
+      log_lik[s,j] <- logdensity.multi(y3d[s,1:nD,j], cellprobs.cond[s,1:nD,j], nobs[s,j])
       
     # ---------------------------------
     # Posterior Predictive Checks
     # ---------------------------------
 
-      y3d_rep[s,1:nD,k] ~ dmulti(cellprobs.cond[s,1:nD,k], nobs[s,k])
+      y3d_rep[s,1:nD,j] ~ dmulti(cellprobs.cond[s,1:nD,j], nobs[s,j])
 
       for (b in 1:nD) {
-        discrepancy_obs[s,b,k] <- pow(y3d[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
-        discrepancy_rep[s,b,k] <- pow(y3d_rep[s,b,k] - (cellprobs.cond[s,b,k] * nobs[s,k]), 2)
+        discrepancy_obs[s,b,j] <- pow(y3d[s,b,j] - (cellprobs.cond[s,b,j] * nobs[s,j]), 2)
+        discrepancy_rep[s,b,j] <- pow(y3d_rep[s,b,j] - (cellprobs.cond[s,b,j] * nobs[s,j]), 2)
       }
       
     } # End k loop
 
   # ---------------------------------
-  # Abundance Model
+  # Abundance Submodel
   # ---------------------------------
 
     # Poisson
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 1] 
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 17] + beta2 * X.abund[s, 14]
     M[s] ~ dpois(lambda[s])
 
   } # End s loop
@@ -395,15 +414,24 @@ model {
   # Derived Quantities
   # ---------------------------------
 
-  for (s in 1:nsites) {
-      for (k in 1:K) {
-        N_site_k[s,k] <- pdet[s,k] * phi[s,k] * M[s]    
+  for (s in 1:S) {
+      for (j in 1:J) {
+        N_site_k[s,j] <- pdet[s,j] * phi[s,j] * M[s]    
       }
     N[s] <- sum(N_site_k[s,])
   }
   
   # Abundance
   N_tot <- sum(N[])
+  
+  # Detection
+  pdet_mean<- mean(pdet[,])
+  
+  # Availability
+  phi_mean<- mean(phi[,])
+  
+  # Mean marginal detection probability
+  pmarg_mean <- mean(pmarg[,])
 
   # ---------------------------------
   # Derived Quantities
@@ -435,7 +463,7 @@ fm.1 <- jags(data = data,
 
 # Check convergence
 check_rhat(fm.1$Rhat, threshold = 1.1) # Rhat: less than 1.1 means good convergence
-#mcmcplot(fm.1$samples)# Visually inspect trace plots
+#mcmcplot(fm.1$samples) # Visually inspect trace plots
 
 # Check autocorrelation
 #mcmc_list <- as.mcmc.list(lapply(fm.1$samples, as.mcmc))  # Convert each chain separately
@@ -445,7 +473,7 @@ check_rhat(fm.1$Rhat, threshold = 1.1) # Rhat: less than 1.1 means good converge
 #effectiveSize(mcmc_list)
 
 # Check Fit
-cat("Bayesian p-value =", fm.1$summary["p_Bayes",1], "\n")# Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+# cat("Bayesian p-value =", fm.1$summary["p_Bayes",1], "\n") #  P-value = 0.5 means good fit, = 1 or 0 is a poor fit
 
 # Model summary
 #summary(fm.1$samples)
@@ -464,26 +492,41 @@ combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
 # Beta Estimates
 # -------------------------------------------------------
 
+
 # Extract beta estimates
 beta0_samples <- combined_chains[, "beta0"]
 beta1_samples <- combined_chains[, "beta1"]
- 
+beta2_samples <- combined_chains[, "beta2"]
+beta3_samples <- combined_chains[, "beta3"]
 
 # Means
 beta0 <- mean(beta0_samples)
 beta1 <- mean(beta1_samples)
- 
+beta2 <- mean(beta2_samples)
+beta3 <- mean(beta3_samples)
 
 # Compute 95% CI for each beta
 beta_df <- data.frame(
-  value = c(beta0_samples, beta1_samples),
-  parameter = rep(c("beta0", "beta1"), each = length(beta0_samples))
+  value = c(beta0_samples, beta1_samples, beta2_samples ),
+  parameter = rep(c("beta0", "beta1", "beta2" ), each = length(beta0_samples))
 ) %>%
   group_by(parameter) %>%
   filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
 
 # Add model
-beta_df$Model <- "PC HDS"
+beta_df$Model <- model_name
+
+# Plot
+ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
+  geom_violin(alpha = 0.5, trim = TRUE) +   
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) + 
+  labs(title = "Violin Plots for Beta Estimates", x
+       = "Parameter", 
+       y = "Estimate") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2") 
+
+
 
 # Export beta dataframe
 saveRDS(beta_df, "./Data/Fitted_Models/PC_HDS_beta_df.rds")
@@ -493,46 +536,120 @@ saveRDS(beta_df, "./Data/Fitted_Models/PC_HDS_beta_df.rds")
 # Covariate Effects
 # -------------------------------------------------------
 
+ 
+
 # Set covariate name 
-Cov_name <- "herb_mnParea"
+Cov1_name <- colnames(X.abund)[17]
+Cov2_name <- colnames(X.abund)[14]
 
 # Create a prediction of covariate values
-cov_pred_vals <- seq(min(site_covs[, Cov_name]), max(site_covs[, Cov_name]), length.out = 100)
+cov1_pred_vals <- seq(min(site_covs[, Cov1_name]), max(site_covs[, Cov1_name]), length.out = 100)
+cov2_pred_vals <- seq(min(site_covs[, Cov2_name]), max(site_covs[, Cov2_name]), length.out = 100)
+
+# Mean scaling covariates
+cov1_scaled <- (site_covs[, Cov1_name] - mean(site_covs[, Cov1_name])) / (max(site_covs[, Cov1_name]) - min(site_covs[, Cov1_name]))
+cov2_scaled <- (site_covs[, Cov2_name] - mean(site_covs[, Cov2_name])) / (max(site_covs[, Cov2_name]) - min(site_covs[, Cov2_name]))
 
 # Matrices for storing predictions
-cov_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov_pred_vals))
+cov1_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov1_scaled))
+cov2_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov2_scaled))
+
+# # Create a meshgrid of covariate values for interaction predictions
+# interaction_grid <- expand.grid(cov1_scaled = cov1_scaled, cov2_scaled = cov2_scaled)
+# interaction_grid$interaction_term <- interaction_grid$cov1_scaled * interaction_grid$cov2_scaled
+# 
+# # Initialize matrix to store predictions
+# interaction_preds <- matrix(NA, nrow = length(beta0_samples), ncol = nrow(interaction_grid))
+
 
 # Generate predictions
 for (i in 1:length(beta0_samples)) {
-  cov_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov_pred_vals
+  cov1_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov1_scaled # Linear
+  cov2_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * cov2_scaled
+
 }
+  
+  # interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction 
+  #   beta1_samples[i] * interaction_grid$cov1_scaled + 
+  #   beta2_samples[i] * interaction_grid$cov2_scaled + 
+  #   beta3_samples[i] * interaction_grid$interaction_term
 
 # Calculate mean predictions
-cov_preds_mean <- apply(cov_preds, 2, mean)# mean
-cov_preds_LCI <- apply(cov_preds, 2, quantile, probs = 0.025) # LCI
-cov_preds_HCI <- apply(cov_preds, 2, quantile, probs = 0.975) # HCI
+cov1_preds_mean <- apply(cov1_preds, 2, mean)# mean
+cov1_preds_LCI <- apply(cov1_preds, 2, quantile, probs = 0.025) # LCI
+cov1_preds_HCI <- apply(cov1_preds, 2, quantile, probs = 0.975) # HCI
+
+cov2_preds_mean <- apply(cov2_preds, 2, mean) 
+cov2_preds_LCI <- apply(cov2_preds, 2, quantile, probs = 0.025) 
+cov2_preds_HCI <- apply(cov2_preds, 2, quantile, probs = 0.975) 
+
+# interaction_preds_mean <- apply(interaction_preds, 2, mean)
+# interaction_preds_LCI <- apply(interaction_preds, 2, quantile, probs = 0.025)
+# interaction_preds_HCI <- apply(interaction_preds, 2, quantile, probs = 0.975)
 
 # Combine into a single data frame
-cov_pred_df <- data.frame(
-  cov_pred_vals = cov_pred_vals,
-  cov_preds_mean = cov_preds_mean,
-  cov_preds_LCI = cov_preds_LCI,
-  cov_preds_HCI = cov_preds_HCI
-)
+cov1_pred_df <- data.frame(
+  cov1_scaled = cov1_scaled,
+  cov1_preds_mean = cov1_preds_mean,
+  cov1_preds_LCI = cov1_preds_LCI,
+  cov1_preds_HCI = cov1_preds_HCI)
+
+cov2_pred_df <- data.frame(
+  cov2_scaled = cov2_scaled,
+  cov2_preds_mean = cov2_preds_mean,
+  cov2_preds_LCI = cov2_preds_LCI,
+  cov2_preds_HCI = cov2_preds_HCI)
+
+# interaction_pred_df <- data.frame(
+#   interaction_term = interaction_grid$interaction_term,
+#   cov1_scaled = interaction_grid$cov1_scaled,
+#   cov2_scaled = interaction_grid$cov2_scaled,
+#   interaction_preds_mean = interaction_preds_mean,
+#   interaction_preds_LCI = interaction_preds_LCI,
+#   interaction_preds_HCI = interaction_preds_HCI)
 
 
+# Plot effect
 
-# Plot Cov effect
-ggplot(cov_pred_df, aes(x = cov_pred_vals, y = cov_preds_mean)) +
-        geom_line(color = "black", linewidth = 1.5) +   
-        geom_ribbon(aes(ymin = cov_preds_LCI, 
-                        ymax = cov_preds_HCI), 
-                    fill = "forestgreen", alpha = 0.3) +
-        labs(x = "Covariate Value", 
-             y = "Effect Estimate", 
-             title = paste0("Predicted Effect of ", Cov_name)) +
-        theme_minimal() +
-        theme(panel.grid = element_blank())
+# Cov 1
+ggplot(cov1_pred_df, aes(x = cov1_scaled, y = cov1_preds_mean)) +
+  geom_line(color = "black", linewidth = 1.5) +   
+  geom_ribbon(aes(ymin = cov1_preds_LCI, 
+                  ymax = cov1_preds_HCI), 
+              fill = "forestgreen", alpha = 0.3) +
+  labs(x = "Covariate Value", 
+       y = "Effect Estimate", 
+       title = paste0(model_name, " | Predicted Effect of ", Cov1_name)) +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+# Cov 2
+ggplot(cov2_pred_df, aes(x = cov2_scaled, y = cov2_preds_mean)) +
+  geom_line(color = "black", linewidth = 1.5) +   
+  geom_ribbon(aes(ymin = cov2_preds_LCI, 
+                  ymax = cov2_preds_HCI), 
+              fill = "forestgreen", alpha = 0.3) +
+  labs(x = "Covariate Value", 
+       y = "Effect Estimate", 
+       title = paste0(model_name, " | Predicted Effect of ", Cov2_name)) +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+
+# library(plotly)
+# 
+# plot_ly(x = interaction_pred_df$cov1_scaled, 
+#         y = interaction_pred_df$cov2_scaled, 
+#         z = interaction_pred_df$interaction_preds_mean, 
+#         type = "mesh3d",
+#         intensity = interaction_pred_df$interaction_preds_mean,
+#         colorscale = "Viridis") %>%
+#   layout(scene = list(
+#     xaxis = list(title = Cov1_name),
+#     yaxis = list(title = Cov2_name),
+#     zaxis = list(title = "Predicted Effect")
+#   ))
+# 
 
 
 
@@ -549,7 +666,7 @@ area <- pi * (200^2) / 4046.86  # Area in acres
 dens_samples <- Ntot_samples / (area * 10)
 
 # Create data frame for density
-dens_df <- data.frame(Model = rep("PC HDS", length(dens_samples)), Density = dens_samples)
+dens_df <- data.frame(Model = rep(model_name, length(dens_samples)), Density = dens_samples)
 colnames(dens_df)[2] <- "Density"
 head(dens_df)
 
@@ -576,11 +693,9 @@ abund_df <- dens_df
 abund_df$Density <- abund_df$Density * 2710
 
 ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) + 
-  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
+  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  
   labs(x = "Model", y = "Density (N/acre)") +
-  scale_fill_manual(values = c("PC CMR" = "orange", 
-                               "PC HDS" = "purple", 
-                               "AV Bnet" = "blue")) +  # Custom colors
+  scale_fill_manual(values = c("PC HDS" = "purple")) +   
   scale_y_continuous(limits = c(0, 1000),
                      breaks = seq(0, 1000, by = 100),
                      labels = scales::comma) +
