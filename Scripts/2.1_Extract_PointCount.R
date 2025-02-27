@@ -10,6 +10,7 @@
 # install.packages("ggplot2")
 # install.packages("viridis")
 # install.packages("terra")
+# install.packages(igraph)
 # install.packages("lidR")
 # install.packages("RCSF")
 # install.packages("landscapemetrics")
@@ -23,6 +24,7 @@ library(raster)
 library(ggplot2)
 library(viridis)
 library(terra)
+library(igraph)
 library(lidR)
 library(RCSF)
 library(landscapemetrics)
@@ -403,6 +405,6 @@ print(X.abund)
 
 
 # Export data
-write.csv(site_dat, "./Data/Point_Count_Data/PointCount_siteCovs.csv")
+write.csv(X.abund, "./Data/Point_Count_Data/PointCount_siteCovs.csv")
 
 # --------------------End Script -----------------------------

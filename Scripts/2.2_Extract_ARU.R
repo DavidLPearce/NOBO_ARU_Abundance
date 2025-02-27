@@ -10,10 +10,12 @@
 # install.packages("ggplot2")
 # install.packages("viridis")
 # install.packages("terra")
+# install.packages(igraph)
 # install.packages("lidR")
 # install.packages("RCSF")
 # install.packages("landscapemetrics")
 # install.packages("progress")
+# install.packages("psych")
 
 # Load packages
 library(sf)
@@ -22,10 +24,12 @@ library(raster)
 library(ggplot2)
 library(viridis)
 library(terra)
+library(igraph)
 library(lidR)
 library(RCSF)
 library(landscapemetrics)
 library(progress)
+library(psych)
 
 # Set seed, scientific notation, and workplace
 set.seed(123)
