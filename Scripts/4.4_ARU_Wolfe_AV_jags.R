@@ -35,6 +35,7 @@
 
 # Load library
 library(tidyverse)
+library(plotly)
 library(jagsUI)
 library(coda)
 library(mcmcplots)
@@ -237,33 +238,8 @@ dim(val.times)
 # Covariates 
 # ---------------------------------------
 
-# For day random effect on cue production rate
-days <- matrix(rep(1:14, times = 27), nrow = 27, ncol = 14, byrow = TRUE)
-print(days)
-
-
-## Extract and scale site covariates for X.abund ##
-X.abund <- site_covs[,-c(1:4)] 
-X.abund$woody_prp <- scale(X.abund$woody_prp, center = TRUE, scale = TRUE)
-X.abund$herb_prp <- scale(X.abund$herb_prp, center = TRUE, scale = TRUE)
-X.abund$open_prp <- scale(X.abund$open_prp, center = TRUE, scale = TRUE)
-X.abund$woody_mnParea <- scale(X.abund$woody_mnParea, center = TRUE, scale = TRUE)
-X.abund$herb_mnParea <- scale(X.abund$herb_mnParea, center = TRUE, scale = TRUE)
-X.abund$woody_ClmIdx <- scale(X.abund$woody_ClmIdx, center = TRUE, scale = TRUE)
-X.abund$herb_ClmIdx <- scale(X.abund$herb_ClmIdx, center = TRUE, scale = TRUE)
-X.abund$woody_ShpInx <- scale(X.abund$woody_ShpInx, center = TRUE, scale = TRUE)
-X.abund$herb_ShpInx <- scale(X.abund$herb_ShpInx, center = TRUE, scale = TRUE)
-X.abund$woody_lrgPInx <- scale(X.abund$woody_lrgPInx, center = TRUE, scale = TRUE)
-X.abund$herb_lrgPInx  <- scale(X.abund$herb_lrgPInx, center = TRUE, scale = TRUE)
-X.abund$woody_AggInx <- scale(X.abund$woody_AggInx, center = TRUE, scale = TRUE)
-X.abund$herb_AggInx  <- scale(X.abund$herb_AggIn, center = TRUE, scale = TRUE)
-X.abund$woody_EdgDens <- scale(X.abund$woody_EdgDens, center = TRUE, scale = TRUE)
-X.abund$herb_EdgDens  <- scale(X.abund$herb_EdgDens, center = TRUE, scale = TRUE)
-X.abund$woody_Pdens <- scale(X.abund$woody_Pdens, center = TRUE, scale = TRUE)
-X.abund$herb_Pdens  <- scale(X.abund$herb_Pdens, center = TRUE, scale = TRUE)
-X.abund$woody_Npatches <- scale(X.abund$woody_Npatches, center = TRUE, scale = TRUE)
-X.abund$herb_Npatches  <- scale(X.abund$herb_Npatches, center = TRUE, scale = TRUE)
-X.abund <- as.matrix(X.abund)
+# Format X.abund
+X.abund <- as.matrix(site_covs[,-c(1:2)]) # Remove X and site id
 print(X.abund)
 
 
@@ -304,7 +280,6 @@ Wolfe14.data <- list(S = S,
                     S.A = S.A, 
                     J.A = J.A, 
                     sites.a.v = sites.a.v, 
-                    days = days,
                     n.days = max(J),
                     X.abund = X.abund,
                     X.det = X.det,
@@ -325,9 +300,13 @@ str(Wolfe14.data)
 # -------------------
 n.iter = 500000
 n.burnin = 60000
-n.chains = 3
+n.chains = 3 
 n.thin = 10
 n.adapt = 5000
+
+# Rough idea posterior samples
+est_post_samps = (((n.iter - n.burnin) / n.thin) * n.chains)
+print(est_post_samps)
 
 # -------------------------------------------------------
 # Model Specifications
@@ -341,16 +320,16 @@ params <- c('lambda', # Abundance
              'beta1',
              'beta2',
              'beta3',
-             'Sraneff',
-             'mu_s',
-             'tau_s',
+             # 'Sraneff',
+             # 'mu_s',
+             # 'tau_s',
              'sigma_s',
              'alpha0', # Detection 
              'alpha1', 
              'alpha2',
              'gamma0', #  Vocalization
-             'kappa1', 
-             'kappa2',
+             # 'kappa1', 
+             # 'kappa2',
              'Jraneff',
              'tau_j',
              'sigma_j',
@@ -454,7 +433,7 @@ cat(" model {
     # ---------------------------------
     # Abundance Submodel  
     # ---------------------------------
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 2] + beta2 * X.abund[s, 14]
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 18] + beta3 * X.abund[s, 7] * X.abund[s, 18]
     N[s] ~ dpois(lambda[s] * Offset)
     
     # Survey
@@ -469,8 +448,8 @@ cat(" model {
     # Call rate Submodel  
     # ---------------------------------
     
-    # delta[s, j] <- exp(gamma0 + Jraneff[days[s, j]]) + (kappa1*N[s] + kappa2*N[s]^2)
-    delta[s, j] <- max(0, exp(gamma0 + Jraneff[days[s, j]]) )# + (kappa1 * N[s]) + (kappa2 * (N[s])^2))
+    # delta[s, j] <- exp(gamma0 + Jraneff[j]) + (kappa1*N[s] + kappa2*N[s]^2)
+    delta[s, j] <- max(0, exp(gamma0 + Jraneff[j]) )#+ (kappa1 * N[s]) + (kappa2 * (N[s])^2))
 
     # ---------------------------------
     # Observations
@@ -609,23 +588,26 @@ ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
 
 
 # Export beta dataframe
-saveRDS(beta_df, "./Data/Fitted_Models/ARU_WolfeAV_beta_df.rds")
+saveRDS(beta_df, "./Data/Model_Data/ARU_WolfeAV_beta_df.rds")
 
 # -------------------------------------------------------
 # Covariate Effects
 # -------------------------------------------------------
 
+# Covariate names
+print(colnames(X.abund))
+
 # Set covariate name 
-Cov1_name <- colnames(X.abund)[2]
-Cov2_name <- colnames(X.abund)[14]
+Cov1_name <- "herb_ClmIdx"
+Cov2_name <- "woody_Npatches"
 
 # Create a prediction of covariate values
-cov1_pred_vals <- seq(min(site_covs[, Cov1_name]), max(site_covs[, Cov1_name]), length.out = 100)
-cov2_pred_vals <- seq(min(site_covs[, Cov2_name]), max(site_covs[, Cov2_name]), length.out = 100)
+cov1_pred_vals <- seq(min(X.abund[, Cov1_name]), max(X.abund[, Cov1_name]), length.out = 1000)
+cov2_pred_vals <- seq(min(X.abund[, Cov2_name]), max(X.abund[, Cov2_name]), length.out = 1000)
 
 # Mean scaling covariates
-cov1_scaled <- (site_covs[, Cov1_name] - mean(site_covs[, Cov1_name])) / (max(site_covs[, Cov1_name]) - min(site_covs[, Cov1_name]))
-cov2_scaled <- (site_covs[, Cov2_name] - mean(site_covs[, Cov2_name])) / (max(site_covs[, Cov2_name]) - min(site_covs[, Cov2_name]))
+cov1_scaled <- (X.abund[, Cov1_name] - mean(X.abund[, Cov1_name])) / (max(X.abund[, Cov1_name]) - min(X.abund[, Cov1_name]))
+cov2_scaled <- (X.abund[, Cov2_name] - mean(X.abund[, Cov2_name])) / (max(X.abund[, Cov2_name]) - min(X.abund[, Cov2_name]))
 
 # Matrices for storing predictions
 cov1_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov1_scaled))
@@ -644,10 +626,11 @@ for (i in 1:length(beta0_samples)) {
   cov1_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov1_scaled # Linear
   cov2_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * cov2_scaled
   
-  interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction 
-    beta1_samples[i] * interaction_grid$cov1_scaled + 
-    beta2_samples[i] * interaction_grid$cov2_scaled + 
+  interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction
+    beta1_samples[i] * interaction_grid$cov1_scaled +
+    beta2_samples[i] * interaction_grid$cov2_scaled +
     beta3_samples[i] * interaction_grid$interaction_term
+  
 }
 
 
@@ -713,48 +696,31 @@ ggplot(cov2_pred_df, aes(x = cov2_scaled, y = cov2_preds_mean)) +
   theme(panel.grid = element_blank())
 
 
+# Interactive effects
+plot_ly(interaction_pred_df, 
+        x = ~cov1_scaled, 
+        y = ~cov2_scaled, 
+        z = ~interaction_preds_mean, 
+        type = "contour",
+        colorscale = "Viridis",
+        ncontours = 80,
+        contours = list(showlabels = FALSE), 
+        colorbar = list(title = "Interaction Effect", titlefont = list(size = 14)) 
+        )%>%
+          layout(
+            title = list(
+              text = paste0(model_name, " | Interaction Effect "),
+              font = list(size = 18),  
+              x = 0.5,   
+              xanchor = "center"   
+            ),
+            xaxis = list(
+              title = list(text = "Herbaceous Clumpy Index (scaled)", 
+                           font = list(size = 14))),
+            yaxis = list(
+              title = list(text = "Woody Number of Patches (scaled)", 
+                           font = list(size = 14))))
 
-# Choose representative values for cov 1 (low, medium, high)
-cov1_levels <- quantile(interaction_pred_df$cov2_scaled, probs = c(0.1, 0.5, 0.9))
-
-# Filter data for these levels
-interaction_pred_subset <- interaction_pred_df %>%
-  filter(cov2_scaled %in% cov1_levels)
-
-# Plot interaction effect
-ggplot(interaction_pred_subset, aes(x = cov1_scaled, y = interaction_preds_mean, color = as.factor(cov2_scaled))) +
-  geom_line(size = 1.2) +
-  geom_ribbon(aes(ymin = interaction_preds_LCI, ymax = interaction_preds_HCI, fill = as.factor(cov2_scaled)), alpha = 0.2) +
-  labs(x = "Cov2 (Scaled)", 
-       y = "Predicted Effect", 
-       color = "Cov1 Level", 
-       fill = "Cov1 Level",
-       title = "Effect of Cov2 at Different Cov1 Levels") +
-  theme_minimal()
-
-
-
-ggplot(interaction_pred_df, aes(x = cov1_scaled, y = cov2_scaled, fill = interaction_preds_mean)) +
-  geom_tile() +
-  scale_fill_viridis_c() +
-  labs(x = Cov1_name, y = Cov2_name, fill = "Predicted Abundance",
-       title = paste0(model_name, " | Interaction Effect of ", Cov1_name, " & ", Cov2_name)) +
-  theme_minimal()
-
-
-library(plotly)
-
-plot_ly(x = interaction_pred_df$cov1_scaled, 
-        y = interaction_pred_df$cov2_scaled, 
-        z = interaction_pred_df$interaction_preds_mean, 
-        type = "mesh3d",
-        intensity = interaction_pred_df$interaction_preds_mean,
-        colorscale = "Viridis") %>%
-  layout(scene = list(
-    xaxis = list(title = Cov1_name),
-    yaxis = list(title = Cov2_name),
-    zaxis = list(title = "Predicted Effect")
-  ))
 
 # -------------------------------------------------------
 # Call Rate 
@@ -903,9 +869,9 @@ abund_summary
 
 
 # Export density dataframe
-saveRDS(dens_df, "./Data/Fitted_Models/ARU_WolfeAV__dens_df.rds")
-saveRDS(dens_summary, "./Data/Fitted_Models/ARU_WolfeAV_dens_summary.rds")
-saveRDS(abund_summary, "./Data/Fitted_Models/ARU_WolfeAV_abund_summary.rds")
+saveRDS(dens_df, "./Data/Model_Data/ARU_WolfeAV__dens_df.rds")
+saveRDS(dens_summary, "./Data/Model_Data/ARU_WolfeAV_dens_summary.rds")
+saveRDS(abund_summary, "./Data/Model_Data/ARU_WolfeAV_abund_summary.rds")
 
 # Save Environment
 #save.image(file = "./Data/Model_Environments/ARU_AV_Wolfe14day_JAGs.RData")

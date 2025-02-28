@@ -13,15 +13,15 @@
 
 # Load library
 library(tidyverse)
+library(plotly)
 library(jagsUI)
 library(coda)
 library(mcmcplots)
 library(loo)
 
 # Check JAGs Version
-# Latest version as of (5 Feb 2025) JAGS 4.3.1.  
 # Download here: https://sourceforge.net/projects/mcmc-jags/
-rjags::jags.version() 
+rjags::jags.version() # Code written under JAGS 4.3.1. version as of (5 Feb 2025) 
 
 # Set seed, scientific notation options, and working directory
 set.seed(123)
@@ -32,6 +32,7 @@ setwd(".")
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
 workers <- Ncores  * 0.5 # For low background use 80%, for medium use 50% of Ncores
+print(workers)
 
 # Source custom function for checking Rhat values > 1.1
 source("./Scripts/Rhat_check_function.R")
@@ -56,6 +57,10 @@ site_covs <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
 #                   Data Wrangling
 #
 # -------------------------------------------------------
+
+# Rename SiteID to PointNum for matching
+colnames(site_covs)[2] <- "PointNum"
+
 
 # Remove rows with NA values
 pc_dat <- na.omit(pc_dat)
@@ -88,8 +93,8 @@ y <- as.matrix(pc_CMR[,c("int1","int2","int3", "int4")])
 # Number of time intervals
 J <- 4
 
-# number of sites
-nsites <- 10
+# Number of sites
+S <- 10
 
 # Number of individuals detected
 nind <- nrow(y)
@@ -114,22 +119,6 @@ site <- c(site, rep(NA, M-nind))
 # Take a look
 print(site)
 
-# Extract and scale site covariates for X.abund
-X.abund <- site_covs[,-c(1:4)] 
-X.abund$woody_lrgPInx <- scale(X.abund$woody_lrgPInx)
-X.abund$herb_lrgPInx  <- scale(X.abund$herb_lrgPInx)
-X.abund$woody_AggInx <- scale(X.abund$woody_AggInx)
-X.abund$herb_AggInx  <- scale(X.abund$herb_AggInx)
-X.abund$woody_EdgDens <- scale(X.abund$woody_EdgDens)
-X.abund$herb_EdgDens  <- scale(X.abund$herb_EdgDens)
-X.abund$woody_Pdens <- scale(X.abund$woody_Pdens)
-X.abund$herb_Pdens  <- scale(X.abund$herb_Pdens)
-X.abund$woody_Npatches <- scale(X.abund$woody_Npatches)
-X.abund$herb_Npatches  <- scale(X.abund$herb_Npatches)
-print(X.abund)
-
-
-
 
 # Extract and scale site covariates for X.det
 X.det <- pc_dat[,c(2,7:9,18)]
@@ -138,8 +127,14 @@ X.det$Temp.deg.F <- as.numeric(X.det$Temp.deg.F)
 X.det$Wind.Beau.Code <- as.numeric(as.factor(X.det$Wind.Beau.Code)) 
 X.det$Sky.Beau.Code <- as.numeric(as.factor(X.det$Sky.Beau.Code))
 merged_df <- merge(site_covs, pc_CMR, by = "PointNum") # VegDens to stacked 
-X.det$vegDens = as.matrix(merged_df[,c("vegDens50m")]) 
+X.det$vegDens = as.matrix(merged_df[,c("vegDens50m")])
+X.det <- as.matrix(X.det)
 print(X.det)
+
+# Format X.abund
+X.abund <- as.matrix(site_covs[,-c(1:2)]) # Remove X and site id
+print(X.abund)
+
 
 # Area surveyed 
 area <- pi * (200^2) / 4046.86  # in acres
@@ -148,10 +143,10 @@ area <- pi * (200^2) / 4046.86  # in acres
 # Bundle data for JAGs
 data <- list(J = J,
              M = M,
-             nsites = nsites,
+             S = S,
              y = y,
-             X.abund = as.matrix(X.abund),
-             X.det = as.matrix(X.det),
+             X.abund = X.abund,  
+             X.det = X.det,
              group = site,
              area = area)
  
@@ -179,17 +174,21 @@ str(data)
 # MCMC Specifications
 # -------------------
 
-n.iter = 800000
-n.burnin = 50000
+n.iter = 200000
+n.burnin = 60000
 n.chains = 3 
 n.thin = 10
+
+# Posterior samples
+est_post_samps = ((n.iter* n.chains) - n.burnin) / n.thin
+print(est_post_samps)
+
 
 # Parameters monitored
 params <- c("lambda",
             "N",
             "N_tot",
-            "p0", 
-            'p',
+            "pz_mean", 
             "alpha0", 
             "alpha1", 
             "beta0", 
@@ -205,7 +204,7 @@ params <- c("lambda",
 
 
 # Initial values
- inits  <- function() {
+inits  <- function() {
   list (p0 = runif(1),
         alpha1 = 0,
         beta0 = 0,
@@ -242,7 +241,7 @@ model {
   tau ~ dgamma(0.1, 0.1)  
 
   # Site-level random effect for pseudoreplication
-  for(s in 1:nsites){  
+  for(s in 1:S){  
     S.raneff[s] ~ dnorm(0, tau)  
   }
   
@@ -261,8 +260,8 @@ model {
   # Abundance Submodel
   # ---------------------------------
 
-  for(s in 1:nsites){
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 10] + beta3 * X.abund[s, 7] * X.abund[s, 10]
+  for(s in 1:S){
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 18] + beta3 * X.abund[s, 7] * X.abund[s, 18]
     
     # Individual site probability
     probs[s] <- lambda[s] / sum(lambda[])
@@ -316,10 +315,14 @@ model {
   } # End M
   
   # ---------------------------------
-  # Total Abundance
+  # Derived Metrics
   # ---------------------------------
  
+  # Abundance
   N_tot <- sum(z[])
+  
+  # Detection
+  pz_mean <- mean(pz[,])
   
   # ---------------------------------
   # Bayesian p-value
@@ -385,12 +388,12 @@ beta3_samples <- combined_chains[, "beta3"]
 beta0 <- mean(beta0_samples)
 beta1 <- mean(beta1_samples)
 beta2 <- mean(beta2_samples)
-beta3 <- mean(beta3_samples)
+# beta3 <- mean(beta3_samples)
 
 # Compute 95% CI for each beta
 beta_df <- data.frame(
-  value = c(beta0_samples, beta1_samples, beta2_samples, beta3_samples),
-  parameter = rep(c("beta0", "beta1", "beta2", "beta3"), each = length(beta0_samples))
+  value = c(beta0_samples, beta1_samples, beta2_samples, beta3_samples ), # 
+  parameter = rep(c("beta0", "beta1", "beta2", "beta3" ), each = length(beta0_samples)) # 
 ) %>%
   group_by(parameter) %>%
   filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
@@ -412,7 +415,7 @@ ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
 
 
 # Export beta dataframe
-saveRDS(beta_df, "./Data/Fitted_Models/PC_CMR_beta_df.rds")
+saveRDS(beta_df, "./Data/Model_Data/PC_CMR_beta_df.rds")
 
 # -------------------------------------------------------
 # Covariate Effects
@@ -420,16 +423,16 @@ saveRDS(beta_df, "./Data/Fitted_Models/PC_CMR_beta_df.rds")
 
 
 # Set covariate name 
-Cov1_name <- colnames(X.abund)[7]
-Cov2_name <- colnames(X.abund)[10]
+Cov1_name <- "herb_ClmIdx"
+Cov2_name <- "woody_Npatches"
 
 # Create a prediction of covariate values
-cov1_pred_vals <- seq(min(site_covs[, Cov1_name]), max(site_covs[, Cov1_name]), length.out = 100)
-cov2_pred_vals <- seq(min(site_covs[, Cov2_name]), max(site_covs[, Cov2_name]), length.out = 100)
+cov1_pred_vals <- seq(min(X.abund[, Cov1_name]), max(X.abund[, Cov1_name]), length.out = 1000)
+cov2_pred_vals <- seq(min(X.abund[, Cov2_name]), max(X.abund[, Cov2_name]), length.out = 1000)
 
 # Mean scaling covariates
-cov1_scaled <- (site_covs[, Cov1_name] - mean(site_covs[, Cov1_name])) / (max(site_covs[, Cov1_name]) - min(site_covs[, Cov1_name]))
-cov2_scaled <- (site_covs[, Cov2_name] - mean(site_covs[, Cov2_name])) / (max(site_covs[, Cov2_name]) - min(site_covs[, Cov2_name]))
+cov1_scaled <- (X.abund[, Cov1_name] - mean(X.abund[, Cov1_name])) / (max(X.abund[, Cov1_name]) - min(X.abund[, Cov1_name]))
+cov2_scaled <- (X.abund[, Cov2_name] - mean(X.abund[, Cov2_name])) / (max(X.abund[, Cov2_name]) - min(X.abund[, Cov2_name]))
 
 # Matrices for storing predictions
 cov1_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov1_scaled))
@@ -448,10 +451,11 @@ for (i in 1:length(beta0_samples)) {
   cov1_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov1_scaled # Linear
   cov2_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * cov2_scaled
   
-  interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction 
-    beta1_samples[i] * interaction_grid$cov1_scaled + 
-    beta2_samples[i] * interaction_grid$cov2_scaled + 
+  interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction
+    beta1_samples[i] * interaction_grid$cov1_scaled +
+    beta2_samples[i] * interaction_grid$cov2_scaled +
     beta3_samples[i] * interaction_grid$interaction_term
+  
 }
 
 
@@ -517,19 +521,30 @@ ggplot(cov2_pred_df, aes(x = cov2_scaled, y = cov2_preds_mean)) +
   theme(panel.grid = element_blank())
 
 
-library(plotly)
-
-plot_ly(x = interaction_pred_df$cov1_scaled, 
-        y = interaction_pred_df$cov2_scaled, 
-        z = interaction_pred_df$interaction_preds_mean, 
-        type = "mesh3d",
-        intensity = interaction_pred_df$interaction_preds_mean,
-        colorscale = "Viridis") %>%
-  layout(scene = list(
-    xaxis = list(title = Cov1_name),
-    yaxis = list(title = Cov2_name),
-    zaxis = list(title = "Predicted Effect")
-  ))
+# Interactive effects
+plot_ly(interaction_pred_df, 
+        x = ~cov1_scaled, 
+        y = ~cov2_scaled, 
+        z = ~interaction_preds_mean, 
+        type = "contour",
+        colorscale = "Viridis",
+        ncontours = 80,
+        contours = list(showlabels = FALSE), 
+        colorbar = list(title = "Interaction Effect", titlefont = list(size = 14)) 
+        )%>%
+        layout(
+          title = list(
+            text = paste0(model_name, " | Interaction Effect "),
+            font = list(size = 18),  
+            x = 0.5,   
+            xanchor = "center"   
+          ),
+          xaxis = list(
+            title = list(text = "Herbaceous Clumpy Index (scaled)", 
+                         font = list(size = 14))),
+          yaxis = list(
+            title = list(text = "Woody Number of Patches (scaled)", 
+                         font = list(size = 14))))
 
 
 
@@ -595,9 +610,9 @@ abund_summary
 
 
 # Export density dataframe
-saveRDS(dens_df, "./Data/Fitted_Models/PC_CMR_dens_df.rds")
-saveRDS(dens_summary, "./Data/Fitted_Models/PC_CMR_dens_summary.rds")
-saveRDS(abund_summary, "./Data/Fitted_Models/PC_CMR_abund_summary.rds")
+saveRDS(dens_df, "./Data/Model_Data/PC_CMR_dens_df.rds")
+saveRDS(dens_summary, "./Data/Model_Data/PC_CMR_dens_summary.rds")
+saveRDS(abund_summary, "./Data/Model_Data/PC_CMR_abund_summary.rds")
 
 # Save Environment
 #save.image(file = "./Data/Model_Environments/CMR_bm_JAGs.RData")
