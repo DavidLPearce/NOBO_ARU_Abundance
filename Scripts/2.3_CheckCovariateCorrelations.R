@@ -46,7 +46,7 @@ dev.off()
 
 # ARU
 png("./Figures/Correlations/ARU_Corr_Mat.png", width = 1800, height = 1200, res = 150)
-pairs.panels(pc_cor_mat, gap = 0, bg = c("blue", "red"), pch = 21, main = "ARU")
+pairs.panels(aru_cor_mat, gap = 0, bg = c("blue", "red"), pch = 21, main = "ARU")
 dev.off()
 
 
