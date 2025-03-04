@@ -238,6 +238,9 @@ dim(val.times)
 # Covariates 
 # ---------------------------------------
 
+# survey random effect index
+days <- matrix(rep(1:14, times = 27), nrow = 27, ncol = 14, byrow = TRUE)
+
 # Format X.abund
 X.abund <- as.matrix(site_covs[,-c(1:2)]) # Remove X and site id
 print(X.abund)
@@ -283,7 +286,8 @@ Wolfe14.data <- list(S = S,
                     n.days = max(J),
                     X.abund = X.abund,
                     X.det = X.det,
-                    Offset = area)
+                    Offset = area,
+                    days = days)
 
 # Check structure
 str(Wolfe14.data)
@@ -298,8 +302,8 @@ str(Wolfe14.data)
 # -------------------
 # MCMC Specifications
 # -------------------
-n.iter = 500000
-n.burnin = 60000
+n.iter = 800000
+n.burnin = 100000
 n.chains = 3 
 n.thin = 10
 n.adapt = 5000
@@ -320,16 +324,13 @@ params <- c('lambda', # Abundance
              'beta1',
              'beta2',
              'beta3',
-             # 'Sraneff',
-             # 'mu_s',
-             # 'tau_s',
              'sigma_s',
              'alpha0', # Detection 
              'alpha1', 
              'alpha2',
              'gamma0', #  Vocalization
-             # 'kappa1', 
-             # 'kappa2',
+             'kappa1',
+             'kappa2',
              'Jraneff',
              'tau_j',
              'sigma_j',
@@ -352,7 +353,7 @@ inits <- function() {
     alpha0 = 0, # Detection
     alpha1 = 0, 
     alpha2 = 0,
-    gamma0 = log(8),
+    gamma0 = log(18),
     kappa1 = 0.6, # Vocalization
     kappa2 = -0.06, 
     omega = 0.001,
@@ -371,53 +372,45 @@ cat(" model {
   # ----------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 10)
+  beta0 ~ dnorm(0, 5)
   
   # Covariate effect
-  beta1 ~ dnorm(0, 10)
-  beta2 ~ dnorm(0, 10)
-  beta3 ~ dnorm(0, 10)
-
-  # # Abundance random effect - missing habitat variability
-  # mu_s ~ dnorm(0, 0.1)
-  # tau_s ~ dgamma(1, 1)
-  # sigma_s <- sqrt(1 / tau_s)
-  # for (s in 1:S) {
-  #   Sraneff[s] ~ dnorm(mu_s, tau_s)  
-  # }
+  beta1 ~ dnorm(0, 5)
+  beta2 ~ dnorm(0, 5)
+  beta3 ~ dnorm(0, 5)
 
   # ------------------------
   # Detection Priors
   # ------------------------
   
   # Intercept
-  alpha0 ~ dnorm(0, 1)
+  alpha0 ~ dnorm(0, 5)
   
   # True individuals
   alpha1 ~ dunif(0, 500) # Constrained to be positive
   
   # Covariate effect
-  alpha2 ~ dnorm(0, 1)
+  alpha2 ~ dnorm(0, 5)
   
   # ------------------------
   # Call Rate Priors
   # ------------------------
   
   # False positive rate
-  omega  ~ dnorm(0, 1) T(0, ) # Truncated at 0; 0 false positive rate
+  omega  ~ dunif(0, 1000)  
   
-  # Calls in 30 mins by 1 individual, which is 18 +/- 9
-  gamma0 ~ dnorm(log(8), 3/4)
+  # Calls in 30 mins by 1 individual, which is 18 +/- 13.5
+  gamma0 ~ dnorm(log(18), 3/4)
   
   # Conspecific density effects
   kappa1 ~ dnorm(2, 1) T(0, 1) # mean of 0.6, sd of 0.4 i.e., (1/1^2); constrained between 0 and 1
   kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04 i.e., (1/0.04^2); constrained between -1 and 0
 
   # Survey random effect
+  mu_j ~ dnorm(0, 5)
   tau_j ~ dgamma(5, 5) # variance
-  sigma_j <- sqrt(1 / tau_j) # standard deviation  
   for (j in 1:n.days) {
-    Jraneff[j] ~ dnorm(0, sigma_j) 
+    Jraneff[j] ~ dnorm(mu_j, tau_j) 
   }
 
 
@@ -433,7 +426,7 @@ cat(" model {
     # ---------------------------------
     # Abundance Submodel  
     # ---------------------------------
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 18] + beta3 * X.abund[s, 7] * X.abund[s, 18]
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 12] 
     N[s] ~ dpois(lambda[s] * Offset)
     
     # Survey
@@ -448,8 +441,8 @@ cat(" model {
     # Call rate Submodel  
     # ---------------------------------
     
-    # delta[s, j] <- exp(gamma0 + Jraneff[j]) + (kappa1*N[s] + kappa2*N[s]^2)
-    delta[s, j] <- max(0, exp(gamma0 + Jraneff[j]) )#+ (kappa1 * N[s]) + (kappa2 * (N[s])^2))
+    log(delta[s, j]) <- gamma0 + Jraneff[days[s,j]]
+    #delta[s, j] <- max(0, exp(gamma0 + Jraneff[days[s,j]]) + (kappa1 * N[s]) + (kappa2 * (N[s])^2))
 
     # ---------------------------------
     # Observations
@@ -536,7 +529,7 @@ fm.AV.1 <- jags(data = Wolfe14.data,
 
 # Check Convergence
 check_rhat(fm.AV.1$Rhat, threshold = 1.1)  # Rhat
-#mcmcplot(fm.AV.1$samples) # Trace plots
+mcmcplot(fm.AV.1$samples) # Trace plots
 
 
 # -------------------------------------------------------
@@ -556,18 +549,18 @@ combined_chains <- as.mcmc(do.call(rbind, fm.AV.1$samples))
 beta0_samples <- combined_chains[, "beta0"]
 beta1_samples <- combined_chains[, "beta1"]
 beta2_samples <- combined_chains[, "beta2"]
-beta3_samples <- combined_chains[, "beta3"]
+#beta3_samples <- combined_chains[, "beta3"]
 
 # Means
 beta0 <- mean(beta0_samples)
 beta1 <- mean(beta1_samples)
 beta2 <- mean(beta2_samples)
-beta3 <- mean(beta3_samples)
+# beta3 <- mean(beta3_samples)
 
 # Compute 95% CI for each beta
 beta_df <- data.frame(
-  value = c(beta0_samples, beta1_samples, beta2_samples, beta3_samples),
-  parameter = rep(c("beta0", "beta1", "beta2", "beta3"), each = length(beta0_samples))
+  value = c(beta0_samples, beta1_samples, beta2_samples), #  , beta3_samples
+  parameter = rep(c("beta0", "beta1", "beta2"), each = length(beta0_samples)) #, "beta3"
 ) %>%
   group_by(parameter) %>%
   filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
@@ -599,7 +592,7 @@ print(colnames(X.abund))
 
 # Set covariate name 
 Cov1_name <- "herb_ClmIdx"
-Cov2_name <- "woody_Npatches"
+Cov2_name <- "woody_AggInx"
 
 # Create a prediction of covariate values
 cov1_pred_vals <- seq(min(X.abund[, Cov1_name]), max(X.abund[, Cov1_name]), length.out = 1000)
@@ -613,24 +606,24 @@ cov2_scaled <- (X.abund[, Cov2_name] - mean(X.abund[, Cov2_name])) / (max(X.abun
 cov1_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov1_scaled))
 cov2_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov2_scaled))
 
-# Create a meshgrid of covariate values for interaction predictions
-interaction_grid <- expand.grid(cov1_scaled = cov1_scaled, cov2_scaled = cov2_scaled)
-interaction_grid$interaction_term <- interaction_grid$cov1_scaled * interaction_grid$cov2_scaled
-
-# Initialize matrix to store predictions
-interaction_preds <- matrix(NA, nrow = length(beta0_samples), ncol = nrow(interaction_grid))
-
+# # Create a meshgrid of covariate values for interaction predictions
+# interaction_grid <- expand.grid(cov1_scaled = cov1_scaled, cov2_scaled = cov2_scaled)
+# interaction_grid$interaction_term <- interaction_grid$cov1_scaled * interaction_grid$cov2_scaled
+# 
+# # Initialize matrix to store predictions
+# interaction_preds <- matrix(NA, nrow = length(beta0_samples), ncol = nrow(interaction_grid))
+# 
 
 # Generate predictions
 for (i in 1:length(beta0_samples)) {
   cov1_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov1_scaled # Linear
   cov2_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * cov2_scaled
   
-  interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction
-    beta1_samples[i] * interaction_grid$cov1_scaled +
-    beta2_samples[i] * interaction_grid$cov2_scaled +
-    beta3_samples[i] * interaction_grid$interaction_term
-  
+  # interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction
+  #   beta1_samples[i] * interaction_grid$cov1_scaled +
+  #   beta2_samples[i] * interaction_grid$cov2_scaled +
+  #   beta3_samples[i] * interaction_grid$interaction_term
+
 }
 
 
@@ -639,13 +632,13 @@ cov1_preds_mean <- apply(cov1_preds, 2, mean)# mean
 cov1_preds_LCI <- apply(cov1_preds, 2, quantile, probs = 0.025) # LCI
 cov1_preds_HCI <- apply(cov1_preds, 2, quantile, probs = 0.975) # HCI
 
-cov2_preds_mean <- apply(cov2_preds, 2, mean) 
-cov2_preds_LCI <- apply(cov2_preds, 2, quantile, probs = 0.025) 
-cov2_preds_HCI <- apply(cov2_preds, 2, quantile, probs = 0.975) 
+cov2_preds_mean <- apply(cov2_preds, 2, mean)
+cov2_preds_LCI <- apply(cov2_preds, 2, quantile, probs = 0.025)
+cov2_preds_HCI <- apply(cov2_preds, 2, quantile, probs = 0.975)
 
-interaction_preds_mean <- apply(interaction_preds, 2, mean)
-interaction_preds_LCI <- apply(interaction_preds, 2, quantile, probs = 0.025)
-interaction_preds_HCI <- apply(interaction_preds, 2, quantile, probs = 0.975)
+# interaction_preds_mean <- apply(interaction_preds, 2, mean)
+# interaction_preds_LCI <- apply(interaction_preds, 2, quantile, probs = 0.025)
+# interaction_preds_HCI <- apply(interaction_preds, 2, quantile, probs = 0.975)
 
 # Combine into a single data frame
 cov1_pred_df <- data.frame(
@@ -660,14 +653,14 @@ cov2_pred_df <- data.frame(
   cov2_preds_LCI = cov2_preds_LCI,
   cov2_preds_HCI = cov2_preds_HCI)
 
-interaction_pred_df <- data.frame(
-  interaction_term = interaction_grid$interaction_term,
-  cov1_scaled = interaction_grid$cov1_scaled,
-  cov2_scaled = interaction_grid$cov2_scaled,
-  interaction_preds_mean = interaction_preds_mean,
-  interaction_preds_LCI = interaction_preds_LCI,
-  interaction_preds_HCI = interaction_preds_HCI)
-
+# interaction_pred_df <- data.frame(
+#   interaction_term = interaction_grid$interaction_term,
+#   cov1_scaled = interaction_grid$cov1_scaled,
+#   cov2_scaled = interaction_grid$cov2_scaled,
+#   interaction_preds_mean = interaction_preds_mean,
+#   interaction_preds_LCI = interaction_preds_LCI,
+#   interaction_preds_HCI = interaction_preds_HCI)
+# 
 
 # Plot effect
 
@@ -685,41 +678,41 @@ ggplot(cov1_pred_df, aes(x = cov1_scaled, y = cov1_preds_mean)) +
 
 # Cov 2
 ggplot(cov2_pred_df, aes(x = cov2_scaled, y = cov2_preds_mean)) +
-  geom_line(color = "black", linewidth = 1.5) +   
-  geom_ribbon(aes(ymin = cov2_preds_LCI, 
-                  ymax = cov2_preds_HCI), 
+  geom_line(color = "black", linewidth = 1.5) +
+  geom_ribbon(aes(ymin = cov2_preds_LCI,
+                  ymax = cov2_preds_HCI),
               fill = "forestgreen", alpha = 0.3) +
-  labs(x = "Covariate Value", 
-       y = "Effect Estimate", 
+  labs(x = "Covariate Value",
+       y = "Effect Estimate",
        title = paste0(model_name, " | Predicted Effect of ", Cov2_name)) +
   theme_minimal() +
   theme(panel.grid = element_blank())
 
 
-# Interactive effects
-plot_ly(interaction_pred_df, 
-        x = ~cov1_scaled, 
-        y = ~cov2_scaled, 
-        z = ~interaction_preds_mean, 
-        type = "contour",
-        colorscale = "Viridis",
-        ncontours = 80,
-        contours = list(showlabels = FALSE), 
-        colorbar = list(title = "Interaction Effect", titlefont = list(size = 14)) 
-        )%>%
-          layout(
-            title = list(
-              text = paste0(model_name, " | Interaction Effect "),
-              font = list(size = 18),  
-              x = 0.5,   
-              xanchor = "center"   
-            ),
-            xaxis = list(
-              title = list(text = "Herbaceous Clumpy Index (scaled)", 
-                           font = list(size = 14))),
-            yaxis = list(
-              title = list(text = "Woody Number of Patches (scaled)", 
-                           font = list(size = 14))))
+# # Interactive effects
+# plot_ly(interaction_pred_df,
+#         x = ~cov1_scaled,
+#         y = ~cov2_scaled,
+#         z = ~interaction_preds_mean,
+#         type = "contour",
+#         colorscale = "Viridis",
+#         ncontours = 80,
+#         contours = list(showlabels = FALSE),
+#         colorbar = list(title = "Interaction Effect", titlefont = list(size = 14))
+#         )%>%
+#           layout(
+#             title = list(
+#               text = paste0(model_name, " | Interaction Effect "),
+#               font = list(size = 18),
+#               x = 0.5,
+#               xanchor = "center"
+#             ),
+#             xaxis = list(
+#               title = list(text = "Herbaceous Clumpy Index (scaled)",
+#                            font = list(size = 14))),
+#             yaxis = list(
+#               title = list(text = "Woody Aggregation Index (scaled)",
+#                            font = list(size = 14))))
 
 
 # -------------------------------------------------------
@@ -765,6 +758,7 @@ ggplot(delta_df, aes(x = survey, y = site, fill = mean)) +
   scale_x_continuous(breaks = 1:14) +   
   scale_y_continuous(breaks = 1:27) +   
   theme(panel.grid = element_blank())
+
 
 # Plot Delta SD
 ggplot(delta_df, aes(x = survey, y = site, fill = SD)) +
@@ -859,7 +853,7 @@ ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) +
         axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
         axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
         panel.grid = element_blank(),
-        legend.position = "none")  # Removes legend
+        legend.position = "none")  
 
 
 
