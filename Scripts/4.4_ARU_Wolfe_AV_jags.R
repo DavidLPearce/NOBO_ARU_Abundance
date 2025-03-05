@@ -65,10 +65,8 @@ model_name <- "AV Wolfe"
 
 # beta0 = abundance intercept 
 # beta.1 = abundance trend estimate
-# alpha0 = prob (on logit scale) of detecting at least one vocalization at a site
-#           that is not occupied.
-# alpha1 = additional prob (on logit scale) of detecting at least one vocalization at 
-#           a site that is not occupied. 
+# alpha0 = prob (on logit scale) of detecting at least one vocalization at a site that is not occupied.
+# alpha1 = additional prob (on logit scale) of detecting at least one vocalization at a site that is not occupied. 
 # omega = mean # of false positive acoustic detections
 # p = detection probability of an individual in point count data
 # tau.day = precision for random day effect on true vocalization detection rate. 
@@ -84,7 +82,6 @@ model_name <- "AV Wolfe"
 # S = number of total sites
 # J = number of repeat visits for acoustic data at each site
 # J.A = max number of repeat visits at each acoustic data site. 
-# n.count = number of repeat visits for count data
 # S.val = number of sites where validation of acoustic data occurred
 # days = variable used to index different recording days. 
 # A.times = indexing variable used to determine specific indexes with v > 0.
@@ -302,8 +299,8 @@ str(Wolfe14.data)
 # -------------------
 # MCMC Specifications
 # -------------------
-n.iter = 800000
-n.burnin = 100000
+n.iter = 700000
+n.burnin = 80000
 n.chains = 3 
 n.thin = 10
 n.adapt = 5000
@@ -329,17 +326,22 @@ params <- c('lambda', # Abundance
              'alpha1', 
              'alpha2',
              'gamma0', #  Vocalization
-             'kappa1',
-             'kappa2',
+             # 'kappa1',
+             # 'kappa2',
              'Jraneff',
              'tau_j',
              'sigma_j',
              'omega',
              'delta',
+             'phi',
+             'y', # Posterior Predictive Checks
+             'y.pred',
+             'v',
+             'v.pred',
              'bp.y', # Bayes p-value
              'bp.v')
 
-
+   
 
 # Initial Values 
 inits <- function() {
@@ -354,10 +356,11 @@ inits <- function() {
     alpha1 = 0, 
     alpha2 = 0,
     gamma0 = log(18),
-    kappa1 = 0.6, # Vocalization
-    kappa2 = -0.06, 
+    # kappa1 = 0.6, # Vocalization
+    # kappa2 = -0.06, 
     omega = 0.001,
-    tau_j = 2
+    tau_j = 2,
+    a_phi = runif(1, 0, 5)
   )
 }#end inits
 
@@ -403,14 +406,22 @@ cat(" model {
   gamma0 ~ dnorm(log(18), 3/4)
   
   # Conspecific density effects
-  kappa1 ~ dnorm(2, 1) T(0, 1) # mean of 0.6, sd of 0.4 i.e., (1/1^2); constrained between 0 and 1
-  kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04 i.e., (1/0.04^2); constrained between -1 and 0
+  # kappa1 ~ dnorm(2, 1) T(0, 1) # mean of 0.6, sd of 0.4 i.e., (1/1^2); constrained between 0 and 1
+  # kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04 i.e., (1/0.04^2); constrained between -1 and 0
 
   # Survey random effect
-  mu_j ~ dnorm(0, 5)
+  # mu_j ~ dnorm(0, 5)
   tau_j ~ dgamma(5, 5) # variance
   for (j in 1:n.days) {
-    Jraneff[j] ~ dnorm(mu_j, tau_j) 
+    Jraneff[j] ~ dnorm(gamma0, tau_j) 
+  }
+  
+  # Overdispersion
+  a_phi ~ dunif(0, 100)
+  for (s in 1:S) {
+    for (j in 1:J.A) {
+      phi[s, j] ~ dgamma(a_phi, a_phi)
+    }
   }
 
 
@@ -426,7 +437,7 @@ cat(" model {
     # ---------------------------------
     # Abundance Submodel  
     # ---------------------------------
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 12] 
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 12] # + beta3 * X.abund[s, 7] * X.abund[s, 12]
     N[s] ~ dpois(lambda[s] * Offset)
     
     # Survey
@@ -441,7 +452,7 @@ cat(" model {
     # Call rate Submodel  
     # ---------------------------------
     
-    log(delta[s, j]) <- gamma0 + Jraneff[days[s,j]]
+    log(delta[s, j]) <- Jraneff[days[s,j]]
     #delta[s, j] <- max(0, exp(gamma0 + Jraneff[days[s,j]]) + (kappa1 * N[s]) + (kappa2 * (N[s])^2))
 
     # ---------------------------------
@@ -455,11 +466,13 @@ cat(" model {
     tp[s, j] <- delta[s, j] * N[s] / (delta[s, j] * N[s] + omega)
 
     # ---------------------------------
-    # Posterior Predictive Checks  
+    # Predicted Abundance  
     # ---------------------------------
     y.pred[s, j] ~ dbin(p.a[s, j], 1)
     resid.y[s, j] <- pow(pow(y[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
     resid.y.pred[s, j] <- pow(pow(y.pred[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
+    
+
     } # End J
     
     # Surveys with Vocalizations
@@ -468,13 +481,26 @@ cat(" model {
     # ---------------------------------
     # Vocalizations  
     # ---------------------------------
-    v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]])
+    
+    # Zero Truncated Poisson
+    #v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]])T(1, )
+    
+    # Zero Truncated Negative Binomial
+    v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
     
     # ---------------------------------
-    # Predicted Values  
+    # Predicted calls  
     # ---------------------------------
-    v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]]) 
-    mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega)  / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega)))))
+    
+    # Zero Truncated Poisson
+    # v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]]) T(1, )
+    # mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega)  / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega)))))
+    # resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
+    # resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
+    
+    # Zero Truncated Negative Binomial
+    v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
+    mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]]) / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]])))
     resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
     resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
     
@@ -492,11 +518,6 @@ cat(" model {
   } # End S
   
   # -------------------------------------------
-  # Derive Abundance
-  # -------------------------------------------
-  N_tot <- sum(N[])
-
-  # -------------------------------------------
   # Bayesian P-value
   # -------------------------------------------
   for (s in 1:S.A) {
@@ -510,7 +531,15 @@ cat(" model {
   bp.y <- step(fit.y.pred - fit.y)
   bp.v <- step(fit.v.pred - fit.v)
   
-}", fill=TRUE, file="./JAGs_Models/Wolfe_AV_Mod1.txt")
+  # -------------------------------------------
+  # Derive Parameters
+  # -------------------------------------------
+  
+  # Abundance
+  N_tot <- sum(N[])
+
+}
+", fill=TRUE, file="./JAGs_Models/Wolfe_AV_Mod1.txt")
 # ------------End Model-------------
 
 # Fit Model
@@ -527,9 +556,21 @@ fm.AV.1 <- jags(data = Wolfe14.data,
               n.cores = workers,
               verbose = TRUE)
 
+# Save model run
+saveRDS(fm.AV.1, "./Data/Model_Data/ARU_WolfeAV_fm1.rds")
+
 # Check Convergence
 check_rhat(fm.AV.1$Rhat, threshold = 1.1)  # Rhat
 mcmcplot(fm.AV.1$samples) # Trace plots
+
+# Posterior Predictive Checks
+pp.check(fm.AV.1, "fit.y", "fit.y.pred", xlab='Observed data', ylab='Simulated data', main='PPC Abundance')# Abundance
+pp.check(fm.AV.1, "fit.v", "fit.v.pred", xlab='Observed data', ylab='Simulated data', main='PPC Call')# Call       
+
+# Check Model fit, P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+cat("Abundance Model Bayesian p-value =", fm.AV.1$summary["bp.y",1], "\n") # Abundance
+cat("Call Model Bayesian p-value =", fm.AV.1$summary["bp.v",1], "\n") # Call
+
 
 
 # -------------------------------------------------------
@@ -612,7 +653,7 @@ cov2_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov2_scaled
 # 
 # # Initialize matrix to store predictions
 # interaction_preds <- matrix(NA, nrow = length(beta0_samples), ncol = nrow(interaction_grid))
-# 
+ 
 
 # Generate predictions
 for (i in 1:length(beta0_samples)) {
@@ -660,7 +701,7 @@ cov2_pred_df <- data.frame(
 #   interaction_preds_mean = interaction_preds_mean,
 #   interaction_preds_LCI = interaction_preds_LCI,
 #   interaction_preds_HCI = interaction_preds_HCI)
-# 
+
 
 # Plot effect
 
@@ -843,7 +884,7 @@ abund_df$Density <- abund_df$Density * 2710
 
 ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) + 
   geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
-  labs(x = "Model", y = "Density (N/acre)") +
+  labs(x = "Model", y = "Total Abundance") +
   scale_fill_manual(values = c("AV Wolfe" = "red")) +  # Custom colors
   scale_y_continuous(limits = c(0, 1000),
                      breaks = seq(0, 1000, by = 100),
