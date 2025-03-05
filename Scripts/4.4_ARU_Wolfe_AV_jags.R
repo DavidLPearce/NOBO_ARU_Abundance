@@ -299,10 +299,10 @@ str(Wolfe14.data)
 # -------------------
 # MCMC Specifications
 # -------------------
-n.iter = 700000
-n.burnin = 80000
+n.iter = 1000 #700000
+n.burnin = 100 #80000
 n.chains = 3 
-n.thin = 10
+n.thin = 2 #10
 n.adapt = 5000
 
 # Rough idea posterior samples
@@ -330,18 +330,19 @@ params <- c('lambda', # Abundance
              # 'kappa2',
              'Jraneff',
              'tau_j',
-             'sigma_j',
              'omega',
              'delta',
              'phi',
              'y', # Posterior Predictive Checks
-             'y.pred',
              'v',
-             'v.pred',
+             'fit.y',
+             'fit.y.pred',
+             'fit.v',
+             'fit.v.pred',
              'bp.y', # Bayes p-value
              'bp.v')
 
-   
+
 
 # Initial Values 
 inits <- function() {
@@ -417,10 +418,11 @@ cat(" model {
   }
   
   # Overdispersion
-  a_phi ~ dunif(0, 100)
+  shape_phi ~ dgamma(2, 0.1)   
+  rate_phi ~ dgamma(2, 0.1)    
   for (s in 1:S) {
     for (j in 1:J.A) {
-      phi[s, j] ~ dgamma(a_phi, a_phi)
+      phi[s, j] ~ dgamma(shape_phi, rate_phi)
     }
   }
 
@@ -471,7 +473,6 @@ cat(" model {
     y.pred[s, j] ~ dbin(p.a[s, j], 1)
     resid.y[s, j] <- pow(pow(y[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
     resid.y.pred[s, j] <- pow(pow(y.pred[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
-    
 
     } # End J
     
@@ -503,7 +504,7 @@ cat(" model {
     mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]]) / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]])))
     resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
     resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
-    
+
     } # End J.r
   } # End S
   
@@ -542,6 +543,10 @@ cat(" model {
 ", fill=TRUE, file="./JAGs_Models/Wolfe_AV_Mod1.txt")
 # ------------End Model-------------
 
+# -------------------------------------------------------
+# Fit Model
+# -------------------------------------------------------
+
 # Fit Model
 fm.AV.1 <- jags(data = Wolfe14.data,
               inits = inits,
@@ -558,16 +563,75 @@ fm.AV.1 <- jags(data = Wolfe14.data,
 
 # Save model run
 saveRDS(fm.AV.1, "./Data/Model_Data/ARU_WolfeAV_fm1.rds")
+# fm.AV.1 <- readRDS("./Data/Model_Data/ARU_WolfeAV_fm1.rds")
 
+# -------------------------------------------------------
 # Check Convergence
-check_rhat(fm.AV.1$Rhat, threshold = 1.1)  # Rhat
-mcmcplot(fm.AV.1$samples) # Trace plots
+# -------------------------------------------------------
 
+# Rhat
+check_rhat(fm.AV.1$Rhat, threshold = 1.1)  
+
+# Trace plots
+mcmcplots::mcmcplot(fm.AV.1$samples) 
+
+# -------------------------------------------------------
 # Posterior Predictive Checks
-pp.check(fm.AV.1, "fit.y", "fit.y.pred", xlab='Observed data', ylab='Simulated data', main='PPC Abundance')# Abundance
-pp.check(fm.AV.1, "fit.v", "fit.v.pred", xlab='Observed data', ylab='Simulated data', main='PPC Call')# Call       
+# -------------------------------------------------------
 
-# Check Model fit, P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+## Scatter Plot
+# From: https://kenkellner.com/jagsUI/reference/ppcheck.html
+
+# Abundance
+jagsUI::pp.check(fm.AV.1,            
+                 observed = "fit.y", 
+                 simulated = "fit.y.pred", 
+                 xlab='Observed data', 
+                 ylab='Simulated data',
+                 main='PPC Abundance')
+
+# Call 
+jagsUI::pp.check(fm.AV.1,            
+                 observed = "fit.v", 
+                 simulated = "fit.v.pred", 
+                 xlab='Observed data', 
+                 ylab='Simulated data', 
+                 main='PPC Call') 
+
+## Density
+
+# Abundance
+fit_y_data <- data.frame(
+  value = c(fm.AV.1$sims.list$fit.y, fm.AV.1$sims.list$fit.y.pred),
+  type = rep(c("Observed", "Predicted"), each = length(fm.AV.1$sims.list$fit.v)))
+
+ggplot(fit_y_data, aes(x = value, fill = type)) +
+  geom_density(alpha = 0.5) +  # Adjust transparency with alpha
+  scale_fill_manual(values = c("blue", "red")) +  # Set colors for observed and predicted
+  labs(title = "Posterior Predictive Check for Calls", 
+       x = "Fit Values", 
+       y = "Density") +
+  theme_minimal() +
+  theme(legend.title = element_blank())  
+
+
+# Calls
+fit_v_data <- data.frame(
+  value = c(fm.AV.1$sims.list$fit.v, fm.AV.1$sims.list$fit.v.pred),
+  type = rep(c("Observed", "Predicted"), each = length(fm.AV.1$sims.list$fit.v)))
+
+ggplot(fit_v_data, aes(x = value, fill = type)) +
+  geom_density(alpha = 0.5) +  # Adjust transparency with alpha
+  scale_fill_manual(values = c("blue", "red")) +  # Set colors for observed and predicted
+  labs(title = "Posterior Predictive Check for Calls", 
+       x = "Fit Values", 
+       y = "Density") +
+  theme_minimal() +
+  theme(legend.title = element_blank())  
+
+
+## Bayes P-value
+# P-value = 0.5 means good fit, = 1 or 0 is a poor fit
 cat("Abundance Model Bayesian p-value =", fm.AV.1$summary["bp.y",1], "\n") # Abundance
 cat("Call Model Bayesian p-value =", fm.AV.1$summary["bp.v",1], "\n") # Call
 
@@ -760,60 +824,60 @@ ggplot(cov2_pred_df, aes(x = cov2_scaled, y = cov2_preds_mean)) +
 # Call Rate 
 # -------------------------------------------------------
 
-# Extract rows containing "delta" in the row names
-delta_rows <- fm.AV.1$summary[grepl("delta", rownames(fm.AV.1$summary)), ]
-
-# Select only mean and standard deviation
-delta_values <- delta_rows[, c("mean", "sd")]
-
-# Convert to data frame
-delta_values <- as.data.frame(delta_values)
-
-# Print the result
-print(delta_values)
-
-# Convert row names to a column and extract site/survey numbers
-delta_df <- delta_values %>%
-  rownames_to_column(var = "delta_id") %>%
-  mutate(
-    site = as.numeric(str_extract(delta_id, "(?<=\\[)\\d+")),   # Extract site number
-    survey = as.numeric(str_extract(delta_id, "(?<=,)\\d+"))   # Extract survey number
-  ) %>%
-  rename(
-    SD = sd  # Rename standard deviation column
-  )
-
-# Print result
-head(delta_df)
-
-# Plot Delta Mean
-ggplot(delta_df, aes(x = survey, y = site, fill = mean)) +
-  geom_tile() +   
-  geom_text(aes(label = round(mean, 1)), color = "black", size = 3) +  
-  scale_fill_viridis_c(option = "cividis") +  
-  theme_minimal() +
-  labs(title = "Delta Mean Values",
-       x = "Survey",
-       y = "Site",
-       fill = "Mean Delta") +
-  scale_x_continuous(breaks = 1:14) +   
-  scale_y_continuous(breaks = 1:27) +   
-  theme(panel.grid = element_blank())
-
-
-# Plot Delta SD
-ggplot(delta_df, aes(x = survey, y = site, fill = SD)) +
-  geom_tile() +   
-  geom_text(aes(label = round(SD, 2)), color = "black", size = 3) +  
-  scale_fill_viridis_c(option = "viridis") +  
-  theme_minimal() +
-  labs(title = "Delta Standard Deviation",
-       x = "Survey",
-       y = "Site",
-       fill = "SD Delta") +
-  scale_x_continuous(breaks = 1:14) +   
-  scale_y_continuous(breaks = 1:27) +   
-  theme(panel.grid = element_blank())
+# # Extract rows containing "delta" in the row names
+# delta_rows <- fm.AV.1$summary[grepl("delta", rownames(fm.AV.1$summary)), ]
+# 
+# # Select only mean and standard deviation
+# delta_values <- delta_rows[, c("mean", "sd")]
+# 
+# # Convert to data frame
+# delta_values <- as.data.frame(delta_values)
+# 
+# # Print the result
+# print(delta_values)
+# 
+# # Convert row names to a column and extract site/survey numbers
+# delta_df <- delta_values %>%
+#   rownames_to_column(var = "delta_id") %>%
+#   mutate(
+#     site = as.numeric(str_extract(delta_id, "(?<=\\[)\\d+")),   # Extract site number
+#     survey = as.numeric(str_extract(delta_id, "(?<=,)\\d+"))   # Extract survey number
+#   ) %>%
+#   rename(
+#     SD = sd  # Rename standard deviation column
+#   )
+# 
+# # Print result
+# head(delta_df)
+# 
+# # Plot Delta Mean
+# ggplot(delta_df, aes(x = survey, y = site, fill = mean)) +
+#   geom_tile() +   
+#   geom_text(aes(label = round(mean, 1)), color = "black", size = 3) +  
+#   scale_fill_viridis_c(option = "cividis") +  
+#   theme_minimal() +
+#   labs(title = "Delta Mean Values",
+#        x = "Survey",
+#        y = "Site",
+#        fill = "Mean Delta") +
+#   scale_x_continuous(breaks = 1:14) +   
+#   scale_y_continuous(breaks = 1:27) +   
+#   theme(panel.grid = element_blank())
+# 
+# 
+# # Plot Delta SD
+# ggplot(delta_df, aes(x = survey, y = site, fill = SD)) +
+#   geom_tile() +   
+#   geom_text(aes(label = round(SD, 2)), color = "black", size = 3) +  
+#   scale_fill_viridis_c(option = "viridis") +  
+#   theme_minimal() +
+#   labs(title = "Delta Standard Deviation",
+#        x = "Survey",
+#        y = "Site",
+#        fill = "SD Delta") +
+#   scale_x_continuous(breaks = 1:14) +   
+#   scale_y_continuous(breaks = 1:27) +   
+#   theme(panel.grid = element_blank())
 
 
 
@@ -821,29 +885,29 @@ ggplot(delta_df, aes(x = survey, y = site, fill = SD)) +
 # Conspecific effects *** not finished??
 # -------------------------------------------------------
 
-# Extracting Kappa
-kappa1_samples <- combined_chains[ ,"kappa1"]
-kappa2_samples <- combined_chains[ ,"kappa2"]
-
-summary(kappa1_samples)
-summary(kappa2_samples)
-
-# Compute mean and 95% credible intervals
-kappa1_mean <- mean(kappa1_samples)
-kappa1_ci <- quantile(kappa1_samples, c(0.025, 0.975))
-
-kappa2_mean <- mean(kappa2_samples)
-kappa2_ci <- quantile(kappa2_samples, c(0.025, 0.975))
-
-N_vals <- seq(0, 10, length.out = 1000)  # Simulated abundance values
-kappa_effect <- kappa1_mean * N_vals + kappa2_mean * (N_vals^2)
-
-ggplot(data.frame(N_vals, kappa_effect), aes(x = N_vals, y = kappa_effect)) +
-  geom_line(color = "black") +
-  labs(title = "Conspecific Effect",
-       x = "Calling Males",
-       y = "Conspecific Effect on Call Rate") +
-  theme_minimal()
+# # Extracting Kappa
+# kappa1_samples <- combined_chains[ ,"kappa1"]
+# kappa2_samples <- combined_chains[ ,"kappa2"]
+# 
+# summary(kappa1_samples)
+# summary(kappa2_samples)
+# 
+# # Compute mean and 95% credible intervals
+# kappa1_mean <- mean(kappa1_samples)
+# kappa1_ci <- quantile(kappa1_samples, c(0.025, 0.975))
+# 
+# kappa2_mean <- mean(kappa2_samples)
+# kappa2_ci <- quantile(kappa2_samples, c(0.025, 0.975))
+# 
+# N_vals <- seq(0, 10, length.out = 1000)  # Simulated abundance values
+# kappa_effect <- kappa1_mean * N_vals + kappa2_mean * (N_vals^2)
+# 
+# ggplot(data.frame(N_vals, kappa_effect), aes(x = N_vals, y = kappa_effect)) +
+#   geom_line(color = "black") +
+#   labs(title = "Conspecific Effect",
+#        x = "Calling Males",
+#        y = "Conspecific Effect on Call Rate") +
+#   theme_minimal()
 
 # -------------------------------------------------------
 #  Estimating Abundance 
