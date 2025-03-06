@@ -264,7 +264,7 @@ for (row in 1:NROW(site_dat)) {
   
   # Plot and Export Woody Patches
   woodyclumps_Plotfile <- paste0(output_dir, SiteID, "_WoodyClumps.png")
-  png(woodyclumps_Plotfile, width = 8, height = 6, units = "in", res = 300)  # Set resolution to 300 DPI
+  png(woodyclumps_Plotfile, width = 8, height = 6, units = "in", res = 300)    
   plot(woody_clumps, main = "Woody Clumps", col = turbo(cellStats(woody_clumps, stat = "max"), direction = 1))
   dev.off()
   
