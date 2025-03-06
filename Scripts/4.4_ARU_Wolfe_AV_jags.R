@@ -321,18 +321,19 @@ params <- c('lambda', # Abundance
              'beta1',
              'beta2',
              'beta3',
-             'sigma_s',
              'alpha0', # Detection 
              'alpha1', 
              'alpha2',
              'gamma0', #  Vocalization
              # 'kappa1',
              # 'kappa2',
+             'gamma1',
+             'sigma',
              'Jraneff',
              'tau_j',
              'omega',
              'delta',
-             'phi',
+             # 'phi',
              'y', # Posterior Predictive Checks
              'v',
              'fit.y',
@@ -357,8 +358,8 @@ inits <- function() {
     alpha1 = 0, 
     alpha2 = 0,
     gamma0 = log(18),
-    # kappa1 = 0.6, # Vocalization
-    # kappa2 = -0.06, 
+    kappa1 = 0.6, # Vocalization
+    kappa2 = -0.06,
     omega = 0.001,
     tau_j = 2,
     a_phi = runif(1, 0, 5)
@@ -404,27 +405,33 @@ cat(" model {
   omega  ~ dunif(0, 1000)  
   
   # Calls in 30 mins by 1 individual, which is 18 +/- 13.5
-  gamma0 ~ dnorm(log(18), 3/4)
+  #gamma0 ~ dnorm(log(18), 3/4)
+  gamma0 ~ dunif(log(1), log(30))
   
   # Conspecific density effects
   # kappa1 ~ dnorm(2, 1) T(0, 1) # mean of 0.6, sd of 0.4 i.e., (1/1^2); constrained between 0 and 1
   # kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04 i.e., (1/0.04^2); constrained between -1 and 0
+  
+  # Gaussian Kernel
+  gamma1 ~ dnorm(0, 10) 
+  sigma ~ dunif(0, 100)  # A uniform prior between 0 and 100
+
 
   # Survey random effect
-  # mu_j ~ dnorm(0, 5)
+  mu_j ~ dnorm(0, 5)
   tau_j ~ dgamma(5, 5) # variance
   for (j in 1:n.days) {
-    Jraneff[j] ~ dnorm(gamma0, tau_j) 
+    Jraneff[j] ~ dnorm(mu_j, tau_j) 
   }
   
-  # Overdispersion
-  shape_phi ~ dgamma(2, 0.1)   
-  rate_phi ~ dgamma(2, 0.1)    
-  for (s in 1:S) {
-    for (j in 1:J.A) {
-      phi[s, j] ~ dgamma(shape_phi, rate_phi)
-    }
-  }
+  # Overdispersion for Negative Binomial
+  # shape_phi ~ dgamma(2, 0.1)   
+  # rate_phi ~ dgamma(2, 0.1)    
+  # for (s in 1:S) {
+  #   for (j in 1:J.A) {
+  #     phi[s, j] ~ dgamma(shape_phi, rate_phi)
+  #   }
+  # }
 
 
   # -------------------------------------------
@@ -439,7 +446,7 @@ cat(" model {
     # ---------------------------------
     # Abundance Submodel  
     # ---------------------------------
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 10] # + beta3 * X.abund[s, 17] * X.abund[s, 14]
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 12] + beta3 * X.abund[s, 7] * X.abund[s, 12]
     N[s] ~ dpois(lambda[s] * Offset)
     
     # Survey
@@ -454,7 +461,13 @@ cat(" model {
     # Call rate Submodel  
     # ---------------------------------
     
-    log(delta[s, j]) <- Jraneff[days[s,j]]
+    # Intercept + Survey Random Effect
+    log(delta[s, j]) <- gamma0 + Jraneff[days[s,j]]
+    
+    # Intercept + Survey Random Effect + Conspecific effect Gaussian Kernel
+    log(delta[s, j]) <- gamma0 + Jraneff[days[s, j]] + (gamma1 * exp(-(v[s, j]^2) / (2 * (sigma^2))))
+    
+    # Intercept + Survey Random Effect + Conspecific effect Linear & Quadratic - if hits zero stays at zero
     #delta[s, j] <- max(0, exp(gamma0 + Jraneff[days[s,j]]) + (kappa1 * N[s]) + (kappa2 * (N[s])^2))
 
     # ---------------------------------
@@ -484,26 +497,26 @@ cat(" model {
     # ---------------------------------
     
     # Zero Truncated Poisson
-    #v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]])T(1, )
+    v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]])T(1, )
     
     # Zero Truncated Negative Binomial
-    v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
+    #v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]])T(1, )
     
     # ---------------------------------
     # Predicted calls  
     # ---------------------------------
     
     # Zero Truncated Poisson
-    # v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]]) T(1, )
-    # mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega)  / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega)))))
-    # resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
-    # resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
-    
-    # Zero Truncated Negative Binomial
-    v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
-    mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]]) / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]])))
+    v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]]) T(1, )
+    mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega)  / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega)))))
     resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
     resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
+    
+    # Zero Truncated Negative Binomial
+    # v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
+    # mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]]) / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]])))
+    # resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
+    # resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
 
     } # End J.r
   } # End S
@@ -540,7 +553,7 @@ cat(" model {
   N_tot <- sum(N[])
 
 }
-", fill=TRUE, file="./JAGs_Models/Wolfe_AV_Mod1.txt")
+", fill=TRUE, file="./JAGs_Models/AV_Wolfe_Mod1.txt")
 # ------------End Model-------------
 
 # -------------------------------------------------------
@@ -548,7 +561,7 @@ cat(" model {
 # -------------------------------------------------------
 
 # Fit Model
-fm.AV.1 <- jags(data = Wolfe14.data,
+fm.1 <- jags(data = Wolfe14.data,
               inits = inits,
               parameters.to.save = params,
               model.file = "./JAGs_Models/Wolfe_AV_Mod1.txt",
@@ -561,19 +574,19 @@ fm.AV.1 <- jags(data = Wolfe14.data,
               n.cores = workers,
               verbose = TRUE)
 
-# Save model run
-saveRDS(fm.AV.1, "./Data/Model_Data/ARU_WolfeAV_fm1.rds")
-# fm.AV.1 <- readRDS("./Data/Model_Data/ARU_WolfeAV_fm1.rds")
+# Save model
+saveRDS(fm.1, "./Data/Model_Data/AV_Wolfe_fm1.rds")
+# fm.1 <- readRDS("./Data/Model_Data/AV_Wolfe_fm1.rds")
 
 # -------------------------------------------------------
 # Check Convergence
 # -------------------------------------------------------
 
 # Rhat
-check_rhat(fm.AV.1$Rhat, threshold = 1.1)  
+check_rhat(fm.1$Rhat, threshold = 1.1)  
 
 # Trace plots
-mcmcplots::mcmcplot(fm.AV.1$samples) 
+mcmcplots::mcmcplot(fm.1$samples) 
 
 # -------------------------------------------------------
 # Posterior Predictive Checks
@@ -582,13 +595,14 @@ mcmcplots::mcmcplot(fm.AV.1$samples)
 # --------------
 # Bayes P-value
 # -------------- 
+
 # P-value = 0.5 means good fit, = 1 or 0 is a poor fit
 
 # Abundance
-cat("Abundance Model Bayesian p-value =", fm.AV.1$summary["bp.y",1], "\n")
+cat("Abundance Model Bayesian p-value =", fm.1$summary["bp.y",1], "\n")
 
 # Call    
-cat("Call Model Bayesian p-value =", fm.AV.1$summary["bp.v",1], "\n") 
+cat("Call Model Bayesian p-value =", fm.1$summary["bp.v",1], "\n") 
 
 # --------------
 # Scatter Plot
@@ -598,27 +612,33 @@ cat("Call Model Bayesian p-value =", fm.AV.1$summary["bp.v",1], "\n")
 # Value given is Bayes p-value
 
 # Abundance
-jagsUI::pp.check(fm.AV.1,            
+jagsUI::pp.check(fm.1,            
                  observed = "fit.y", 
                  simulated = "fit.y.pred", 
                  xlab='Observed data', 
                  ylab='Simulated data',
                  main='PPC Abundance')
-jpeg("./Figures/PPC/AV_Wolfe_Abund_Scatter.jpeg", width = 8, height = 6, units = "in", res = 300) # Save
-jagsUI::pp.check(fm.AV.1, observed = "fit.y", simulated = "fit.y.pred", xlab='Observed data', ylab='Simulated data', main='PPC Abundance')           
+dev.off() 
+
+# Save
+jpeg("./Figures/PPC/AV_Wolfe_Abund_Scatter.jpeg", width = 8, height = 6, units = "in", res = 300) 
+jagsUI::pp.check(fm.1, observed = "fit.y", simulated = "fit.y.pred", xlab='Observed data', ylab='Simulated data', main='PPC Abundance')           
 dev.off()
 
 
 
 # Call 
-jagsUI::pp.check(fm.AV.1,            
+jagsUI::pp.check(fm.1,            
                  observed = "fit.v", 
                  simulated = "fit.v.pred", 
                  xlab='Observed data', 
                  ylab='Simulated data', 
                  main='PPC Call') 
-jpeg("./Figures/PPC/AV_Wolfe_Call_Scatter.jpeg", width = 8, height = 6, units = "in", res = 300) # Save
-jagsUI::pp.check(fm.AV.1,observed = "fit.v", simulated = "fit.v.pred", xlab='Observed data', ylab='Simulated data',main='PPC Call')         
+dev.off() 
+
+# Save
+jpeg("./Figures/PPC/AV_Wolfe_Call_Scatter.jpeg", width = 8, height = 6, units = "in", res = 300) 
+jagsUI::pp.check(fm.1, observed = "fit.v", simulated = "fit.v.pred", xlab='Observed data', ylab='Simulated data',main='PPC Call')         
 dev.off()                 
                   
 
@@ -628,12 +648,12 @@ dev.off()
 
 # Abundance
 fit_y_data <- data.frame(
-  value = c(fm.AV.1$sims.list$fit.y, fm.AV.1$sims.list$fit.y.pred),
-  type = rep(c("Observed", "Predicted"), each = length(fm.AV.1$sims.list$fit.v)))
+  value = c(fm.1$sims.list$fit.y, fm.1$sims.list$fit.y.pred),
+  type = rep(c("Observed", "Predicted"), each = length(fm.1$sims.list$fit.v)))
 
 y_PPC_Dens <- ggplot(fit_y_data, aes(x = value, fill = type)) +
-                    geom_density(alpha = 0.5) +  # Adjust transparency with alpha
-                    scale_fill_manual(values = c("blue", "red")) +  # Set colors for observed and predicted
+                    geom_density(alpha = 0.5) +   
+                    scale_fill_manual(values = c("blue", "red")) +   
                     labs(title = "Posterior Predictive Check for Calls", 
                          x = "Fit Values", 
                          y = "Density") +
@@ -644,16 +664,16 @@ print(y_PPC_Dens)
 
 # Export                
 ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Wolfe_Abund_Density.jpeg", width = 8, height = 5, dpi = 300) 
-
+dev.off() 
 
 # Calls
 fit_v_data <- data.frame(
-  value = c(fm.AV.1$sims.list$fit.v, fm.AV.1$sims.list$fit.v.pred),
-  type = rep(c("Observed", "Predicted"), each = length(fm.AV.1$sims.list$fit.v)))
+  value = c(fm.1$sims.list$fit.v, fm.1$sims.list$fit.v.pred),
+  type = rep(c("Observed", "Predicted"), each = length(fm.1$sims.list$fit.v)))
 
 v_PPC_Dens <- ggplot(fit_v_data, aes(x = value, fill = type)) +
-  geom_density(alpha = 0.5) +  # Adjust transparency with alpha
-  scale_fill_manual(values = c("blue", "red")) +  # Set colors for observed and predicted
+  geom_density(alpha = 0.5) +   
+  scale_fill_manual(values = c("blue", "red")) +   
   labs(title = "Posterior Predictive Check for Calls", 
        x = "Fit Values", 
        y = "Density") +
@@ -665,7 +685,7 @@ print(v_PPC_Dens)
 
 # Export                
 ggsave(plot = v_PPC_Dens, "./Figures/PPC/AV_Wolfe_Call_Density.jpeg", width = 8, height = 5, dpi = 300) 
-
+dev.off() 
 
 # -------------------------------------------------------
 #
@@ -674,7 +694,7 @@ ggsave(plot = v_PPC_Dens, "./Figures/PPC/AV_Wolfe_Call_Density.jpeg", width = 8,
 # -------------------------------------------------------
 
 # Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm.AV.1$samples))
+combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
 
 # -------------------------------------------------------
 # Beta Estimates
@@ -713,6 +733,8 @@ ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
   theme_minimal() +
   scale_fill_brewer(palette = "Set2") 
 
+# Clear
+dev.off()
 
 
 # Export beta dataframe
@@ -741,23 +763,23 @@ cov2_scaled <- (X.abund[, Cov2_name] - mean(X.abund[, Cov2_name])) / (max(X.abun
 cov1_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov1_scaled))
 cov2_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov2_scaled))
 
-# # Create a meshgrid of covariate values for interaction predictions
-# interaction_grid <- expand.grid(cov1_scaled = cov1_scaled, cov2_scaled = cov2_scaled)
-# interaction_grid$interaction_term <- interaction_grid$cov1_scaled * interaction_grid$cov2_scaled
-# 
-# # Initialize matrix to store predictions
-# interaction_preds <- matrix(NA, nrow = length(beta0_samples), ncol = nrow(interaction_grid))
- 
+# Create a meshgrid of covariate values for interaction predictions
+interaction_grid <- expand.grid(cov1_scaled = cov1_scaled, cov2_scaled = cov2_scaled)
+interaction_grid$interaction_term <- interaction_grid$cov1_scaled * interaction_grid$cov2_scaled
+
+# Initialize matrix to store predictions
+interaction_preds <- matrix(NA, nrow = length(beta0_samples), ncol = nrow(interaction_grid))
+
 
 # Generate predictions
 for (i in 1:length(beta0_samples)) {
   cov1_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov1_scaled # Linear
   cov2_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * cov2_scaled
-  
-  # interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction
-  #   beta1_samples[i] * interaction_grid$cov1_scaled +
-  #   beta2_samples[i] * interaction_grid$cov2_scaled +
-  #   beta3_samples[i] * interaction_grid$interaction_term
+
+  interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction
+    beta1_samples[i] * interaction_grid$cov1_scaled +
+    beta2_samples[i] * interaction_grid$cov2_scaled +
+    beta3_samples[i] * interaction_grid$interaction_term
 
 }
 
@@ -771,9 +793,9 @@ cov2_preds_mean <- apply(cov2_preds, 2, mean)
 cov2_preds_LCI <- apply(cov2_preds, 2, quantile, probs = 0.025)
 cov2_preds_HCI <- apply(cov2_preds, 2, quantile, probs = 0.975)
 
-# interaction_preds_mean <- apply(interaction_preds, 2, mean)
-# interaction_preds_LCI <- apply(interaction_preds, 2, quantile, probs = 0.025)
-# interaction_preds_HCI <- apply(interaction_preds, 2, quantile, probs = 0.975)
+interaction_preds_mean <- apply(interaction_preds, 2, mean)
+interaction_preds_LCI <- apply(interaction_preds, 2, quantile, probs = 0.025)
+interaction_preds_HCI <- apply(interaction_preds, 2, quantile, probs = 0.975)
 
 # Combine into a single data frame
 cov1_pred_df <- data.frame(
@@ -788,13 +810,13 @@ cov2_pred_df <- data.frame(
   cov2_preds_LCI = cov2_preds_LCI,
   cov2_preds_HCI = cov2_preds_HCI)
 
-# interaction_pred_df <- data.frame(
-#   interaction_term = interaction_grid$interaction_term,
-#   cov1_scaled = interaction_grid$cov1_scaled,
-#   cov2_scaled = interaction_grid$cov2_scaled,
-#   interaction_preds_mean = interaction_preds_mean,
-#   interaction_preds_LCI = interaction_preds_LCI,
-#   interaction_preds_HCI = interaction_preds_HCI)
+interaction_pred_df <- data.frame(
+  interaction_term = interaction_grid$interaction_term,
+  cov1_scaled = interaction_grid$cov1_scaled,
+  cov2_scaled = interaction_grid$cov2_scaled,
+  interaction_preds_mean = interaction_preds_mean,
+  interaction_preds_LCI = interaction_preds_LCI,
+  interaction_preds_HCI = interaction_preds_HCI)
 
 
 # Plot effect
@@ -811,6 +833,9 @@ ggplot(cov1_pred_df, aes(x = cov1_scaled, y = cov1_preds_mean)) +
   theme_minimal() +
   theme(panel.grid = element_blank())
 
+# Clear
+dev.off()
+
 # Cov 2
 ggplot(cov2_pred_df, aes(x = cov2_scaled, y = cov2_preds_mean)) +
   geom_line(color = "black", linewidth = 1.5) +
@@ -823,32 +848,36 @@ ggplot(cov2_pred_df, aes(x = cov2_scaled, y = cov2_preds_mean)) +
   theme_minimal() +
   theme(panel.grid = element_blank())
 
+# Clear
+dev.off()
 
-# # Interactive effects
-# plot_ly(interaction_pred_df,
-#         x = ~cov1_scaled,
-#         y = ~cov2_scaled,
-#         z = ~interaction_preds_mean,
-#         type = "contour",
-#         colorscale = "Viridis",
-#         ncontours = 80,
-#         contours = list(showlabels = FALSE),
-#         colorbar = list(title = "Interaction Effect", titlefont = list(size = 14))
-#         )%>%
-#           layout(
-#             title = list(
-#               text = paste0(model_name, " | Interaction Effect "),
-#               font = list(size = 18),
-#               x = 0.5,
-#               xanchor = "center"
-#             ),
-#             xaxis = list(
-#               title = list(text = "Herbaceous Clumpy Index (scaled)",
-#                            font = list(size = 14))),
-#             yaxis = list(
-#               title = list(text = "Woody Aggregation Index (scaled)",
-#                            font = list(size = 14))))
+# Interactive effects
+plot_ly(interaction_pred_df,
+        x = ~cov1_scaled,
+        y = ~cov2_scaled,
+        z = ~interaction_preds_mean,
+        type = "contour",
+        colorscale = "Viridis",
+        ncontours = 80,
+        contours = list(showlabels = FALSE),
+        colorbar = list(title = "Interaction Effect", titlefont = list(size = 14))
+        )%>%
+          layout(
+            title = list(
+              text = paste0(model_name, " | Interaction Effect "),
+              font = list(size = 18),
+              x = 0.5,
+              xanchor = "center"
+            ),
+            xaxis = list(
+              title = list(text = "Herbaceous Clumpy Index (scaled)",
+                           font = list(size = 14))),
+            yaxis = list(
+              title = list(text = "Woody Aggregation Index (scaled)",
+                           font = list(size = 14))))
 
+# Clear
+dev.off()
 
 # -------------------------------------------------------
 # Call Rate 
@@ -995,7 +1024,8 @@ ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) +
 # Total abundance
 abund_summary
 
-
+# Clear
+dev.off()
 
 # Export density dataframe
 saveRDS(dens_df, "./Data/Model_Data/ARU_WolfeAV__dens_df.rds")
