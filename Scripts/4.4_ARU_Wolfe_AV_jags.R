@@ -299,10 +299,10 @@ str(Wolfe14.data)
 # -------------------
 # MCMC Specifications
 # -------------------
-n.iter = 400000
-n.burnin =  60000
+n.iter = 10000 # 400000
+n.burnin = 1000 # 60000
 n.chains = 3 
-n.thin = 15
+n.thin = 3 # 15
 n.adapt = 5000
 
 # Rough idea posterior samples
@@ -321,7 +321,10 @@ params <- c('lambda', # Abundance
              'beta1',
              'beta2',
              'beta3',
-            'S.raneff',
+             'Sraneff',
+             'sigma_s',
+             'mu_s',
+             'theta',
              'alpha0', # Detection 
              'alpha1', 
              'alpha2',
@@ -331,7 +334,7 @@ params <- c('lambda', # Abundance
              'gamma1',
              'sigma',
              'Jraneff',
-             'tau_j',
+             'sigma_j',
              'mu_j',
              #'omega',
              #'delta',
@@ -387,11 +390,22 @@ cat(" model {
   beta2 ~ dnorm(0, 10)
   beta3 ~ dnorm(0, 10)
   
-  # Site random effect on abundance  
+  # Negative Binomial Overdispersion Parameter
+  #theta ~ dunif(0, 50) 
+  
+  # # Site random effect on abundance - Centered Parameterization
+  # mu_s ~ dnorm(0, 5)
+  # sigma_s ~ dunif(0, 10)
+  # for (s in 1:S) {
+  #   Sraneff[s] ~ dnorm(mu_s, sigma_s)  
+  # }
+  
+  # Survey random effect - Non-Centered Parameterization
   mu_s ~ dnorm(0, 5)
   sigma_s ~ dunif(0, 10)
   for (s in 1:S) {
-    S.raneff[s] ~ dnorm(mu_s, sigma_s)  
+    etaS[s] ~ dnorm(0, 1)
+    Sraneff[s] <- mu_s + sigma_s * etaS[s]
   }
 
   # ------------------------
@@ -415,7 +429,7 @@ cat(" model {
   omega  ~ dunif(0, 1000)  
   
   # Intercept
-  #gamma0 ~ dnorm(0, 10)
+  gamma0 ~ dnorm(0, 10)
 
   # Conspecific density effects
   # kappa1 ~ dnorm(2, 1) T(0, 1) # mean of 0.6, sd of 0.4 i.e., (1/1^2); constrained between 0 and 1
@@ -426,12 +440,20 @@ cat(" model {
   sigma ~ dunif(0, 100)  # A uniform prior between 0 and 100
 
 
-  # Survey random effect
+  # Survey random effect - Centered Parameterization
   mu_j ~ dnorm(0, 5)
   sigma_j ~ dunif(0, 10)
   for (j in 1:n.days) {
-    Jraneff[j] ~ dnorm(mu_j, sigma_j) 
+    Jraneff[j] ~ dnorm(mu_j, sigma_j)
   }
+  
+  # Survey random effect - Non-Centered Parameterization
+  # mu_j ~ dnorm(0, 5)
+  # sigma_j ~ dunif(0, 10)
+  # for (j in 1:n.days) {
+  #   etaJ[j] ~ dnorm(0, 1)
+  #   Jraneff[j] <- mu_j + sigma_j * etaJ[j]
+  # }
   
   # Overdispersion for Negative Binomial
   # shape_phi ~ dgamma(2, 0.1)   
@@ -455,8 +477,15 @@ cat(" model {
     # ---------------------------------
     # Abundance Submodel  
     # ---------------------------------
-    log(lambda[s]) <- beta0 + S.raneff[s] # beta1 * X.abund[s, 7] #+  beta2 * X.abund[s, 12] + beta3 * X.abund[s, 7] * X.abund[s, 12]
+    
+    # Poisson
+    log(lambda[s]) <- beta0 + Sraneff[s] # + beta1 * X.abund[s, 7] #+  beta2 * X.abund[s, 12] + beta3 * X.abund[s, 7] * X.abund[s, 12] + Sraneff[s]
     N[s] ~ dpois(lambda[s] * Offset)
+    
+    # Negative Binomial
+    # log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 12] + Sraneff[s] # + beta3 * X.abund[s, 7] * X.abund[s, 12] #+ log(Offset[s]) 
+    # p[s] <- theta / (theta + lambda[s])  
+    # N[s] ~ dnbinom(theta, p[s])   
     
     # Survey
     for (j in 1:J[s]) {
@@ -471,10 +500,10 @@ cat(" model {
     # ---------------------------------
     
     # Intercept + Survey Random Effect
-    #log(delta[s, j]) <- gamma0 + Jraneff[days[s,j]]
+    log(delta[s, j]) <- gamma0 + Jraneff[days[s,j]]
     
     # Intercept + Survey Random Effect + Conspecific effect Gaussian Kernel
-    log(delta[s, j]) <- Jraneff[days[s, j]] #+ (gamma1 * exp(-(v[s, j]^2) / (2 * (sigma^2))))
+    # log(delta[s, j]) <- Jraneff[days[s, j]] + (gamma1 * exp(-(v[s, j]^2) / (2 * (sigma^2))))
     
     # Intercept + Survey Random Effect + Conspecific effect Linear & Quadratic - if hits zero stays at zero
     #delta[s, j] <- max(0, exp(gamma0 + Jraneff[days[s,j]]) + (kappa1 * N[s]) + (kappa2 * (N[s])^2))
@@ -591,12 +620,12 @@ saveRDS(fm.1, "./Data/Model_Data/AV_Wolfe_fm1.rds")
 # Check Convergence
 # -------------------------------------------------------
 
-# Rhat
-check_rhat(fm.1$Rhat, threshold = 1.1)  
-
 # Trace plots
 mcmcplots::mcmcplot(fm.1$samples,
                     parms = params) 
+
+# Rhat
+check_rhat(fm.1$Rhat, threshold = 1.1) 
 
 # -------------------------------------------------------
 # Posterior Predictive Checks
@@ -659,7 +688,7 @@ dev.off()
 # Abundance
 fit_y_data <- data.frame(
   value = c(fm.1$sims.list$fit.y, fm.1$sims.list$fit.y.pred),
-  type = rep(c("Observed", "Predicted"), each = length(fm.1$sims.list$fit.v)))
+  type = rep(c("Observed", "Predicted"), each = length(fm.1$sims.list$fit.y)))
 
 y_PPC_Dens <- ggplot(fit_y_data, aes(x = value, fill = type)) +
                     geom_density(alpha = 0.5) +   
