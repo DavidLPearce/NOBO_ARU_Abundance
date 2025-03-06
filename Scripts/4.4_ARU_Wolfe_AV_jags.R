@@ -299,10 +299,10 @@ str(Wolfe14.data)
 # -------------------
 # MCMC Specifications
 # -------------------
-n.iter = 1000 #700000
-n.burnin = 100 #80000
+n.iter = 400000
+n.burnin =  60000
 n.chains = 3 
-n.thin = 2 #10
+n.thin = 15
 n.adapt = 5000
 
 # Rough idea posterior samples
@@ -321,6 +321,7 @@ params <- c('lambda', # Abundance
              'beta1',
              'beta2',
              'beta3',
+            'S.raneff',
              'alpha0', # Detection 
              'alpha1', 
              'alpha2',
@@ -331,12 +332,11 @@ params <- c('lambda', # Abundance
              'sigma',
              'Jraneff',
              'tau_j',
-             'omega',
-             'delta',
+             'mu_j',
+             #'omega',
+             #'delta',
              # 'phi',
-             'y', # Posterior Predictive Checks
-             'v',
-             'fit.y',
+             'fit.y',# Posterior Predictive Checks
              'fit.y.pred',
              'fit.v',
              'fit.v.pred',
@@ -353,19 +353,22 @@ inits <- function() {
     beta1 = 0,
     beta2 = 0,
     beta3 = 0,
-    tau_s = 5,
     alpha0 = 0, # Detection
     alpha1 = 0, 
     alpha2 = 0,
-    gamma0 = log(18),
-    kappa1 = 0.6, # Vocalization
-    kappa2 = -0.06,
+    # kappa1 = 0.6, # Vocalization
+    # kappa2 = -0.06,
+    gamma0 = log(6),
     omega = 0.001,
-    tau_j = 2,
-    a_phi = runif(1, 0, 5)
+    tau_j = 2
   )
 }#end inits
 
+## Distributions
+# library(ggfortify)
+# ggdistribution(dunif, seq(0, 1, 0.001), min = 0, max = 1)  
+# ggdistribution(dnorm, seq(0,  0, 1))  
+# ggdistribution(dgamma, seq(0, 0.01, 0.01), shape = 0.1, rate = 0.1)  
 
 # ----------------------------- 
 # Model Statement 
@@ -377,25 +380,32 @@ cat(" model {
   # ----------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 5)
+  beta0 ~ dnorm(0, 10)
   
   # Covariate effect
-  beta1 ~ dnorm(0, 5)
-  beta2 ~ dnorm(0, 5)
-  beta3 ~ dnorm(0, 5)
+  beta1 ~ dnorm(0, 10)
+  beta2 ~ dnorm(0, 10)
+  beta3 ~ dnorm(0, 10)
+  
+  # Site random effect on abundance  
+  mu_s ~ dnorm(0, 5)
+  sigma_s ~ dunif(0, 10)
+  for (s in 1:S) {
+    S.raneff[s] ~ dnorm(mu_s, sigma_s)  
+  }
 
   # ------------------------
   # Detection Priors
   # ------------------------
   
   # Intercept
-  alpha0 ~ dnorm(0, 5)
+  alpha0 ~ dnorm(0, 10)
   
   # True individuals
   alpha1 ~ dunif(0, 500) # Constrained to be positive
   
   # Covariate effect
-  alpha2 ~ dnorm(0, 5)
+  alpha2 ~ dnorm(0, 10)
   
   # ------------------------
   # Call Rate Priors
@@ -404,10 +414,9 @@ cat(" model {
   # False positive rate
   omega  ~ dunif(0, 1000)  
   
-  # Calls in 30 mins by 1 individual, which is 18 +/- 13.5
-  #gamma0 ~ dnorm(log(18), 3/4)
-  gamma0 ~ dunif(log(1), log(30))
-  
+  # Intercept
+  #gamma0 ~ dnorm(0, 10)
+
   # Conspecific density effects
   # kappa1 ~ dnorm(2, 1) T(0, 1) # mean of 0.6, sd of 0.4 i.e., (1/1^2); constrained between 0 and 1
   # kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04 i.e., (1/0.04^2); constrained between -1 and 0
@@ -419,9 +428,9 @@ cat(" model {
 
   # Survey random effect
   mu_j ~ dnorm(0, 5)
-  tau_j ~ dgamma(5, 5) # variance
+  sigma_j ~ dunif(0, 10)
   for (j in 1:n.days) {
-    Jraneff[j] ~ dnorm(mu_j, tau_j) 
+    Jraneff[j] ~ dnorm(mu_j, sigma_j) 
   }
   
   # Overdispersion for Negative Binomial
@@ -446,7 +455,7 @@ cat(" model {
     # ---------------------------------
     # Abundance Submodel  
     # ---------------------------------
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 12] + beta3 * X.abund[s, 7] * X.abund[s, 12]
+    log(lambda[s]) <- beta0 + S.raneff[s] # beta1 * X.abund[s, 7] #+  beta2 * X.abund[s, 12] + beta3 * X.abund[s, 7] * X.abund[s, 12]
     N[s] ~ dpois(lambda[s] * Offset)
     
     # Survey
@@ -462,10 +471,10 @@ cat(" model {
     # ---------------------------------
     
     # Intercept + Survey Random Effect
-    log(delta[s, j]) <- gamma0 + Jraneff[days[s,j]]
+    #log(delta[s, j]) <- gamma0 + Jraneff[days[s,j]]
     
     # Intercept + Survey Random Effect + Conspecific effect Gaussian Kernel
-    log(delta[s, j]) <- gamma0 + Jraneff[days[s, j]] + (gamma1 * exp(-(v[s, j]^2) / (2 * (sigma^2))))
+    log(delta[s, j]) <- Jraneff[days[s, j]] #+ (gamma1 * exp(-(v[s, j]^2) / (2 * (sigma^2))))
     
     # Intercept + Survey Random Effect + Conspecific effect Linear & Quadratic - if hits zero stays at zero
     #delta[s, j] <- max(0, exp(gamma0 + Jraneff[days[s,j]]) + (kappa1 * N[s]) + (kappa2 * (N[s])^2))
@@ -561,18 +570,18 @@ cat(" model {
 # -------------------------------------------------------
 
 # Fit Model
-fm.1 <- jags(data = Wolfe14.data,
-              inits = inits,
-              parameters.to.save = params,
-              model.file = "./JAGs_Models/Wolfe_AV_Mod1.txt",
-              n.iter = n.iter,
-              n.burnin = n.burnin,
-              n.chains = n.chains,
-              n.thin = n.thin,
-              n.adapt = n.adapt,
-              parallel = TRUE,
-              n.cores = workers,
-              verbose = TRUE)
+fm.1 <- jagsUI::jags(data = Wolfe14.data,
+                     inits = inits,
+                     parameters.to.save = params,
+                     model.file = "./JAGs_Models/Wolfe_AV_Mod1.txt",
+                     n.iter = n.iter,
+                     n.burnin = n.burnin,
+                     n.chains = n.chains,
+                     n.thin = n.thin,
+                     n.adapt = n.adapt,
+                     parallel = TRUE,
+                     n.cores = workers,
+                     verbose = TRUE)
 
 # Save model
 saveRDS(fm.1, "./Data/Model_Data/AV_Wolfe_fm1.rds")
@@ -586,7 +595,8 @@ saveRDS(fm.1, "./Data/Model_Data/AV_Wolfe_fm1.rds")
 check_rhat(fm.1$Rhat, threshold = 1.1)  
 
 # Trace plots
-mcmcplots::mcmcplot(fm.1$samples) 
+mcmcplots::mcmcplot(fm.1$samples,
+                    parms = params) 
 
 # -------------------------------------------------------
 # Posterior Predictive Checks
@@ -609,7 +619,7 @@ cat("Call Model Bayesian p-value =", fm.1$summary["bp.v",1], "\n")
 # --------------
 
 # From: https://kenkellner.com/jagsUI/reference/ppcheck.html
-# Value given is Bayes p-value
+# Value given is Bayes p-value (rounded in figure)
 
 # Abundance
 jagsUI::pp.check(fm.1,            
@@ -1006,9 +1016,9 @@ abund_df <- dens_df
 abund_df$Density <- abund_df$Density * 2710
 
 ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) + 
-  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
+  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +   
   labs(x = "Model", y = "Total Abundance") +
-  scale_fill_manual(values = c("AV Wolfe" = "red")) +  # Custom colors
+  scale_fill_manual(values = c("AV Wolfe" = "red")) +   
   scale_y_continuous(limits = c(0, 1000),
                      breaks = seq(0, 1000, by = 100),
                      labels = scales::comma) +
@@ -1031,8 +1041,5 @@ dev.off()
 saveRDS(dens_df, "./Data/Model_Data/ARU_WolfeAV__dens_df.rds")
 saveRDS(dens_summary, "./Data/Model_Data/ARU_WolfeAV_dens_summary.rds")
 saveRDS(abund_summary, "./Data/Model_Data/ARU_WolfeAV_abund_summary.rds")
-
-# Save Environment
-#save.image(file = "./Data/Model_Environments/ARU_AV_Wolfe14day_JAGs.RData")
 
 # End Script
