@@ -439,7 +439,7 @@ cat(" model {
     # ---------------------------------
     # Abundance Submodel  
     # ---------------------------------
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 12] # + beta3 * X.abund[s, 7] * X.abund[s, 12]
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 10] # + beta3 * X.abund[s, 17] * X.abund[s, 14]
     N[s] ~ dpois(lambda[s] * Offset)
     
     # Survey
@@ -579,8 +579,23 @@ mcmcplots::mcmcplot(fm.AV.1$samples)
 # Posterior Predictive Checks
 # -------------------------------------------------------
 
-## Scatter Plot
+# --------------
+# Bayes P-value
+# -------------- 
+# P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+
+# Abundance
+cat("Abundance Model Bayesian p-value =", fm.AV.1$summary["bp.y",1], "\n")
+
+# Call    
+cat("Call Model Bayesian p-value =", fm.AV.1$summary["bp.v",1], "\n") 
+
+# --------------
+# Scatter Plot
+# --------------
+
 # From: https://kenkellner.com/jagsUI/reference/ppcheck.html
+# Value given is Bayes p-value
 
 # Abundance
 jagsUI::pp.check(fm.AV.1,            
@@ -589,6 +604,11 @@ jagsUI::pp.check(fm.AV.1,
                  xlab='Observed data', 
                  ylab='Simulated data',
                  main='PPC Abundance')
+jpeg("./Figures/PPC/AV_Wolfe_Abund_Scatter.jpeg", width = 8, height = 6, units = "in", res = 300) # Save
+jagsUI::pp.check(fm.AV.1, observed = "fit.y", simulated = "fit.y.pred", xlab='Observed data', ylab='Simulated data', main='PPC Abundance')           
+dev.off()
+
+
 
 # Call 
 jagsUI::pp.check(fm.AV.1,            
@@ -597,22 +617,33 @@ jagsUI::pp.check(fm.AV.1,
                  xlab='Observed data', 
                  ylab='Simulated data', 
                  main='PPC Call') 
+jpeg("./Figures/PPC/AV_Wolfe_Call_Scatter.jpeg", width = 8, height = 6, units = "in", res = 300) # Save
+jagsUI::pp.check(fm.AV.1,observed = "fit.v", simulated = "fit.v.pred", xlab='Observed data', ylab='Simulated data',main='PPC Call')         
+dev.off()                 
+                  
 
-## Density
+# --------------
+# Density Plot
+# --------------
 
 # Abundance
 fit_y_data <- data.frame(
   value = c(fm.AV.1$sims.list$fit.y, fm.AV.1$sims.list$fit.y.pred),
   type = rep(c("Observed", "Predicted"), each = length(fm.AV.1$sims.list$fit.v)))
 
-ggplot(fit_y_data, aes(x = value, fill = type)) +
-  geom_density(alpha = 0.5) +  # Adjust transparency with alpha
-  scale_fill_manual(values = c("blue", "red")) +  # Set colors for observed and predicted
-  labs(title = "Posterior Predictive Check for Calls", 
-       x = "Fit Values", 
-       y = "Density") +
-  theme_minimal() +
-  theme(legend.title = element_blank())  
+y_PPC_Dens <- ggplot(fit_y_data, aes(x = value, fill = type)) +
+                    geom_density(alpha = 0.5) +  # Adjust transparency with alpha
+                    scale_fill_manual(values = c("blue", "red")) +  # Set colors for observed and predicted
+                    labs(title = "Posterior Predictive Check for Calls", 
+                         x = "Fit Values", 
+                         y = "Density") +
+                    theme_minimal() +
+                    theme(legend.title = element_blank()) 
+# View
+print(y_PPC_Dens)
+
+# Export                
+ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Wolfe_Abund_Density.jpeg", width = 8, height = 5, dpi = 300) 
 
 
 # Calls
@@ -620,7 +651,7 @@ fit_v_data <- data.frame(
   value = c(fm.AV.1$sims.list$fit.v, fm.AV.1$sims.list$fit.v.pred),
   type = rep(c("Observed", "Predicted"), each = length(fm.AV.1$sims.list$fit.v)))
 
-ggplot(fit_v_data, aes(x = value, fill = type)) +
+v_PPC_Dens <- ggplot(fit_v_data, aes(x = value, fill = type)) +
   geom_density(alpha = 0.5) +  # Adjust transparency with alpha
   scale_fill_manual(values = c("blue", "red")) +  # Set colors for observed and predicted
   labs(title = "Posterior Predictive Check for Calls", 
@@ -629,12 +660,11 @@ ggplot(fit_v_data, aes(x = value, fill = type)) +
   theme_minimal() +
   theme(legend.title = element_blank())  
 
+# View
+print(v_PPC_Dens)
 
-## Bayes P-value
-# P-value = 0.5 means good fit, = 1 or 0 is a poor fit
-cat("Abundance Model Bayesian p-value =", fm.AV.1$summary["bp.y",1], "\n") # Abundance
-cat("Call Model Bayesian p-value =", fm.AV.1$summary["bp.v",1], "\n") # Call
-
+# Export                
+ggsave(plot = v_PPC_Dens, "./Figures/PPC/AV_Wolfe_Call_Density.jpeg", width = 8, height = 5, dpi = 300) 
 
 
 # -------------------------------------------------------
@@ -654,18 +684,18 @@ combined_chains <- as.mcmc(do.call(rbind, fm.AV.1$samples))
 beta0_samples <- combined_chains[, "beta0"]
 beta1_samples <- combined_chains[, "beta1"]
 beta2_samples <- combined_chains[, "beta2"]
-#beta3_samples <- combined_chains[, "beta3"]
+beta3_samples <- combined_chains[, "beta3"]
 
 # Means
 beta0 <- mean(beta0_samples)
 beta1 <- mean(beta1_samples)
 beta2 <- mean(beta2_samples)
-# beta3 <- mean(beta3_samples)
+beta3 <- mean(beta3_samples)
 
 # Compute 95% CI for each beta
 beta_df <- data.frame(
-  value = c(beta0_samples, beta1_samples, beta2_samples), #  , beta3_samples
-  parameter = rep(c("beta0", "beta1", "beta2"), each = length(beta0_samples)) #, "beta3"
+  value = c(beta0_samples, beta1_samples, beta2_samples, beta3_samples), #  
+  parameter = rep(c("beta0", "beta1", "beta2", "beta3"), each = length(beta0_samples)) #
 ) %>%
   group_by(parameter) %>%
   filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
