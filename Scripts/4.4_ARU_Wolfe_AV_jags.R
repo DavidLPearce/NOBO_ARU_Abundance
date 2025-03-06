@@ -390,9 +390,6 @@ cat(" model {
   beta2 ~ dnorm(0, 10)
   beta3 ~ dnorm(0, 10)
   
-  # Negative Binomial Overdispersion Parameter
-  #theta ~ dunif(0, 50) 
-  
   # # Site random effect on abundance - Centered Parameterization
   # mu_s ~ dnorm(0, 5)
   # sigma_s ~ dunif(0, 10)
@@ -400,13 +397,13 @@ cat(" model {
   #   Sraneff[s] ~ dnorm(mu_s, sigma_s)  
   # }
   
-  # Survey random effect - Non-Centered Parameterization
-  mu_s ~ dnorm(0, 5)
-  sigma_s ~ dunif(0, 10)
-  for (s in 1:S) {
-    etaS[s] ~ dnorm(0, 1)
-    Sraneff[s] <- mu_s + sigma_s * etaS[s]
-  }
+  # # Survey random effect - Non-Centered Parameterization
+  # mu_s ~ dnorm(0, 5)
+  # sigma_s ~ dunif(0, 10)
+  # for (s in 1:S) {
+  #   etaS[s] ~ dnorm(0, 1)
+  #   Sraneff[s] <- beta0 + sigma_s * etaS[s]
+  # }
 
   # ------------------------
   # Detection Priors
@@ -421,6 +418,13 @@ cat(" model {
   # Covariate effect
   alpha2 ~ dnorm(0, 10)
   
+  # Survey random effect  
+  det_mu_j ~ dnorm(0, 5)
+  det_sigma_j ~ dunif(0, 10)
+  for (j in 1:n.days) {
+    det_Jraneff[j] ~ dnorm(det_mu_j, det_sigma_j)
+  }
+  
   # ------------------------
   # Call Rate Priors
   # ------------------------
@@ -429,23 +433,23 @@ cat(" model {
   omega  ~ dunif(0, 1000)  
   
   # Intercept
-  gamma0 ~ dnorm(0, 10)
+  # gamma0 ~ dunif(log(3), log(50))
 
-  # Conspecific density effects
+  # # Conspecific density effects
   # kappa1 ~ dnorm(2, 1) T(0, 1) # mean of 0.6, sd of 0.4 i.e., (1/1^2); constrained between 0 and 1
   # kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04 i.e., (1/0.04^2); constrained between -1 and 0
   
-  # Gaussian Kernel
-  gamma1 ~ dnorm(0, 10) 
-  sigma ~ dunif(0, 100)  # A uniform prior between 0 and 100
+  # # Gaussian Kernel
+  # gamma1 ~ dnorm(0, 10) 
+  # sigma ~ dunif(0, 100)  # A uniform prior between 0 and 100
 
 
-  # Survey random effect - Centered Parameterization
-  mu_j ~ dnorm(0, 5)
-  sigma_j ~ dunif(0, 10)
-  for (j in 1:n.days) {
-    Jraneff[j] ~ dnorm(mu_j, sigma_j)
-  }
+  # # Survey random effect - Centered Parameterization
+  # v_mu_j ~ dnorm(0, 5)
+  # v_sigma_j ~ dunif(0, 10)
+  # for (j in 1:n.days) {
+  #   v_Jraneff[j] ~ dnorm(v_mu_j, v_sigma_j)
+  # }
   
   # Survey random effect - Non-Centered Parameterization
   # mu_j ~ dnorm(0, 5)
@@ -455,16 +459,6 @@ cat(" model {
   #   Jraneff[j] <- mu_j + sigma_j * etaJ[j]
   # }
   
-  # Overdispersion for Negative Binomial
-  # shape_phi ~ dgamma(2, 0.1)   
-  # rate_phi ~ dgamma(2, 0.1)    
-  # for (s in 1:S) {
-  #   for (j in 1:J.A) {
-  #     phi[s, j] ~ dgamma(shape_phi, rate_phi)
-  #   }
-  # }
-
-
   # -------------------------------------------
   #
   # Likelihood and Process Model 
@@ -479,28 +473,23 @@ cat(" model {
     # ---------------------------------
     
     # Poisson
-    log(lambda[s]) <- beta0 + Sraneff[s] # + beta1 * X.abund[s, 7] #+  beta2 * X.abund[s, 12] + beta3 * X.abund[s, 7] * X.abund[s, 12] + Sraneff[s]
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 12] + beta3 * X.abund[s, 7] * X.abund[s, 12]
     N[s] ~ dpois(lambda[s] * Offset)
-    
-    # Negative Binomial
-    # log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 12] + Sraneff[s] # + beta3 * X.abund[s, 7] * X.abund[s, 12] #+ log(Offset[s]) 
-    # p[s] <- theta / (theta + lambda[s])  
-    # N[s] ~ dnbinom(theta, p[s])   
-    
+
     # Survey
     for (j in 1:J[s]) {
   
     # ---------------------------------
     # Detection Submodel  
     # ---------------------------------
-    logit(p.a[s, j]) <- alpha0 + alpha1*N[s] + alpha2 * X.abund[s,21]  
+    logit(p.a[s, j]) <- alpha0 + alpha1*N[s] + alpha2 * X.abund[s,21] + det_Jraneff[days[s,j]] 
 
     # ---------------------------------
     # Call rate Submodel  
     # ---------------------------------
     
     # Intercept + Survey Random Effect
-    log(delta[s, j]) <- gamma0 + Jraneff[days[s,j]]
+    log(delta[s, j]) <- v_Jraneff[days[s,j]]
     
     # Intercept + Survey Random Effect + Conspecific effect Gaussian Kernel
     # log(delta[s, j]) <- Jraneff[days[s, j]] + (gamma1 * exp(-(v[s, j]^2) / (2 * (sigma^2))))
@@ -536,25 +525,16 @@ cat(" model {
     
     # Zero Truncated Poisson
     v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]])T(1, )
-    
-    # Zero Truncated Negative Binomial
-    #v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]])T(1, )
-    
+
     # ---------------------------------
     # Predicted calls  
     # ---------------------------------
     
     # Zero Truncated Poisson
-    v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]]) T(1, )
+    v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]])T(1, ) 
     mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega)  / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega)))))
     resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
     resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
-    
-    # Zero Truncated Negative Binomial
-    # v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
-    # mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]]) / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]])))
-    # resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
-    # resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
 
     } # End J.r
   } # End S
@@ -693,7 +673,7 @@ fit_y_data <- data.frame(
 y_PPC_Dens <- ggplot(fit_y_data, aes(x = value, fill = type)) +
                     geom_density(alpha = 0.5) +   
                     scale_fill_manual(values = c("blue", "red")) +   
-                    labs(title = "Posterior Predictive Check for Calls", 
+                    labs(title = "Posterior Predictive Check for Abundance", 
                          x = "Fit Values", 
                          y = "Density") +
                     theme_minimal() +
