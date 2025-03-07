@@ -246,7 +246,17 @@ print(X.abund)
 ## Extract and scale detection covariates to matrix ## 
 temp_mat <- scale(weather_dat$Temp_degF)
 wind_mat <- scale(weather_dat$Wind_mph)
-X.det <- as.matrix(data.frame(temp = temp_mat, wind = wind_mat))
+sky_mat <- as.integer(as.factor(weather_dat$Sky_Condition))
+
+# Making a day of year matrix
+doy_vec <- yday(as.Date(paste0(formatted_dates, "_2024"), format = "%b_%d_%Y"))
+
+
+# Combine into a single dataframe where each row corresponds to a survey
+X.det <- as.matrix(data.frame(temp = temp_mat, 
+                              wind = wind_mat,
+                              sky = sky_mat,
+                              doy = doy_vec))
 
 # Area surveyed 
 area <- pi * (200^2) / 4046.86  # in acres
@@ -281,6 +291,8 @@ Wolfe14.data <- list(S = S,
                     J.A = J.A, 
                     sites.a.v = sites.a.v, 
                     n.days = max(J),
+                    n.doy = length(unique(doy_vec)),
+                    Sky_Lvls = length(unique(sky_mat)),
                     X.abund = X.abund,
                     X.det = X.det,
                     Offset = area,
@@ -361,7 +373,7 @@ inits <- function() {
     alpha2 = 0,
     # kappa1 = 0.6, # Vocalization
     # kappa2 = -0.06,
-    gamma0 = log(6),
+    gamma0 = log(10),
     omega = 0.001,
     tau_j = 2
   )
@@ -369,9 +381,10 @@ inits <- function() {
 
 ## Distributions
 # library(ggfortify)
-# ggdistribution(dunif, seq(0, 1, 0.001), min = 0, max = 1)  
-# ggdistribution(dnorm, seq(0,  0, 1))  
-# ggdistribution(dgamma, seq(0, 0.01, 0.01), shape = 0.1, rate = 0.1)  
+# ggdistribution(dunif, seq(0, 1, 0.01), min = 0, max = 1)
+# ggdistribution(dnorm, seq(0, 1, 100), mean = 0, sd = 0.01)
+# ggdistribution(dgamma, seq(0, 0.01, 0.01), shape = 0.1, rate = 0.1)
+
 
 # ----------------------------- 
 # Model Statement 
@@ -383,18 +396,18 @@ cat(" model {
   # ----------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 10)
+  beta0 ~ dnorm(0, 0.01)
   
   # Covariate effect
-  beta1 ~ dnorm(0, 10)
-  beta2 ~ dnorm(0, 10)
-  beta3 ~ dnorm(0, 10)
+  beta1 ~ dnorm(0, 0.01)
+  beta2 ~ dnorm(0, 0.01)
+  beta3 ~ dnorm(0, 0.01)
   
   # # Site random effect on abundance - Centered Parameterization
   # mu_s ~ dnorm(0, 5)
   # sigma_s ~ dunif(0, 10)
   # for (s in 1:S) {
-  #   Sraneff[s] ~ dnorm(mu_s, sigma_s)  
+  #   Sraneff[s] ~ dnorm(mu_s, sigma_s)
   # }
   
   # # Survey random effect - Non-Centered Parameterization
@@ -410,13 +423,16 @@ cat(" model {
   # ------------------------
   
   # Intercept
-  alpha0 ~ dnorm(0, 10)
+  alpha0 <- logit(mu.alpha) # Constrains alpha0 to be between 0 and 1 on the logit scale (propability)
+  mu.alpha ~ dunif(0, 1)
   
   # True individuals
-  alpha1 ~ dunif(0, 500) # Constrained to be positive
+  alpha1 ~ dunif(0, 1000) # Constrained to be positive
   
   # Covariate effect
-  alpha2 ~ dnorm(0, 10)
+  alpha2 ~ dnorm(0, 0.01) # Vegetation Density
+  alpha3 ~ dnorm(0, 0.01) # Wind
+  
   
   # Survey random effect  
   det_mu_j ~ dnorm(0, 5)
@@ -433,7 +449,19 @@ cat(" model {
   omega  ~ dunif(0, 1000)  
   
   # Intercept
-  # gamma0 ~ dunif(log(3), log(50))
+  gamma0 ~ dunif(log(3), log(60))
+  
+  # Fixed Effects
+  
+  # Sky Condition as a factor
+  for (i in 1:Sky_Lvls) {
+      gamma1[i] ~ dnorm(0, 0.01) 
+  }
+  
+  # DOY as a factor
+  for (d in 1:n.doy) {
+      gamma2[d] ~ dnorm(0, 0.01) 
+  }
 
   # # Conspecific density effects
   # kappa1 ~ dnorm(2, 1) T(0, 1) # mean of 0.6, sd of 0.4 i.e., (1/1^2); constrained between 0 and 1
@@ -444,12 +472,12 @@ cat(" model {
   # sigma ~ dunif(0, 100)  # A uniform prior between 0 and 100
 
 
-  # # Survey random effect - Centered Parameterization
-  # v_mu_j ~ dnorm(0, 5)
-  # v_sigma_j ~ dunif(0, 10)
-  # for (j in 1:n.days) {
-  #   v_Jraneff[j] ~ dnorm(v_mu_j, v_sigma_j)
-  # }
+  # Survey random effect - Centered Parameterization
+  v_mu_j ~ dnorm(0, 5)
+  v_sigma_j ~ dunif(0, 10)
+  for (j in 1:n.days) {
+    v_Jraneff[j] ~ dnorm(v_mu_j, v_sigma_j)
+  }
   
   # Survey random effect - Non-Centered Parameterization
   # mu_j ~ dnorm(0, 5)
@@ -478,18 +506,18 @@ cat(" model {
 
     # Survey
     for (j in 1:J[s]) {
-  
+
     # ---------------------------------
     # Detection Submodel  
     # ---------------------------------
-    logit(p.a[s, j]) <- alpha0 + alpha1*N[s] + alpha2 * X.abund[s,21] + det_Jraneff[days[s,j]] 
+    logit(p.a[s, j]) <- alpha0 + alpha1 * N[s] + alpha2 * X.abund[s,21] + alpha3 * X.det[j,2] 
 
     # ---------------------------------
     # Call rate Submodel  
     # ---------------------------------
     
     # Intercept + Survey Random Effect
-    log(delta[s, j]) <- v_Jraneff[days[s,j]]
+    log(delta[s, j]) <- gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]]
     
     # Intercept + Survey Random Effect + Conspecific effect Gaussian Kernel
     # log(delta[s, j]) <- Jraneff[days[s, j]] + (gamma1 * exp(-(v[s, j]^2) / (2 * (sigma^2))))
@@ -508,7 +536,7 @@ cat(" model {
     tp[s, j] <- delta[s, j] * N[s] / (delta[s, j] * N[s] + omega)
 
     # ---------------------------------
-    # Predicted Abundance  
+    # PPC Abundance  
     # ---------------------------------
     y.pred[s, j] ~ dbin(p.a[s, j], 1)
     resid.y[s, j] <- pow(pow(y[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
@@ -523,14 +551,13 @@ cat(" model {
     # Vocalizations  
     # ---------------------------------
     
-    # Zero Truncated Poisson
+    # ztPoisson
     v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]])T(1, )
 
     # ---------------------------------
-    # Predicted calls  
+    # PPC calls  
     # ---------------------------------
     
-    # Zero Truncated Poisson
     v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]])T(1, ) 
     mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega)  / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega)))))
     resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
@@ -593,7 +620,7 @@ fm.1 <- jagsUI::jags(data = Wolfe14.data,
                      verbose = TRUE)
 
 # Save model
-saveRDS(fm.1, "./Data/Model_Data/AV_Wolfe_fm1.rds")
+#saveRDS(fm.1, "./Data/Model_Data/AV_Wolfe_fm1.rds")
 # fm.1 <- readRDS("./Data/Model_Data/AV_Wolfe_fm1.rds")
 
 # -------------------------------------------------------
@@ -601,9 +628,8 @@ saveRDS(fm.1, "./Data/Model_Data/AV_Wolfe_fm1.rds")
 # -------------------------------------------------------
 
 # Trace plots
-mcmcplots::mcmcplot(fm.1$samples,
-                    parms = params) 
-
+mcmcplots::mcmcplot(fm.1$samples, parms = params) 
+                    
 # Rhat
 check_rhat(fm.1$Rhat, threshold = 1.1) 
 
