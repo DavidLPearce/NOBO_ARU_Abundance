@@ -365,8 +365,6 @@ print(site_dat)
 
 
 
-
-
 # -----------------------------------
 # Formatting
 # -----------------------------------
@@ -377,32 +375,37 @@ unique(colnames(site_dat))
 # Remove site, lat, long
 X.abund <- site_dat[,-c(2:3)]
 
-# Mean and center scale values
-X.abund$woody_prp <- scale(site_dat$woody_prp, center = TRUE, scale = TRUE)
-X.abund$herb_prp <- scale(site_dat$herb_prp, center = TRUE, scale = TRUE)
-X.abund$open_prp <- scale(site_dat$open_prp, center = TRUE, scale = TRUE)
-X.abund$woody_mnParea <- scale(site_dat$woody_mnParea, center = TRUE, scale = TRUE)
-X.abund$herb_mnParea <- scale(site_dat$herb_mnParea, center = TRUE, scale = TRUE)
-X.abund$woody_ClmIdx <- scale(site_dat$woody_ClmIdx, center = TRUE, scale = TRUE)
-X.abund$herb_ClmIdx <- scale(site_dat$herb_ClmIdx, center = TRUE, scale = TRUE)
-X.abund$woody_ShpInx <- scale(site_dat$woody_ShpInx, center = TRUE, scale = TRUE)
-X.abund$herb_ShpInx <- scale(site_dat$herb_ShpInx, center = TRUE, scale = TRUE)
-X.abund$woody_lrgPInx <- scale(site_dat$woody_lrgPInx, center = TRUE, scale = TRUE)
-X.abund$herb_lrgPInx  <- scale(site_dat$herb_lrgPInx, center = TRUE, scale = TRUE)
-X.abund$woody_AggInx <- scale(site_dat$woody_AggInx, center = TRUE, scale = TRUE)
-X.abund$herb_AggInx  <- scale(site_dat$herb_AggIn, center = TRUE, scale = TRUE)
-X.abund$woody_EdgDens <- scale(site_dat$woody_EdgDens, center = TRUE, scale = TRUE)
-X.abund$herb_EdgDens  <- scale(site_dat$herb_EdgDens, center = TRUE, scale = TRUE)
-X.abund$woody_Pdens <- scale(site_dat$woody_Pdens, center = TRUE, scale = TRUE)
-X.abund$herb_Pdens  <- scale(site_dat$herb_Pdens, center = TRUE, scale = TRUE)
-X.abund$woody_Npatches <- scale(site_dat$woody_Npatches, center = TRUE, scale = TRUE)
-X.abund$herb_Npatches  <- scale(site_dat$herb_Npatches, center = TRUE, scale = TRUE)
-X.abund$woody_mnFocal30m  <- scale(site_dat$woody_mnFocal30m, center = TRUE, scale = TRUE)
-X.abund$vegDens50m  <- scale(site_dat$vegDens50m, center = TRUE, scale = TRUE)
+# Mean and center scale values 
+# scale() also works, but stating to center or scale (scale(object, center = TRUE, scale = TRUE)) causes issues. 
+# So, manually doing it to avoid what ever issue scale() was causing.
+X.abund$woody_prp <- (X.abund$woody_prp - mean(X.abund$woody_prp, na.rm = TRUE)) / sd(X.abund$woody_prp, na.rm = TRUE) 
+X.abund$herb_prp <- (X.abund$herb_prp - mean(X.abund$herb_prp, na.rm = TRUE)) / sd(X.abund$herb_prp, na.rm = TRUE)    # 
+X.abund$open_prp <- (X.abund$open_prp - mean(X.abund$open_prp, na.rm = TRUE)) / sd(X.abund$open_prp, na.rm = TRUE)    # 
+X.abund$woody_mnParea <- (X.abund$woody_mnParea - mean(X.abund$woody_mnParea, na.rm = TRUE)) / sd(X.abund$woody_mnParea, na.rm = TRUE)
+X.abund$herb_mnParea <- (X.abund$herb_mnParea - mean(X.abund$herb_mnParea, na.rm = TRUE)) / sd(X.abund$herb_mnParea, na.rm = TRUE)
+X.abund$woody_ClmIdx <- (X.abund$woody_ClmIdx - mean(X.abund$woody_ClmIdx, na.rm = TRUE)) / sd(X.abund$woody_ClmIdx, na.rm = TRUE)
+X.abund$herb_ClmIdx <- (X.abund$herb_ClmIdx - mean(X.abund$herb_ClmIdx, na.rm = TRUE)) / sd(X.abund$herb_ClmIdx, na.rm = TRUE)
+X.abund$woody_ShpInx <- (X.abund$woody_ShpInx - mean(X.abund$woody_ShpInx, na.rm = TRUE)) / sd(X.abund$woody_ShpInx, na.rm = TRUE)
+X.abund$herb_ShpInx <- (X.abund$herb_ShpInx - mean(X.abund$herb_ShpInx, na.rm = TRUE)) / sd(X.abund$herb_ShpInx, na.rm = TRUE)
+X.abund$woody_lrgPInx <- (X.abund$woody_lrgPInx - mean(X.abund$woody_lrgPInx, na.rm = TRUE)) / sd(X.abund$woody_lrgPInx, na.rm = TRUE)
+X.abund$herb_lrgPInx <- (X.abund$herb_lrgPInx - mean(X.abund$herb_lrgPInx, na.rm = TRUE)) / sd(X.abund$herb_lrgPInx, na.rm = TRUE)
+X.abund$woody_AggInx <- (X.abund$woody_AggInx - mean(X.abund$woody_AggInx, na.rm = TRUE)) / sd(X.abund$woody_AggInx, na.rm = TRUE)
+X.abund$herb_AggInx <- (X.abund$herb_AggInx - mean(X.abund$herb_AggInx, na.rm = TRUE)) / sd(X.abund$herb_AggInx, na.rm = TRUE)
+X.abund$woody_EdgDens <- (X.abund$woody_EdgDens - mean(X.abund$woody_EdgDens, na.rm = TRUE)) / sd(X.abund$woody_EdgDens, na.rm = TRUE)
+X.abund$herb_EdgDens <- (X.abund$herb_EdgDens - mean(X.abund$herb_EdgDens, na.rm = TRUE)) / sd(X.abund$herb_EdgDens, na.rm = TRUE)
+X.abund$woody_Pdens <- (X.abund$woody_Pdens - mean(X.abund$woody_Pdens, na.rm = TRUE)) / sd(X.abund$woody_Pdens, na.rm = TRUE)
+X.abund$herb_Pdens <- (X.abund$herb_Pdens - mean(X.abund$herb_Pdens, na.rm = TRUE)) / sd(X.abund$herb_Pdens, na.rm = TRUE)
+X.abund$woody_Npatches <- (X.abund$woody_Npatches - mean(X.abund$woody_Npatches, na.rm = TRUE)) / sd(X.abund$woody_Npatches, na.rm = TRUE)
+X.abund$herb_Npatches <- (X.abund$herb_Npatches - mean(X.abund$herb_Npatches, na.rm = TRUE)) / sd(X.abund$herb_Npatches, na.rm = TRUE)
+X.abund$woody_mnFocal30m <- (X.abund$woody_mnFocal30m - mean(X.abund$woody_mnFocal30m, na.rm = TRUE)) / sd(X.abund$woody_mnFocal30m, na.rm = TRUE)
+X.abund$vegDens50m <- (X.abund$vegDens50m - mean(X.abund$vegDens50m, na.rm = TRUE)) / sd(X.abund$vegDens50m, na.rm = TRUE)
 print(X.abund)
 
 
+
+
 # Export data
-write.csv(X.abund, "./Data/Acoustic_Data/ARU_siteCovs.csv")
+write.csv(site_dat, "./Data/Acoustic_Data/ARU_siteCovs_not_scaled.csv")# not scaled
+write.csv(X.abund, "./Data/Acoustic_Data/ARU_siteCovs_scaled.csv") # scaled
 
 # --------------------End Script -----------------------------
