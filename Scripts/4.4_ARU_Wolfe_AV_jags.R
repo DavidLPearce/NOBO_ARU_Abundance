@@ -105,10 +105,7 @@ wolfe_dat <- read.csv("./Data/Acoustic_Data/NOBO_Wolfe_14day2024.csv")
 weather_dat <- read.csv("./Data/Acoustic_Data/ARU_weathercovs.csv")
 
 # Site covariates
-site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
-
-# Or load saved data
-# load(file = "./Data/Model_Environments/ARU_AV_Wolfe14day_JAGs.RData")
+site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs_not_scaled.csv")
 
 # -------------------------------------------------------
 #
@@ -120,8 +117,7 @@ site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
 # Adding a row count
 wolfe_dat$Count <- 1
 
-
-# Initialize the matrix
+# Initialize a site by survey matrix
 v <- matrix(0, nrow = 27, ncol = 14)        
 
 # Extract count data
@@ -140,7 +136,7 @@ for (i in 1:nrow(wolfe_dat)) {
 
 # take a look
 print(v)
-
+sum(v) # Total calls
 
 
 # Renaming columns to date Month_day
@@ -151,14 +147,14 @@ date_order <- c("2024-05-26", "2024-05-30", "2024-06-03", "2024-06-07",
 
 formatted_dates <- format(as.Date(date_order), "%b_%d")
 colnames(v) <- formatted_dates
+
+# Adding rownames
 rownames(v) <- as.numeric(1:27)
 
 # Get the site numbers with at least one call
 v_mat <- as.matrix(v)
 sites.a <- which(rowSums(!is.na(v_mat) & v >= 1) > 0)
 print(sites.a)
-
-
 
 # Creating a binary detection matrix, values >= 1 become 1, and 0 stays 0
 v_df <- as.data.frame(v)
@@ -184,10 +180,10 @@ J.r <- ifelse(is.na(J.r), 0, J.r)
 J.r <- as.numeric(J.r)
 print(J.r)
 
-# A.times is a R x J matrix that contains the indices of the
+# A.times is a site by survey matrix that contains the indices of the
 # specific surveys at each acoustic site that have at least one detected
-# vocalization. This determines the specific components of v[i, j] that
-# are used in the zero-truncated Poisson.
+# vocalization. This determines the specific components of v[s j] that
+# are used in the zero-truncated Poisson vocalization model.
 A.times <- matrix(NA, S, max(J))
 tmp <- apply(v, 1, function(a) {which(a != 0)})
 for (i in 1:S) {
@@ -239,8 +235,39 @@ dim(val.times)
 days <- matrix(rep(1:14, times = 27), nrow = 27, ncol = 14, byrow = TRUE)
 
 # Format X.abund
-X.abund <- as.matrix(site_covs[,-c(1:2)]) # Remove X and site id
+# X.abund <- as.matrix(site_covs[,-c(1:2)]) # Remove X and site id
+# print(X.abund)
+
+# Remove site, lat, long
+X.abund <- site_covs[,-c(1:4)]
+
+# Mean and center scale values 
+# scale() also works, but stating to center or scale (scale(object, center = TRUE, scale = TRUE)) causes issues. 
+# So, manually doing it to avoid what ever issue scale() was causing.
+X.abund$woody_prp <- (X.abund$woody_prp - mean(X.abund$woody_prp, na.rm = TRUE)) / sd(X.abund$woody_prp, na.rm = TRUE) 
+X.abund$herb_prp <- (X.abund$herb_prp - mean(X.abund$herb_prp, na.rm = TRUE)) / sd(X.abund$herb_prp, na.rm = TRUE)
+X.abund$open_prp <- (X.abund$open_prp - mean(X.abund$open_prp, na.rm = TRUE)) / sd(X.abund$open_prp, na.rm = TRUE) 
+X.abund$woody_mnParea <- (X.abund$woody_mnParea - mean(X.abund$woody_mnParea, na.rm = TRUE)) / sd(X.abund$woody_mnParea, na.rm = TRUE)
+X.abund$herb_mnParea <- (X.abund$herb_mnParea - mean(X.abund$herb_mnParea, na.rm = TRUE)) / sd(X.abund$herb_mnParea, na.rm = TRUE)
+X.abund$woody_ClmIdx <- (X.abund$woody_ClmIdx - mean(X.abund$woody_ClmIdx, na.rm = TRUE)) / sd(X.abund$woody_ClmIdx, na.rm = TRUE)
+X.abund$herb_ClmIdx <- (X.abund$herb_ClmIdx - mean(X.abund$herb_ClmIdx, na.rm = TRUE)) / sd(X.abund$herb_ClmIdx, na.rm = TRUE)
+X.abund$woody_ShpInx <- (X.abund$woody_ShpInx - mean(X.abund$woody_ShpInx, na.rm = TRUE)) / sd(X.abund$woody_ShpInx, na.rm = TRUE)
+X.abund$herb_ShpInx <- (X.abund$herb_ShpInx - mean(X.abund$herb_ShpInx, na.rm = TRUE)) / sd(X.abund$herb_ShpInx, na.rm = TRUE)
+X.abund$woody_lrgPInx <- (X.abund$woody_lrgPInx - mean(X.abund$woody_lrgPInx, na.rm = TRUE)) / sd(X.abund$woody_lrgPInx, na.rm = TRUE)
+X.abund$herb_lrgPInx <- (X.abund$herb_lrgPInx - mean(X.abund$herb_lrgPInx, na.rm = TRUE)) / sd(X.abund$herb_lrgPInx, na.rm = TRUE)
+X.abund$woody_AggInx <- (X.abund$woody_AggInx - mean(X.abund$woody_AggInx, na.rm = TRUE)) / sd(X.abund$woody_AggInx, na.rm = TRUE)
+X.abund$herb_AggInx <- (X.abund$herb_AggInx - mean(X.abund$herb_AggInx, na.rm = TRUE)) / sd(X.abund$herb_AggInx, na.rm = TRUE)
+X.abund$woody_EdgDens <- (X.abund$woody_EdgDens - mean(X.abund$woody_EdgDens, na.rm = TRUE)) / sd(X.abund$woody_EdgDens, na.rm = TRUE)
+X.abund$herb_EdgDens <- (X.abund$herb_EdgDens - mean(X.abund$herb_EdgDens, na.rm = TRUE)) / sd(X.abund$herb_EdgDens, na.rm = TRUE)
+X.abund$woody_Pdens <- (X.abund$woody_Pdens - mean(X.abund$woody_Pdens, na.rm = TRUE)) / sd(X.abund$woody_Pdens, na.rm = TRUE)
+X.abund$herb_Pdens <- (X.abund$herb_Pdens - mean(X.abund$herb_Pdens, na.rm = TRUE)) / sd(X.abund$herb_Pdens, na.rm = TRUE)
+X.abund$woody_Npatches <- (X.abund$woody_Npatches - mean(X.abund$woody_Npatches, na.rm = TRUE)) / sd(X.abund$woody_Npatches, na.rm = TRUE)
+X.abund$herb_Npatches <- (X.abund$herb_Npatches - mean(X.abund$herb_Npatches, na.rm = TRUE)) / sd(X.abund$herb_Npatches, na.rm = TRUE)
+X.abund$woody_mnFocal30m <- (X.abund$woody_mnFocal30m - mean(X.abund$woody_mnFocal30m, na.rm = TRUE)) / sd(X.abund$woody_mnFocal30m, na.rm = TRUE)
+X.abund$vegDens50m <- (X.abund$vegDens50m - mean(X.abund$vegDens50m, na.rm = TRUE)) / sd(X.abund$vegDens50m, na.rm = TRUE)
+X.abund <- as.matrix(X.abund)
 print(X.abund)
+
 
 
 ## Extract and scale detection covariates to matrix ## 
@@ -260,7 +287,7 @@ X.det <- as.matrix(data.frame(temp = temp_mat,
 
 # Area surveyed 
 area <- pi * (200^2) / 4046.86  # in acres
-
+# Offset <- rep(area, 27)
  
 # ---------------------------------------
 # Bayesian P-value
@@ -290,13 +317,13 @@ Wolfe14.data <- list(S = S,
                     S.A = S.A, 
                     J.A = J.A, 
                     sites.a.v = sites.a.v, 
+                    days = days,
                     n.days = max(J),
                     n.doy = length(unique(doy_vec)),
                     Sky_Lvls = length(unique(sky_mat)),
                     X.abund = X.abund,
-                    X.det = X.det,
-                    Offset = area,
-                    days = days)
+                    X.det = X.det)
+                   
 
 # Check structure
 str(Wolfe14.data)
@@ -311,8 +338,8 @@ str(Wolfe14.data)
 # -------------------
 # MCMC Specifications
 # -------------------
-n.iter = 10000 # 400000
-n.burnin = 1000 # 60000
+n.iter = 1000 # 400000
+n.burnin = 100 # 60000
 n.chains = 3 
 n.thin = 3 # 15
 n.adapt = 5000
@@ -336,21 +363,20 @@ params <- c('lambda', # Abundance
              'Sraneff',
              'sigma_s',
              'mu_s',
-             'theta',
              'alpha0', # Detection 
              'alpha1', 
              'alpha2',
              'gamma0', #  Vocalization
-             # 'kappa1',
-             # 'kappa2',
              'gamma1',
              'sigma',
-             'Jraneff',
-             'sigma_j',
-             'mu_j',
-             #'omega',
+             'v_mu_j', 
+             'v_tau_j',
+             'v_Jraneff',
+             'omega',
              #'delta',
              # 'phi',
+             'mu.phi',
+             'tau.phi',
              'fit.y',# Posterior Predictive Checks
              'fit.y.pred',
              'fit.v',
@@ -365,19 +391,15 @@ inits <- function() {
   list(
     N = rep(1, S), # Abundance
     beta0 = rnorm(1, 0, 1),
-    beta1 = 0,
-    beta2 = 0,
-    beta3 = 0,
-    alpha0 = 0, # Detection
-    alpha1 = 0, 
-    alpha2 = 0,
-    # kappa1 = 0.6, # Vocalization
-    # kappa2 = -0.06,
-    gamma0 = log(10),
-    omega = 0.001,
-    tau_j = 2
+    beta1 = rnorm(1, 0, 1),
+    beta2 = rnorm(1, 0, 1),
+    beta3 = rnorm(1, 0, 1),
+    alpha1 = runif(1, 0, 1), # Detection
+    alpha2 = rnorm(1, 0, 0.1),
+    alpha3 = rnorm(1, 0, 1),
+    omega = runif(1, 0, 1) # Vocalization
   )
-}#end inits
+}# End inits
 
 ## Distributions
 # library(ggfortify)
@@ -396,12 +418,12 @@ cat(" model {
   # ----------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 0.01)
+  beta0 ~ dnorm(0, 1) 
   
   # Covariate effect
-  beta1 ~ dnorm(0, 0.01)
-  beta2 ~ dnorm(0, 0.01)
-  beta3 ~ dnorm(0, 0.01)
+  beta1 ~ dnorm(0, 1) # Herbaceous Clumpy Index 
+  beta2 ~ dnorm(0, 1) # Woody Aggregation Index 
+  beta3 ~ dnorm(0, 1) # Interactive 
   
   # # Site random effect on abundance - Centered Parameterization
   # mu_s ~ dnorm(0, 5)
@@ -410,43 +432,42 @@ cat(" model {
   #   Sraneff[s] ~ dnorm(mu_s, sigma_s)
   # }
   
-  # # Survey random effect - Non-Centered Parameterization
-  # mu_s ~ dnorm(0, 5)
-  # sigma_s ~ dunif(0, 10)
-  # for (s in 1:S) {
-  #   etaS[s] ~ dnorm(0, 1)
-  #   Sraneff[s] <- beta0 + sigma_s * etaS[s]
-  # }
+  # Survey random effect - Non-Centered Parameterization
+  mu_s ~ dnorm(0, 5)
+  sigma_s ~ dunif(0, 10)
+  for (s in 1:S) {
+    etaS[s] ~ dnorm(0, 1)
+    Sraneff[s] <- beta0 + sigma_s * etaS[s]
+  }
 
   # ------------------------
   # Detection Priors
   # ------------------------
   
   # Intercept
-  alpha0 <- logit(mu.alpha) # Constrains alpha0 to be between 0 and 1 on the logit scale (propability)
-  mu.alpha ~ dunif(0, 1)
+  alpha0 <- logit(mu_alpha) # Constrains alpha0 to be between 0 and 1 on the logit scale (propability)
+  mu_alpha ~ dunif(0, 1)
   
   # True individuals
   alpha1 ~ dunif(0, 1000) # Constrained to be positive
   
   # Covariate effect
-  alpha2 ~ dnorm(0, 0.01) # Vegetation Density
-  alpha3 ~ dnorm(0, 0.01) # Wind
+  alpha2 ~ dnorm(0, 1) # Vegetation Density
+  alpha3 ~ dnorm(0, 1) # Wind
   
-  
-  # Survey random effect  
-  det_mu_j ~ dnorm(0, 5)
-  det_sigma_j ~ dunif(0, 10)
-  for (j in 1:n.days) {
-    det_Jraneff[j] ~ dnorm(det_mu_j, det_sigma_j)
-  }
+  # # Survey random effect  
+  # det_mu_j ~ dnorm(0, 5)
+  # det_sigma_j ~ dunif(0, 10)
+  # for (j in 1:n.days) {
+  #   det_Jraneff[j] ~ dnorm(det_mu_j, det_sigma_j)
+  # }
   
   # ------------------------
   # Call Rate Priors
   # ------------------------
   
   # False positive rate
-  omega  ~ dunif(0, 1000)  
+  omega  ~ dunif(0, 1000) # From Doser et al.  
   
   # Intercept
   gamma0 ~ dunif(log(3), log(60))
@@ -469,14 +490,16 @@ cat(" model {
   
   # # Gaussian Kernel
   # gamma1 ~ dnorm(0, 10) 
-  # sigma ~ dunif(0, 100)  # A uniform prior between 0 and 100
+  # sigma ~ dunif(0, 100)
 
 
   # Survey random effect - Centered Parameterization
-  v_mu_j ~ dnorm(0, 5)
+  v_mu_j ~ dnorm(0, 0.01)
   v_sigma_j ~ dunif(0, 10)
+  #v_tau_j ~ dgamma(0.01, 0.01)
   for (j in 1:n.days) {
     v_Jraneff[j] ~ dnorm(v_mu_j, v_sigma_j)
+    #v_Jraneff[j] ~ dnorm(v_mu_j, v_tau_j)
   }
   
   # Survey random effect - Non-Centered Parameterization
@@ -486,6 +509,15 @@ cat(" model {
   #   etaJ[j] ~ dnorm(0, 1)
   #   Jraneff[j] <- mu_j + sigma_j * etaJ[j]
   # }
+  
+  # Overdispersion
+  mu.phi ~ dgamma(0.01, 0.01)   
+  tau.phi ~ dgamma(0.01, 0.01)   
+  for (s in 1:S) {
+    for (j in 1:J.A) {
+      phi[s, j] ~ dgamma(mu.phi, tau.phi)
+    }
+  }
   
   # -------------------------------------------
   #
@@ -500,9 +532,10 @@ cat(" model {
     # Abundance Submodel  
     # ---------------------------------
     
-    # Poisson
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 12] + beta3 * X.abund[s, 7] * X.abund[s, 12]
-    N[s] ~ dpois(lambda[s] * Offset)
+    # Poisson beta0
+    log(lambda[s]) <- Sraneff[s] + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 12] + beta3 * X.abund[s, 7] * X.abund[s, 12]
+    
+    N[s] ~ dpois(lambda[s])
 
     # Survey
     for (j in 1:J[s]) {
@@ -510,14 +543,14 @@ cat(" model {
     # ---------------------------------
     # Detection Submodel  
     # ---------------------------------
-    logit(p.a[s, j]) <- alpha0 + alpha1 * N[s] + alpha2 * X.abund[s,21] + alpha3 * X.det[j,2] 
+    logit(p.a[s, j]) <- alpha0 + alpha1 * N[s] + alpha2 * X.abund[s,21] + alpha3 * X.det[j,2]
 
     # ---------------------------------
     # Call rate Submodel  
     # ---------------------------------
     
-    # Intercept + Survey Random Effect
-    log(delta[s, j]) <- gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]]
+    # Intercept + Survey Random Effect # gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]]
+    log(delta[s, j]) <- v_Jraneff[days[s, j]] 
     
     # Intercept + Survey Random Effect + Conspecific effect Gaussian Kernel
     # log(delta[s, j]) <- Jraneff[days[s, j]] + (gamma1 * exp(-(v[s, j]^2) / (2 * (sigma^2))))
@@ -551,18 +584,18 @@ cat(" model {
     # Vocalizations  
     # ---------------------------------
     
-    # ztPoisson
-    v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]])T(1, )
-
+    # Zero Truncated Negative Binomial
+    v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
+    
     # ---------------------------------
     # PPC calls  
     # ---------------------------------
     
-    v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]])T(1, ) 
-    mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega)  / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega)))))
+    v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
+    mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]]) / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]])))
     resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
     resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
-
+    
     } # End J.r
   } # End S
   
@@ -577,7 +610,7 @@ cat(" model {
   } # End S
   
   # -------------------------------------------
-  # Bayesian P-value
+  # PPC and Bayesian P-value
   # -------------------------------------------
   for (s in 1:S.A) {
     tmp.v[s] <- sum(resid.v[sites.a.v[s], 1:J.r[sites.a.v[s]]])
@@ -598,7 +631,7 @@ cat(" model {
   N_tot <- sum(N[])
 
 }
-", fill=TRUE, file="./JAGs_Models/AV_Wolfe_Mod1.txt")
+", fill = TRUE, file = "./JAGs_Models/AV_Wolfe_Model.txt")
 # ------------End Model-------------
 
 # -------------------------------------------------------
@@ -609,7 +642,7 @@ cat(" model {
 fm.1 <- jagsUI::jags(data = Wolfe14.data,
                      inits = inits,
                      parameters.to.save = params,
-                     model.file = "./JAGs_Models/Wolfe_AV_Mod1.txt",
+                     model.file = "./JAGs_Models/AV_Wolfe_Model.txt",
                      n.iter = n.iter,
                      n.burnin = n.burnin,
                      n.chains = n.chains,
