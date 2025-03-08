@@ -340,8 +340,8 @@ str(Wolfe14.data)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-n.iter = 1000 # 400000
-n.burnin = 100 # 60000
+n.iter = 10000 # 400000
+n.burnin = 1000 # 60000
 n.chains = 3 
 n.thin = 3 # 15
 n.adapt = 5000
@@ -472,25 +472,13 @@ cat(" model {
       gamma2[d] ~ dnorm(0, 1) 
   }
 
-  # # Conspecific density effects
-  # kappa1 ~ dnorm(2, 1) T(0, 1) # mean of 0.6, sd of 0.4 i.e., (1/1^2); constrained between 0 and 1
-  # kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04 i.e., (1/0.04^2); constrained between -1 and 0
-  
-  # # Gaussian Kernel
-  # gamma3 ~ dnorm(0, 10)
-  # sigma ~ dunif(0, 100)
-  
-  # Michaelis-Menten parameters
-  R_max ~ dunif(0, log(60))        # Maximum call rate (upper asymptote)
-  Kmm ~ dunif(0, log(60))            # Half-saturation constant (number of conspecifics at which call rate is half max)
-
-  # # Double Sigmoid parameters
-  # L1 ~ dunif(0, 100)           # Upper asymptote for increasing part
-  # L2 ~ dunif(0, 100)           # Upper asymptote for decreasing part
-  # k1 ~ dunif(0, 10)            # Steepness of the increasing part
-  # k2 ~ dunif(0, 10)            # Steepness of the decreasing part
-  # x1 ~ dunif(0, 100)           # Inflection point for increasing part
-  # x2 ~ dunif(0, 100)           # Inflection point for decreasing part
+  # Double Sigmoid parameters
+  L1 ~ dunif(0, 100)           # Upper asymptote for increasing part
+  L2 ~ dunif(0, 100)           # Upper asymptote for decreasing part
+  k1 ~ dunif(0, 10)            # Steepness of the increasing part
+  k2 ~ dunif(0, 10)            # Steepness of the decreasing part
+  x1 ~ dunif(0, 100)           # Inflection point for increasing part
+  x2 ~ dunif(0, 100)           # Inflection point for decreasing part
 
   # Survey random effect - Centered
   mu_j ~ dgamma(0.01, 0.01) 
@@ -539,22 +527,13 @@ cat(" model {
     # ---------------------------------
     
     # Intercept + Sky Condition + Day of Year + Survey Random Effect   
-    log(delta[s, j]) <- gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]] + Jraneff[days[s, j]]
+    #log(delta[s, j]) <- gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]] + Jraneff[days[s, j]]
 
 
 
     # Double sigmoid
-    # conspecific_effect[s, j] <- L1 / (1 + exp(-k1 * (N[s] - x1))) - L2 / (1 + exp(-k2 * (N[s] - x2)))
-    # log(delta[s, j]) <- gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]] + conspecific_effect[s, j]
-
-    # Michaelis-Menten
-    # log(delta[s, j]) <- gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]] + (R_max *  N[s]) / (Kmm +  N[s])
-    
-    # Conspecific effect Gaussian Kernel
-    # log(delta[s, j]) <- Jraneff[days[s, j]]+ (gamma3 * exp(-(N[s]^2) / (2 * (sigma^2))))
-    
-    # Conspecific effect Linear & Quadratic - if hits zero stays at zero
-    #delta[s, j] <- max(0, exp(gamma0 + Jraneff[days[s,j]]) + (kappa1 * N[s]) + (kappa2 * (N[s])^2))
+    conspecific_effect[s, j] <- L1 / (1 + exp(-k1 * (N[s] - x1))) - L2 / (1 + exp(-k2 * (N[s] - x2)))
+    log(delta[s, j]) <- gamma0 + conspecific_effect[s, j]
 
     # ---------------------------------
     # Observations
