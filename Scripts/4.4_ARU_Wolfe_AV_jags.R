@@ -193,9 +193,9 @@ for (i in 1:S) {
 }
 print(A.times)
 
-# ---------------------------------------
+# ----------------------
 # Manually validated  
-# ---------------------------------------
+# ----------------------
 
 
 # Validated Calls
@@ -227,9 +227,9 @@ dim(val.times)
  
 
 
-# ---------------------------------------
+# ----------------------
 # Covariates 
-# ---------------------------------------
+# ----------------------
 
 # survey random effect index
 days <- matrix(rep(1:14, times = 27), nrow = 27, ncol = 14, byrow = TRUE)
@@ -277,7 +277,7 @@ sky_mat <- as.integer(as.factor(weather_dat$Sky_Condition))
 
 # Making a day of year matrix
 doy_vec <- yday(as.Date(paste0(formatted_dates, "_2024"), format = "%b_%d_%Y"))
-
+doy_vec <-  as.integer(as.factor(doy_vec))
 
 # Combine into a single dataframe where each row corresponds to a survey
 X.det <- as.matrix(data.frame(temp = temp_mat, 
@@ -286,21 +286,22 @@ X.det <- as.matrix(data.frame(temp = temp_mat,
                               doy = doy_vec))
 
 # Area surveyed 
-area <- pi * (200^2) / 4046.86  # in acres
-# Offset <- rep(area, 27)
+#area <- pi * (200^2) / 4046.86  # in acres
+area <- pi * (200^2) / 10000  # in hectares
+Offset <- rep(area, 27)
  
-# ---------------------------------------
+# ----------------------
 # Bayesian P-value
-# ---------------------------------------
+# ----------------------
 
 S.A <- sum(J.r > 0)
 sites.a.v <- which(J.r > 0)
 J.A <- max(J)
 
 
-# ---------------------------------------
+# ----------------------
 # Bundle Data 
-# ---------------------------------------
+# ----------------------
 
 Wolfe14.data <- list(S = S, 
                     J = J, 
@@ -322,7 +323,8 @@ Wolfe14.data <- list(S = S,
                     n.doy = length(unique(doy_vec)),
                     Sky_Lvls = length(unique(sky_mat)),
                     X.abund = X.abund,
-                    X.det = X.det)
+                    X.det = X.det,
+                    Offset = area)
                    
 
 # Check structure
@@ -335,9 +337,9 @@ str(Wolfe14.data)
 # 
 # ----------------------------------------------------------
 
-# -------------------
+# ----------------------
 # MCMC Specifications
-# -------------------
+# ----------------------
 n.iter = 1000 # 400000
 n.burnin = 100 # 60000
 n.chains = 3 
@@ -348,9 +350,9 @@ n.adapt = 5000
 est_post_samps = (((n.iter - n.burnin) / n.thin) * n.chains)
 print(est_post_samps)
 
-# -------------------------------------------------------
+# ----------------------
 # Model Specifications
-# -------------------------------------------------------
+# ----------------------
 
 # Parameters monitored
 params <- c('lambda', # Abundance
@@ -375,14 +377,14 @@ params <- c('lambda', # Abundance
              'omega',
              #'delta',
              # 'phi',
-             'mu.phi',
-             'tau.phi',
-             'fit.y',# Posterior Predictive Checks
-             'fit.y.pred',
-             'fit.v',
-             'fit.v.pred',
-             'bp.y', # Bayes p-value
-             'bp.v')
+             'mu_phi',
+             'tau_phi',
+             'fit_y',# Posterior Predictive Checks
+             'fit_y_pred',
+             'fit_v',
+             'fit_v_pred',
+             'bp_y', # Bayes p-value
+             'bp_v')
 
 
 
@@ -425,19 +427,11 @@ cat(" model {
   beta2 ~ dnorm(0, 1) # Woody Aggregation Index 
   beta3 ~ dnorm(0, 1) # Interactive 
   
-  # # Site random effect on abundance - Centered Parameterization
-  # mu_s ~ dnorm(0, 5)
-  # sigma_s ~ dunif(0, 10)
-  # for (s in 1:S) {
-  #   Sraneff[s] ~ dnorm(mu_s, sigma_s)
-  # }
-  
-  # Survey random effect - Non-Centered Parameterization
-  mu_s ~ dnorm(0, 5)
+  # Survey random effect - Non-Centered
   sigma_s ~ dunif(0, 10)
   for (s in 1:S) {
-    etaS[s] ~ dnorm(0, 1)
-    Sraneff[s] <- beta0 + sigma_s * etaS[s]
+    eta_s[s] ~ dnorm(0, 1)
+    Sraneff[s] <- eta_s[s] * sigma_s 
   }
 
   # ------------------------
@@ -454,14 +448,7 @@ cat(" model {
   # Covariate effect
   alpha2 ~ dnorm(0, 1) # Vegetation Density
   alpha3 ~ dnorm(0, 1) # Wind
-  
-  # # Survey random effect  
-  # det_mu_j ~ dnorm(0, 5)
-  # det_sigma_j ~ dunif(0, 10)
-  # for (j in 1:n.days) {
-  #   det_Jraneff[j] ~ dnorm(det_mu_j, det_sigma_j)
-  # }
-  
+
   # ------------------------
   # Call Rate Priors
   # ------------------------
@@ -470,18 +457,19 @@ cat(" model {
   omega  ~ dunif(0, 1000) # From Doser et al.  
   
   # Intercept
-  gamma0 ~ dunif(log(3), log(60))
+  gamma0 ~ dunif(log(1), log(60)) 
+
   
   # Fixed Effects
   
   # Sky Condition as a factor
   for (i in 1:Sky_Lvls) {
-      gamma1[i] ~ dnorm(0, 0.01) 
+      gamma1[i] ~ dnorm(0, 1) 
   }
   
   # DOY as a factor
   for (d in 1:n.doy) {
-      gamma2[d] ~ dnorm(0, 0.01) 
+      gamma2[d] ~ dnorm(0, 1) 
   }
 
   # # Conspecific density effects
@@ -489,33 +477,35 @@ cat(" model {
   # kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04 i.e., (1/0.04^2); constrained between -1 and 0
   
   # # Gaussian Kernel
-  # gamma1 ~ dnorm(0, 10) 
+  # gamma3 ~ dnorm(0, 10)
   # sigma ~ dunif(0, 100)
+  
+  # Michaelis-Menten parameters
+  R_max ~ dunif(0, log(60))        # Maximum call rate (upper asymptote)
+  Kmm ~ dunif(0, log(60))            # Half-saturation constant (number of conspecifics at which call rate is half max)
 
+  # # Double Sigmoid parameters
+  # L1 ~ dunif(0, 100)           # Upper asymptote for increasing part
+  # L2 ~ dunif(0, 100)           # Upper asymptote for decreasing part
+  # k1 ~ dunif(0, 10)            # Steepness of the increasing part
+  # k2 ~ dunif(0, 10)            # Steepness of the decreasing part
+  # x1 ~ dunif(0, 100)           # Inflection point for increasing part
+  # x2 ~ dunif(0, 100)           # Inflection point for decreasing part
 
-  # Survey random effect - Centered Parameterization
-  v_mu_j ~ dnorm(0, 0.01)
-  v_sigma_j ~ dunif(0, 10)
-  #v_tau_j ~ dgamma(0.01, 0.01)
+  # Survey random effect - Centered
+  mu_j ~ dgamma(0.01, 0.01) 
+  tau_j ~ dgamma(0.01, 0.01)
   for (j in 1:n.days) {
-    v_Jraneff[j] ~ dnorm(v_mu_j, v_sigma_j)
-    #v_Jraneff[j] ~ dnorm(v_mu_j, v_tau_j)
+    Jraneff[j] ~ dnorm(mu_j, tau_j)
   }
-  
-  # Survey random effect - Non-Centered Parameterization
-  # mu_j ~ dnorm(0, 5)
-  # sigma_j ~ dunif(0, 10)
-  # for (j in 1:n.days) {
-  #   etaJ[j] ~ dnorm(0, 1)
-  #   Jraneff[j] <- mu_j + sigma_j * etaJ[j]
-  # }
-  
+ 
+
   # Overdispersion
-  mu.phi ~ dgamma(0.01, 0.01)   
-  tau.phi ~ dgamma(0.01, 0.01)   
+  mu_phi ~ dgamma(0.01, 0.01)    
+  tau_phi ~ dgamma(0.01, 0.01)   
   for (s in 1:S) {
     for (j in 1:J.A) {
-      phi[s, j] ~ dgamma(mu.phi, tau.phi)
+      phi[s, j] ~ dgamma(mu_phi, tau_phi)
     }
   }
   
@@ -532,10 +522,9 @@ cat(" model {
     # Abundance Submodel  
     # ---------------------------------
     
-    # Poisson beta0
-    log(lambda[s]) <- Sraneff[s] + beta1 * X.abund[s, 7] +  beta2 * X.abund[s, 12] + beta3 * X.abund[s, 7] * X.abund[s, 12]
-    
-    N[s] ~ dpois(lambda[s])
+    # Poisson 
+    log(lambda[s]) <- beta0 + Sraneff[s] + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] + beta3 * X.abund[s, 7] * X.abund[s, 12]
+    N[s] ~ dpois(lambda[s]) 
 
     # Survey
     for (j in 1:J[s]) {
@@ -549,13 +538,22 @@ cat(" model {
     # Call rate Submodel  
     # ---------------------------------
     
-    # Intercept + Survey Random Effect # gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]]
-    log(delta[s, j]) <- v_Jraneff[days[s, j]] 
+    # Intercept + Sky Condition + Day of Year + Survey Random Effect   
+    log(delta[s, j]) <- gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]] + Jraneff[days[s, j]]
+
+
+
+    # Double sigmoid
+    # conspecific_effect[s, j] <- L1 / (1 + exp(-k1 * (N[s] - x1))) - L2 / (1 + exp(-k2 * (N[s] - x2)))
+    # log(delta[s, j]) <- gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]] + conspecific_effect[s, j]
+
+    # Michaelis-Menten
+    # log(delta[s, j]) <- gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]] + (R_max *  N[s]) / (Kmm +  N[s])
     
-    # Intercept + Survey Random Effect + Conspecific effect Gaussian Kernel
-    # log(delta[s, j]) <- Jraneff[days[s, j]] + (gamma1 * exp(-(v[s, j]^2) / (2 * (sigma^2))))
+    # Conspecific effect Gaussian Kernel
+    # log(delta[s, j]) <- Jraneff[days[s, j]]+ (gamma3 * exp(-(N[s]^2) / (2 * (sigma^2))))
     
-    # Intercept + Survey Random Effect + Conspecific effect Linear & Quadratic - if hits zero stays at zero
+    # Conspecific effect Linear & Quadratic - if hits zero stays at zero
     #delta[s, j] <- max(0, exp(gamma0 + Jraneff[days[s,j]]) + (kappa1 * N[s]) + (kappa2 * (N[s])^2))
 
     # ---------------------------------
@@ -583,14 +581,12 @@ cat(" model {
     # ---------------------------------
     # Vocalizations  
     # ---------------------------------
-    
     # Zero Truncated Negative Binomial
     v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
     
     # ---------------------------------
     # PPC calls  
     # ---------------------------------
-    
     v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
     mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]]) / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]])))
     resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
@@ -616,12 +612,12 @@ cat(" model {
     tmp.v[s] <- sum(resid.v[sites.a.v[s], 1:J.r[sites.a.v[s]]])
     tmp.v.pred[s] <- sum(resid.v.pred[sites.a.v[s], 1:J.r[sites.a.v[s]]])
   }
-  fit.y <- sum(resid.y[sites.a, 1:J.A])
-  fit.y.pred <- sum(resid.y.pred[sites.a, 1:J.A])
-  fit.v <- sum(tmp.v[1:S.A])
-  fit.v.pred <- sum(tmp.v.pred[1:S.A])
-  bp.y <- step(fit.y.pred - fit.y)
-  bp.v <- step(fit.v.pred - fit.v)
+  fit_y <- sum(resid.y[sites.a, 1:J.A])
+  fit_y_pred <- sum(resid.y.pred[sites.a, 1:J.A])
+  fit_v <- sum(tmp.v[1:S.A])
+  fit_v_pred <- sum(tmp.v.pred[1:S.A])
+  bp_y <- step(fit_y_pred - fit_y)
+  bp_v <- step(fit_v_pred - fit_v)
   
   # -------------------------------------------
   # Derive Parameters
@@ -653,7 +649,7 @@ fm.1 <- jagsUI::jags(data = Wolfe14.data,
                      verbose = TRUE)
 
 # Save model
-#saveRDS(fm.1, "./Data/Model_Data/AV_Wolfe_fm1.rds")
+# saveRDS(fm.1, "./Data/Model_Data/AV_Wolfe_fm1.rds")
 # fm.1 <- readRDS("./Data/Model_Data/AV_Wolfe_fm1.rds")
 
 # -------------------------------------------------------
@@ -670,100 +666,137 @@ check_rhat(fm.1$Rhat, threshold = 1.1)
 # Posterior Predictive Checks
 # -------------------------------------------------------
 
-# --------------
+# ----------------------
 # Bayes P-value
-# -------------- 
+# ----------------------
 
 # P-value = 0.5 means good fit, = 1 or 0 is a poor fit
 
 # Abundance
-cat("Abundance Model Bayesian p-value =", fm.1$summary["bp.y",1], "\n")
+cat("Abundance Model Bayesian p-value =", fm.1$summary["bp_y",1], "\n")
 
 # Call    
-cat("Call Model Bayesian p-value =", fm.1$summary["bp.v",1], "\n") 
+cat("Call Model Bayesian p-value =", fm.1$summary["bp_v",1], "\n") 
 
-# --------------
-# Scatter Plot
-# --------------
-
-# From: https://kenkellner.com/jagsUI/reference/ppcheck.html
-# Value given is Bayes p-value (rounded in figure)
-
-# Abundance
-jagsUI::pp.check(fm.1,            
-                 observed = "fit.y", 
-                 simulated = "fit.y.pred", 
-                 xlab='Observed data', 
-                 ylab='Simulated data',
-                 main='PPC Abundance')
-dev.off() 
-
-# Save
-jpeg("./Figures/PPC/AV_Wolfe_Abund_Scatter.jpeg", width = 8, height = 6, units = "in", res = 300) 
-jagsUI::pp.check(fm.1, observed = "fit.y", simulated = "fit.y.pred", xlab='Observed data', ylab='Simulated data', main='PPC Abundance')           
-dev.off()
-
-
-
-# Call 
-jagsUI::pp.check(fm.1,            
-                 observed = "fit.v", 
-                 simulated = "fit.v.pred", 
-                 xlab='Observed data', 
-                 ylab='Simulated data', 
-                 main='PPC Call') 
-dev.off() 
-
-# Save
-jpeg("./Figures/PPC/AV_Wolfe_Call_Scatter.jpeg", width = 8, height = 6, units = "in", res = 300) 
-jagsUI::pp.check(fm.1, observed = "fit.v", simulated = "fit.v.pred", xlab='Observed data', ylab='Simulated data',main='PPC Call')         
-dev.off()                 
-                  
-
-# --------------
-# Density Plot
-# --------------
+# ----------------------
+# Extract Residuals
+# ----------------------
 
 # Abundance
 fit_y_data <- data.frame(
-  value = c(fm.1$sims.list$fit.y, fm.1$sims.list$fit.y.pred),
-  type = rep(c("Observed", "Predicted"), each = length(fm.1$sims.list$fit.y)))
+  observed = fm.1$sims.list$fit_y,  # Observed values
+  predicted = fm.1$sims.list$fit_y_pred,  # Predicted values
+  type = rep(c("Observed", "Predicted"), each = length(fm.1$sims.list$fit_y))
+)
 
-y_PPC_Dens <- ggplot(fit_y_data, aes(x = value, fill = type)) +
-                    geom_density(alpha = 0.5) +   
-                    scale_fill_manual(values = c("blue", "red")) +   
+# Calls
+fit_v_data <- data.frame(
+  observed = fm.1$sims.list$fit_v,  # Observed values
+  predicted = fm.1$sims.list$fit_v_pred,  # Predicted values
+  type = rep(c("Observed", "Predicted"), each = length(fm.1$sims.list$fit_v))
+)
+
+# ----------------------
+# Scatter Plot
+# ----------------------
+
+# # Abundance
+# y_PPC_Scatter <- ggplot(fit_y_data) +
+#   geom_point(aes(x = observed, y = predicted, color = type, shape = type), alpha = 0.6, size = 3) +  # Different shapes for Observed and Predicted
+#   scale_color_manual(values = c("blue", "red")) +  # Blue for Observed, Red for Predicted
+#   scale_shape_manual(values = c("Observed" = 19, "Predicted" = 20)) +  # Open circle for Observed, Closed triangle for Predicted
+#   labs(title = "Posterior Predictive Check for Abundance", 
+#        x = "Observed Fit Values", 
+#        y = "Predicted Fit Values") +
+#   theme_minimal() +
+#   theme(legend.title = element_blank()) 
+# 
+# # Print the scatter plot
+# print(y_PPC_Scatter)
+
+# # Export                
+# ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Wolfe_Abund_Scatter.jpeg", width = 8, height = 5, dpi = 300) 
+# dev.off() 
+
+# Alternatively using jagsUI
+# From: https://kenkellner.com/jagsUI/reference/ppcheck.html
+# Value given is Bayes p-value (rounded in figure)
+# jagsUI::pp.check(fm.1,            
+#                  observed = "fit_y", 
+#                  simulated = "fit_y_pred", 
+#                  xlab='Observed data', 
+#                  ylab='Simulated data',
+#                  main='PPC Abundance')
+ 
+
+# # Call 
+# v_PPC_Scatter <- ggplot(fit_v_data) +
+#   geom_point(aes(x = observed, y = predicted, color = type, shape = type), alpha = 0.6, size = 3) +  # Different shapes for Observed and Predicted
+#   scale_color_manual(values = c("blue", "red")) +  # Blue for Observed, Red for Predicted
+#   scale_shape_manual(values = c("Observed" = 19, "Predicted" = 20)) +  # Open circle for Observed, Closed triangle for Predicted
+#   labs(title = "Posterior Predictive Check for Calls", 
+#        x = "Observed Fit Values", 
+#        y = "Predicted Fit Values") +
+#   theme_minimal() +
+#   theme(legend.title = element_blank()) 
+# 
+# # Print the scatter plot
+# print(v_PPC_Scatter)
+
+# Export                
+# ggsave(plot = v_PPC_Scatter, "./Figures/PPC/AV_Wolfe_Call_Scatter.jpeg", width = 8, height = 5, dpi = 300) 
+# dev.off() 
+
+# jagsUI
+# jagsUI::pp.check(fm.1,            
+#                  observed = "fit_v", 
+#                  simulated = "fit_v_pred", 
+#                  xlab='Observed data', 
+#                  ylab='Simulated data', 
+#                  main='PPC Call') 
+# dev.off() 
+                 
+
+# ----------------------
+# Density Plot
+# ----------------------
+
+# Abundance
+y_PPC_Dens <- ggplot(fit_y_data) +
+                    geom_density(aes(x = observed, fill = "Observed"), alpha = 0.5) +   
+                    geom_density(aes(x = predicted, fill = "Predicted"), alpha = 0.5) +  
+                    scale_fill_manual(values = c("Observed" = "blue", "Predicted" = "red")) +  
                     labs(title = "Posterior Predictive Check for Abundance", 
                          x = "Fit Values", 
                          y = "Density") +
                     theme_minimal() +
                     theme(legend.title = element_blank()) 
+
 # View
 print(y_PPC_Dens)
 
 # Export                
-ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Wolfe_Abund_Density.jpeg", width = 8, height = 5, dpi = 300) 
-dev.off() 
+# ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Wolfe_Abund_Density.jpeg", width = 8, height = 5, dpi = 300) 
+# dev.off() 
 
-# Calls
-fit_v_data <- data.frame(
-  value = c(fm.1$sims.list$fit.v, fm.1$sims.list$fit.v.pred),
-  type = rep(c("Observed", "Predicted"), each = length(fm.1$sims.list$fit.v)))
 
-v_PPC_Dens <- ggplot(fit_v_data, aes(x = value, fill = type)) +
-  geom_density(alpha = 0.5) +   
-  scale_fill_manual(values = c("blue", "red")) +   
-  labs(title = "Posterior Predictive Check for Calls", 
+# Call
+v_PPC_Dens <- ggplot(fit_v_data) +
+  geom_density(aes(x = observed, fill = "Observed"), alpha = 0.5) +   
+  geom_density(aes(x = predicted, fill = "Predicted"), alpha = 0.5) +  
+  scale_fill_manual(values = c("Observed" = "blue", "Predicted" = "red")) +  
+  labs(title = "Posterior Predictive Check for Call", 
        x = "Fit Values", 
        y = "Density") +
   theme_minimal() +
-  theme(legend.title = element_blank())  
+  theme(legend.title = element_blank()) 
 
 # View
 print(v_PPC_Dens)
 
 # Export                
-ggsave(plot = v_PPC_Dens, "./Figures/PPC/AV_Wolfe_Call_Density.jpeg", width = 8, height = 5, dpi = 300) 
-dev.off() 
+# ggsave(plot = v_PPC_Dens, "./Figures/PPC/AV_Wolfe_Call_Density.jpeg", width = 8, height = 5, dpi = 300) 
+# dev.off() 
 
 # -------------------------------------------------------
 #
@@ -1073,7 +1106,7 @@ dens_summary <- dens_df %>%
   )
 
 # Subset the data within the 95% credible interval
-dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI & dens_df$Density <= dens_summary$Upper_CI, ]
+#dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI & dens_df$Density <= dens_summary$Upper_CI, ]
 
 # Getting total abundance
 abund_summary <- dens_summary
