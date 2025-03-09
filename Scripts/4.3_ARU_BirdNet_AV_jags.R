@@ -107,7 +107,7 @@ bnet_dat_all <- read.csv("./Data/Acoustic_Data/NOBO_BirdNETall_2024.csv")
 weather_dat <- read.csv("./Data/Acoustic_Data/ARU_weathercovs.csv")
 
 # Site covariates
-site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
+site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs_not_scaled.csv")
 
 
 # -------------------------------------------------------
@@ -136,7 +136,7 @@ bnet_dat <- bnet_dat %>%
 bnet_dat$Count <- 1
 
 
-# Initialize the matrix
+# Initialize a site by survey matrix
 v <- matrix(0, nrow = 27, ncol = 14)        
 
 # Extract count data
@@ -153,8 +153,9 @@ for (i in 1:nrow(bnet_dat)) {
   
 } # end loop 
 
-# take a look
+# Take a look
 print(v)
+sum(v) # Total calls
 
 # Renaming columns to date Month_day
 formatted_dates <- format(as.Date(date_order), "%b_%d")
@@ -242,24 +243,60 @@ dim(val.times)
 # Covariates 
 # ---------------------------------------
 
+# survey random effect index
+days <- matrix(rep(1:14, times = 27), nrow = 27, ncol = 14, byrow = TRUE)
 
-# Format X.abund
-X.abund <- as.matrix(site_covs[,-c(1:2)]) # Remove X and site id
+# Remove site, lat, long
+X.abund <- site_covs[,-c(1:4)]
+
+# Mean and center scale values 
+# scale() also works, but stating to center or scale (scale(object, center = TRUE, scale = TRUE)) causes issues. 
+# So, manually doing it to avoid what ever issue scale() was causing.
+X.abund$woody_prp <- (X.abund$woody_prp - mean(X.abund$woody_prp, na.rm = TRUE)) / sd(X.abund$woody_prp, na.rm = TRUE) 
+X.abund$herb_prp <- (X.abund$herb_prp - mean(X.abund$herb_prp, na.rm = TRUE)) / sd(X.abund$herb_prp, na.rm = TRUE)
+X.abund$open_prp <- (X.abund$open_prp - mean(X.abund$open_prp, na.rm = TRUE)) / sd(X.abund$open_prp, na.rm = TRUE) 
+X.abund$woody_mnParea <- (X.abund$woody_mnParea - mean(X.abund$woody_mnParea, na.rm = TRUE)) / sd(X.abund$woody_mnParea, na.rm = TRUE)
+X.abund$herb_mnParea <- (X.abund$herb_mnParea - mean(X.abund$herb_mnParea, na.rm = TRUE)) / sd(X.abund$herb_mnParea, na.rm = TRUE)
+X.abund$woody_ClmIdx <- (X.abund$woody_ClmIdx - mean(X.abund$woody_ClmIdx, na.rm = TRUE)) / sd(X.abund$woody_ClmIdx, na.rm = TRUE)
+X.abund$herb_ClmIdx <- (X.abund$herb_ClmIdx - mean(X.abund$herb_ClmIdx, na.rm = TRUE)) / sd(X.abund$herb_ClmIdx, na.rm = TRUE)
+X.abund$woody_ShpInx <- (X.abund$woody_ShpInx - mean(X.abund$woody_ShpInx, na.rm = TRUE)) / sd(X.abund$woody_ShpInx, na.rm = TRUE)
+X.abund$herb_ShpInx <- (X.abund$herb_ShpInx - mean(X.abund$herb_ShpInx, na.rm = TRUE)) / sd(X.abund$herb_ShpInx, na.rm = TRUE)
+X.abund$woody_lrgPInx <- (X.abund$woody_lrgPInx - mean(X.abund$woody_lrgPInx, na.rm = TRUE)) / sd(X.abund$woody_lrgPInx, na.rm = TRUE)
+X.abund$herb_lrgPInx <- (X.abund$herb_lrgPInx - mean(X.abund$herb_lrgPInx, na.rm = TRUE)) / sd(X.abund$herb_lrgPInx, na.rm = TRUE)
+X.abund$woody_AggInx <- (X.abund$woody_AggInx - mean(X.abund$woody_AggInx, na.rm = TRUE)) / sd(X.abund$woody_AggInx, na.rm = TRUE)
+X.abund$herb_AggInx <- (X.abund$herb_AggInx - mean(X.abund$herb_AggInx, na.rm = TRUE)) / sd(X.abund$herb_AggInx, na.rm = TRUE)
+X.abund$woody_EdgDens <- (X.abund$woody_EdgDens - mean(X.abund$woody_EdgDens, na.rm = TRUE)) / sd(X.abund$woody_EdgDens, na.rm = TRUE)
+X.abund$herb_EdgDens <- (X.abund$herb_EdgDens - mean(X.abund$herb_EdgDens, na.rm = TRUE)) / sd(X.abund$herb_EdgDens, na.rm = TRUE)
+X.abund$woody_Pdens <- (X.abund$woody_Pdens - mean(X.abund$woody_Pdens, na.rm = TRUE)) / sd(X.abund$woody_Pdens, na.rm = TRUE)
+X.abund$herb_Pdens <- (X.abund$herb_Pdens - mean(X.abund$herb_Pdens, na.rm = TRUE)) / sd(X.abund$herb_Pdens, na.rm = TRUE)
+X.abund$woody_Npatches <- (X.abund$woody_Npatches - mean(X.abund$woody_Npatches, na.rm = TRUE)) / sd(X.abund$woody_Npatches, na.rm = TRUE)
+X.abund$herb_Npatches <- (X.abund$herb_Npatches - mean(X.abund$herb_Npatches, na.rm = TRUE)) / sd(X.abund$herb_Npatches, na.rm = TRUE)
+X.abund$woody_mnFocal30m <- (X.abund$woody_mnFocal30m - mean(X.abund$woody_mnFocal30m, na.rm = TRUE)) / sd(X.abund$woody_mnFocal30m, na.rm = TRUE)
+X.abund$vegDens50m <- (X.abund$vegDens50m - mean(X.abund$vegDens50m, na.rm = TRUE)) / sd(X.abund$vegDens50m, na.rm = TRUE)
+X.abund <- as.matrix(X.abund)
 print(X.abund)
+
 
 
 ## Extract and scale detection covariates to matrix ## 
 temp_mat <- scale(weather_dat$Temp_degF)
 wind_mat <- scale(weather_dat$Wind_mph)
-X.det <- as.matrix(data.frame(temp = temp_mat, wind = wind_mat))
+sky_mat <- as.integer(as.factor(weather_dat$Sky_Condition))
+
+# Making a day of year matrix
+doy_vec <- yday(as.Date(paste0(formatted_dates, "_2024"), format = "%b_%d_%Y"))
+doy_vec <-  as.integer(as.factor(doy_vec))
                    
-# sky_vec <- as.factor(weather_dat$Sky_Condition)  # Convert to factor
-# sky_dum <- model.matrix(~ sky_vec - 1)  # Create dummy variables for sky, without intercept
+# Combine into a single dataframe where each row corresponds to a survey
+X.det <- as.matrix(data.frame(temp = temp_mat, 
+                              wind = wind_mat,
+                              sky = sky_mat,
+                              doy = doy_vec))
 
-# Survey area in acres
-area <- pi*(200^2)/4046.86
-
-# Survey area in kilometers, for convergence
+# Area surveyed 
+#area <- pi * (200^2) / 4046.86  # in acres
+area <- pi * (200^2) / 10000  # in hectares
+Offset <- rep(area, 27)
 
 # ---------------------------------------
 # Bayesian P-value
@@ -289,7 +326,10 @@ Bnet14.data <- list(S = S,
                     S.A = S.A, 
                     J.A = J.A, 
                     sites.a.v = sites.a.v, 
+                    days = days,
                     n.days = max(J),
+                    n.doy = length(unique(doy_vec)),
+                    Sky_Lvls = length(unique(sky_mat)),
                     X.abund = X.abund,
                     X.det = X.det,
                     Offset = area)
@@ -305,30 +345,22 @@ str(Bnet14.data)
 # ----------------------------------------------------------
 
 
-# -------------------
+# ----------------------
 # MCMC Specifications
-# -------------------
-n.iter = 400000
-n.burnin = 60000
+# ----------------------
+n.iter = 10000 # 50000
+n.burnin = 1000 # 10000
 n.chains = 3 
-n.thin = 10
+n.thin = 5
 n.adapt = 5000
 
 # Rough idea posterior samples
 est_post_samps = (((n.iter - n.burnin) / n.thin) * n.chains)
 print(est_post_samps)
 
-
-# ----------------------------------------------------------
-#                   Model 1 
-# Cue Rate =  Ran eff of survey/day
-# Detection = Veg Density
-# Abundance = Herb Prp
-# ----------------------------------------------------------
-
-# -------------------------------------------------------
+# ----------------------
 # Model Specifications
-# -------------------------------------------------------
+# ----------------------
 
 # Parameters monitored
 params <- c('lambda', # Abundance
@@ -337,24 +369,29 @@ params <- c('lambda', # Abundance
             'beta0',
             'beta1',
             'beta2',
-            'beta3',
             'Sraneff',
-            'mu_s',
-            'tau_s',
             'sigma_s',
+            'mu_s',
             'alpha0', # Detection 
             'alpha1', 
             'alpha2',
             'gamma0', #  Vocalization
-            'kappa1', 
-            'kappa2',
-            'Jraneff',
-            'tau_j',
-            'sigma_j',
+            'gamma1',
+            'sigma',
+            'v_mu_j', 
+            'v_tau_j',
+            'v_Jraneff',
             'omega',
-            'delta',
-            'bp.y', # Bayes p-value
-            'bp.v')
+            # 'delta',
+            # 'phi',
+            'mu_phi',
+            'tau_phi',
+            'fit_y',# Posterior Predictive Checks
+            'fit_y_pred',
+            'fit_v',
+            'fit_v_pred',
+            'bp_y', # Bayes p-value
+            'bp_v')
 
 
 
@@ -362,21 +399,15 @@ params <- c('lambda', # Abundance
 inits <- function() {
   list(
     N = rep(1, S), # Abundance
-    beta0 = rnorm(1, 0, 1),
-    beta1 = 0,
-    beta2 = 0,
-    beta3 = 0,
-    tau_s = 5,
-    alpha0 = 0, # Detection
-    alpha1 = 0, 
-    alpha2 = 0,
-    gamma0 = log(8),
-    kappa1 = 0.6, # Vocalization
-    kappa2 = -0.06, 
-    omega = runif(1, 0, 10),
-    tau_j = 2
+    beta0 = rnorm(1, 0, 5),
+    beta1 = rnorm(1, 0, 5),
+    beta2 = rnorm(1, 0, 5),
+    alpha1 = runif(1, 0, 1), # Detection
+    alpha2 = rnorm(1, 0, 5),
+    alpha3 = rnorm(1, 0, 5),
+    omega = runif(1, 0, 1) # Vocalization
   )
-}#end inits
+}# End inits
 
   
 
@@ -390,46 +421,65 @@ cat(" model {
   # ----------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 10)
+  beta0 ~ dnorm(0, 1) 
   
   # Covariate effect
-  beta1 ~ dnorm(0, 10)
-  beta2 ~ dnorm(0, 10)
-  beta3 ~ dnorm(0, 10)
+  beta1 ~ dnorm(0, 1) # Herbaceous Clumpy Index 
+  beta2 ~ dnorm(0, 1) # Woody Aggregation Index 
 
+  # Survey random effect - Non-Centered
+  sigma_s ~ dunif(0, 10)
+  for (s in 1:S) {
+    eta_s[s] ~ dnorm(0, 1)
+    Sraneff[s] <- beta0 + eta_s[s] * sigma_s 
+  }
 
   # ------------------------
   # Detection Priors
   # ------------------------
   
   # Intercept
-  alpha0 ~ dnorm(0, 10)
+  alpha0 <- logit(mu_alpha) # Constrains alpha0 to be between 0 and 1 on the logit scale (propability)
+  mu_alpha ~ dunif(0, 1)
   
   # True individuals
-  alpha1 ~ dunif(0, 500) # Constrained to be positive
+  alpha1 ~ dunif(0, 1000) # Constrained to be positive
   
   # Covariate effect
-  alpha2 ~ dnorm(0, 1)
-  
+  alpha2 ~ dnorm(0, 1) # Vegetation Density
+  alpha3 ~ dnorm(0, 1) # Wind
+
   # ------------------------
   # Call Rate Priors
   # ------------------------
   
   # False positive rate
-  omega ~ dunif(0, 1000)
+  omega  ~ dunif(0, 1000) # From Doser et al.  
   
-  # Calls in 30 mins by 1 individual, which is 8 +/- 4
-  gamma0 ~ dnorm(log(8), 1/2)
+  # Intercept
+  gamma0 ~ dunif(log(1), log(60))
   
-  # Conspecific density effects
-  kappa1 ~ dnorm(2, 1) T(0, 1) # mean of 0.6, sd of 0.4 i.e., (1/1^2); constrained between 0 and 1
-  kappa2 ~ dnorm(-0.06, 625) T(-1, 0) # mean of 0.06, sd of 0.04 i.e., (1/0.04^2); constrained between -1 and 0
-
-  # Survey random effect
-  tau_j ~ dgamma(5, 5) # variance
-  sigma_j <- sqrt(1 / tau_j) # standard deviation  
+  # Survey random effect - Centered
+  mu_j ~ dgamma(0.01, 0.01)
+  tau_j ~ dgamma(0.01, 0.01)
   for (j in 1:n.days) {
-    Jraneff[j] ~ dnorm(0, sigma_j) 
+    Jraneff[j] ~ dnorm(0, tau_j)
+  }
+  
+  # # Survey random effect - Non-Centered
+  # sigma_j ~ dunif(0, 10)
+  # for (j in 1:n.days) {
+  #   eta_j[j] ~ dnorm(0, 1)
+  #   Jraneff[j] <- gamma0 + eta_j[j] * sigma_j 
+  # }
+ 
+  # Overdispersion
+  mu_phi ~ dgamma(0.01, 0.01)    
+  tau_phi ~ dgamma(0.01, 0.01)   
+  for (s in 1:S) {
+    for (j in 1:J.A) {
+      phi[s, j] ~ dgamma(mu_phi, tau_phi)
+    }
   }
 
   # -------------------------------------------
@@ -444,24 +494,26 @@ cat(" model {
     # ---------------------------------
     # Abundance Submodel  
     # ---------------------------------
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 18] + beta3 * X.abund[s, 7] * X.abund[s, 18]
-    N[s] ~ dpois(lambda[s] * Offset)
     
+    # Poisson
+    log(lambda[s]) <- Sraneff[s] + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] 
+    N[s] ~ dpois(lambda[s])
+
     # Survey
     for (j in 1:J[s]) {
-  
+
     # ---------------------------------
     # Detection Submodel  
     # ---------------------------------
-    logit(p.a[s, j]) <- alpha0 + alpha1*N[s] + alpha2 * X.abund[s,21]  
+    logit(p.a[s, j]) <- alpha0 + alpha1 * N[s] + alpha2 * X.abund[s,21] + alpha3 * X.det[j,2]
 
     # ---------------------------------
     # Call rate Submodel  
     # ---------------------------------
     
-    # delta[s, j] <- exp(gamma0 + Jraneff[j]) + (kappa1*N[s] + kappa2*N[s]^2)
-    delta[s, j] <- max(0, exp(gamma0 + Jraneff[j]) )  #  + (kappa1 * N[s]) + (kappa2 * (N[s])^2))
-
+    # Survey Random Effect
+    log(delta[s, j]) <- Jraneff[j]
+    
     # ---------------------------------
     # Observations
     # ---------------------------------
@@ -473,11 +525,12 @@ cat(" model {
     tp[s, j] <- delta[s, j] * N[s] / (delta[s, j] * N[s] + omega)
 
     # ---------------------------------
-    # Posterior Predictive Checks  
+    # PPC Abundance  
     # ---------------------------------
     y.pred[s, j] ~ dbin(p.a[s, j], 1)
     resid.y[s, j] <- pow(pow(y[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
     resid.y.pred[s, j] <- pow(pow(y.pred[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
+
     } # End J
     
     # Surveys with Vocalizations
@@ -486,13 +539,15 @@ cat(" model {
     # ---------------------------------
     # Vocalizations  
     # ---------------------------------
-    v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]])
     
+    # Zero Truncated Negative Binomial
+    v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
+
     # ---------------------------------
-    # Predicted Values  
+    # PPC calls  
     # ---------------------------------
-    v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * y[s, A.times[s, j]]) 
-    mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega)  / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega)))))
+    v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
+    mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]]) / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]])))
     resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
     resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
     
@@ -510,33 +565,39 @@ cat(" model {
   } # End S
   
   # -------------------------------------------
-  # Derive Abundance
-  # -------------------------------------------
-  N_tot <- sum(N[])
-
-  # -------------------------------------------
-  # Bayesian P-value
+  # PPC and Bayesian P-value
   # -------------------------------------------
   for (s in 1:S.A) {
     tmp.v[s] <- sum(resid.v[sites.a.v[s], 1:J.r[sites.a.v[s]]])
     tmp.v.pred[s] <- sum(resid.v.pred[sites.a.v[s], 1:J.r[sites.a.v[s]]])
   }
-  fit.y <- sum(resid.y[sites.a, 1:J.A])
-  fit.y.pred <- sum(resid.y.pred[sites.a, 1:J.A])
-  fit.v <- sum(tmp.v[1:S.A])
-  fit.v.pred <- sum(tmp.v.pred[1:S.A])
-  bp.y <- step(fit.y.pred - fit.y)
-  bp.v <- step(fit.v.pred - fit.v)
-}  
-", fill=TRUE, file="./JAGs_Models/Bnet_AV_mod1.txt")
+  fit_y <- sum(resid.y[sites.a, 1:J.A])
+  fit_y_pred <- sum(resid.y.pred[sites.a, 1:J.A])
+  fit_v <- sum(tmp.v[1:S.A])
+  fit_v_pred <- sum(tmp.v.pred[1:S.A])
+  bp_y <- step(fit_y_pred - fit_y)
+  bp_v <- step(fit_v_pred - fit_v)
+  
+  # -------------------------------------------
+  # Derive Parameters
+  # -------------------------------------------
+  
+  # Abundance
+  N_tot <- sum(N[])
+
+}
+", fill=TRUE, file="./JAGs_Models/Bnet_AV_Model.txt")
 # ------------End Model-------------
 
+# -------------------------------------------------------
+# Fit Model
+# -------------------------------------------------------
 
 # Fit Model
 fm.1 <- jags(data = Bnet14.data, 
              inits = inits, 
              parameters.to.save = params, 
-             model.file = "./JAGs_Models/Bnet_AV_mod1.txt", 
+             model.file = "./JAGs_Models/Bnet_AV_Model.txt", 
              n.iter = n.iter,
              n.burnin = n.burnin,
              n.chains = n.chains, 
@@ -544,25 +605,158 @@ fm.1 <- jags(data = Bnet14.data,
              parallel = TRUE,
              n.cores = workers,
              DIC = TRUE) 
+
+# Save model
+# saveRDS(fm.1, "./Data/Model_Data/AV_Bnet_fm1.rds")
+# fm.1 <- readRDS("./Data/Model_Data/AV_Bnet_fm1.rds")
+
  
-# Check convergence
-check_rhat(fm.1$Rhat, threshold = 1.1) # Rhat: less than 1.1 means good convergence
+# -------------------------------------------------------
+# Check Convergence
+# -------------------------------------------------------
 
-#mcmcplot(fm.1$samples)# Visually inspect trace plots
+# Trace plots
+mcmcplots::mcmcplot(fm.1$samples, parms = params) 
 
-# Check autocorrelation
-#mcmc_list <- as.mcmc.list(lapply(fm.1$samples, as.mcmc))  # Convert each chain separately
-#autocorr.diag(mcmc_list)  # Check autocorrelation per chain
+# Rhat
+check_rhat(fm.1$Rhat, threshold = 1.1) 
+
+# -------------------------------------------------------
+# Posterior Predictive Checks
+# -------------------------------------------------------
+
+# ----------------------
+# Bayes P-value
+# ----------------------
+
+# P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+
+# Abundance
+cat("Abundance Model Bayesian p-value =", fm.1$summary["bp_y",1], "\n")
+
+# Call    
+cat("Call Model Bayesian p-value =", fm.1$summary["bp_v",1], "\n") 
+
+# ----------------------
+# Extract Residuals
+# ----------------------
+
+# Abundance
+fit_y_data <- data.frame(
+  observed = fm.1$sims.list$fit_y,  # Observed values
+  predicted = fm.1$sims.list$fit_y_pred,  # Predicted values
+  type = rep(c("Observed", "Predicted"), each = length(fm.1$sims.list$fit_y))
+)
+
+# Calls
+fit_v_data <- data.frame(
+  observed = fm.1$sims.list$fit_v,  # Observed values
+  predicted = fm.1$sims.list$fit_v_pred,  # Predicted values
+  type = rep(c("Observed", "Predicted"), each = length(fm.1$sims.list$fit_v))
+)
+
+# ----------------------
+# Scatter Plot
+# ----------------------
+
+# # Abundance
+# y_PPC_Scatter <- ggplot(fit_y_data) +
+#   geom_point(aes(x = observed, y = predicted, color = type, shape = type), alpha = 0.6, size = 3) +  # Different shapes for Observed and Predicted
+#   scale_color_manual(values = c("blue", "red")) +  # Blue for Observed, Red for Predicted
+#   scale_shape_manual(values = c("Observed" = 19, "Predicted" = 20)) +  # Open circle for Observed, Closed triangle for Predicted
+#   labs(title = "Posterior Predictive Check for Abundance",
+#        x = "Observed Fit Values",
+#        y = "Predicted Fit Values") +
+#   theme_minimal() +
+#   theme(legend.title = element_blank())
+# 
+# # Print the scatter plot
+# print(y_PPC_Scatter)
+# 
+# # Export
+# ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Wolfe_Abund_Scatter.jpeg", width = 8, height = 5, dpi = 300)
+# dev.off()
+
+# Alternatively using jagsUI
+# From: https://kenkellner.com/jagsUI/reference/ppcheck.html
+# Value given is Bayes p-value (rounded in figure)
+# jagsUI::pp.check(fm.1,            
+#                  observed = "fit_y", 
+#                  simulated = "fit_y_pred", 
+#                  xlab='Observed data', 
+#                  ylab='Simulated data',
+#                  main='PPC Abundance')
 
 
-# Check Effective Sample Size
-#effectiveSize(mcmc_list)
+# # Call
+# v_PPC_Scatter <- ggplot(fit_v_data) +
+#   geom_point(aes(x = observed, y = predicted, color = type, shape = type), alpha = 0.6, size = 3) +  # Different shapes for Observed and Predicted
+#   scale_color_manual(values = c("blue", "red")) +  # Blue for Observed, Red for Predicted
+#   scale_shape_manual(values = c("Observed" = 19, "Predicted" = 20)) +  # Open circle for Observed, Closed triangle for Predicted
+#   labs(title = "Posterior Predictive Check for Calls",
+#        x = "Observed Fit Values",
+#        y = "Predicted Fit Values") +
+#   theme_minimal() +
+#   theme(legend.title = element_blank())
+# 
+# # Print the scatter plot
+# print(v_PPC_Scatter)
+# 
+# # Export
+# ggsave(plot = v_PPC_Scatter, "./Figures/PPC/AV_Wolfe_Call_Scatter.jpeg", width = 8, height = 5, dpi = 300)
+# dev.off()
 
-# Check Fit
-#cat("Bayesian p-value =", fm.1$summary["p_Bayes",1], "\n")# Best model fit. P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+# jagsUI
+# jagsUI::pp.check(fm.1,            
+#                  observed = "fit_v", 
+#                  simulated = "fit_v_pred", 
+#                  xlab='Observed data', 
+#                  ylab='Simulated data', 
+#                  main='PPC Call') 
+# dev.off() 
 
-# Model summary
-#summary(fm.1$samples)
+
+# ----------------------
+# Density Plot
+# ----------------------
+
+# Abundance
+y_PPC_Dens <- ggplot(fit_y_data) +
+  geom_density(aes(x = observed, fill = "Observed"), alpha = 0.5) +   
+  geom_density(aes(x = predicted, fill = "Predicted"), alpha = 0.5) +  
+  scale_fill_manual(values = c("Observed" = "blue", "Predicted" = "red")) +  
+  labs(title = "Posterior Predictive Check for Abundance", 
+       x = "Fit Values", 
+       y = "Density") +
+  theme_minimal() +
+  theme(legend.title = element_blank()) 
+
+# View
+print(y_PPC_Dens)
+
+# Export                
+ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Wolfe_Abund_Density.jpeg", width = 8, height = 5, dpi = 300)
+dev.off()
+
+
+# Call
+v_PPC_Dens <- ggplot(fit_v_data) +
+  geom_density(aes(x = observed, fill = "Observed"), alpha = 0.5) +   
+  geom_density(aes(x = predicted, fill = "Predicted"), alpha = 0.5) +  
+  scale_fill_manual(values = c("Observed" = "blue", "Predicted" = "red")) +  
+  labs(title = "Posterior Predictive Check for Call", 
+       x = "Fit Values", 
+       y = "Density") +
+  theme_minimal() +
+  theme(legend.title = element_blank()) 
+
+# View
+print(v_PPC_Dens)
+
+# Export                
+ggsave(plot = v_PPC_Dens, "./Figures/PPC/AV_Wolfe_Call_Density.jpeg", width = 8, height = 5, dpi = 300)
+dev.off()
+
 
 # -------------------------------------------------------
 #
@@ -581,18 +775,18 @@ combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
 beta0_samples <- combined_chains[, "beta0"]
 beta1_samples <- combined_chains[, "beta1"]
 beta2_samples <- combined_chains[, "beta2"]
-beta3_samples <- combined_chains[, "beta3"]
+#beta3_samples <- combined_chains[, "beta3"]
 
 # Means
 beta0 <- mean(beta0_samples)
 beta1 <- mean(beta1_samples)
 beta2 <- mean(beta2_samples)
-beta3 <- mean(beta3_samples)
+#beta3 <- mean(beta3_samples)
 
 # Compute 95% CI for each beta
 beta_df <- data.frame(
-  value = c(beta0_samples, beta1_samples, beta2_samples, beta3_samples),
-  parameter = rep(c("beta0", "beta1", "beta2", "beta3"), each = length(beta0_samples))
+  value = c(beta0_samples, beta1_samples, beta2_samples), #, beta3_samples
+  parameter = rep(c("beta0", "beta1", "beta2"), each = length(beta0_samples)) #, "beta3"
 ) %>%
   group_by(parameter) %>%
   filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
@@ -624,7 +818,7 @@ print(colnames(X.abund))
 
 # Set covariate name 
 Cov1_name <- "herb_ClmIdx"
-Cov2_name <- "woody_Npatches"
+Cov2_name <- "woody_AggInx"
 
 # Create a prediction of covariate values
 cov1_pred_vals <- seq(min(X.abund[, Cov1_name]), max(X.abund[, Cov1_name]), length.out = 1000)
@@ -638,12 +832,12 @@ cov2_scaled <- (X.abund[, Cov2_name] - mean(X.abund[, Cov2_name])) / (max(X.abun
 cov1_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov1_scaled))
 cov2_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov2_scaled))
 
-# Create a meshgrid of covariate values for interaction predictions
-interaction_grid <- expand.grid(cov1_scaled = cov1_scaled, cov2_scaled = cov2_scaled)
-interaction_grid$interaction_term <- interaction_grid$cov1_scaled * interaction_grid$cov2_scaled
-
-# Initialize matrix to store predictions
-interaction_preds <- matrix(NA, nrow = length(beta0_samples), ncol = nrow(interaction_grid))
+# # Create a meshgrid of covariate values for interaction predictions
+# interaction_grid <- expand.grid(cov1_scaled = cov1_scaled, cov2_scaled = cov2_scaled)
+# interaction_grid$interaction_term <- interaction_grid$cov1_scaled * interaction_grid$cov2_scaled
+# 
+# # Initialize matrix to store predictions
+# interaction_preds <- matrix(NA, nrow = length(beta0_samples), ncol = nrow(interaction_grid))
 
 
 # Generate predictions
@@ -651,10 +845,10 @@ for (i in 1:length(beta0_samples)) {
   cov1_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov1_scaled # Linear
   cov2_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * cov2_scaled
   
-  interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction
-    beta1_samples[i] * interaction_grid$cov1_scaled +
-    beta2_samples[i] * interaction_grid$cov2_scaled +
-    beta3_samples[i] * interaction_grid$interaction_term
+  # interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction
+  #   beta1_samples[i] * interaction_grid$cov1_scaled +
+  #   beta2_samples[i] * interaction_grid$cov2_scaled +
+  #   beta3_samples[i] * interaction_grid$interaction_term
   
 }
 
@@ -668,9 +862,9 @@ cov2_preds_mean <- apply(cov2_preds, 2, mean)
 cov2_preds_LCI <- apply(cov2_preds, 2, quantile, probs = 0.025) 
 cov2_preds_HCI <- apply(cov2_preds, 2, quantile, probs = 0.975) 
 
-interaction_preds_mean <- apply(interaction_preds, 2, mean)
-interaction_preds_LCI <- apply(interaction_preds, 2, quantile, probs = 0.025)
-interaction_preds_HCI <- apply(interaction_preds, 2, quantile, probs = 0.975)
+# interaction_preds_mean <- apply(interaction_preds, 2, mean)
+# interaction_preds_LCI <- apply(interaction_preds, 2, quantile, probs = 0.025)
+# interaction_preds_HCI <- apply(interaction_preds, 2, quantile, probs = 0.975)
 
 # Combine into a single data frame
 cov1_pred_df <- data.frame(
@@ -685,14 +879,14 @@ cov2_pred_df <- data.frame(
   cov2_preds_LCI = cov2_preds_LCI,
   cov2_preds_HCI = cov2_preds_HCI)
 
-interaction_pred_df <- data.frame(
-  interaction_term = interaction_grid$interaction_term,
-  cov1_scaled = interaction_grid$cov1_scaled,
-  cov2_scaled = interaction_grid$cov2_scaled,
-  interaction_preds_mean = interaction_preds_mean,
-  interaction_preds_LCI = interaction_preds_LCI,
-  interaction_preds_HCI = interaction_preds_HCI)
-
+# interaction_pred_df <- data.frame(
+#   interaction_term = interaction_grid$interaction_term,
+#   cov1_scaled = interaction_grid$cov1_scaled,
+#   cov2_scaled = interaction_grid$cov2_scaled,
+#   interaction_preds_mean = interaction_preds_mean,
+#   interaction_preds_LCI = interaction_preds_LCI,
+#   interaction_preds_HCI = interaction_preds_HCI)
+# 
 
 # Plot effect
 
@@ -721,30 +915,30 @@ ggplot(cov2_pred_df, aes(x = cov2_scaled, y = cov2_preds_mean)) +
   theme(panel.grid = element_blank())
 
 
-# Interactive effects
-plot_ly(interaction_pred_df, 
-        x = ~cov1_scaled, 
-        y = ~cov2_scaled, 
-        z = ~interaction_preds_mean, 
-        type = "contour",
-        colorscale = "Viridis",
-        ncontours = 80,
-        contours = list(showlabels = FALSE), 
-        colorbar = list(title = "Interaction Effect", titlefont = list(size = 14)) 
-        )%>%
-          layout(
-            title = list(
-              text = paste0(model_name, " | Interaction Effect "),
-              font = list(size = 18),  
-              x = 0.5,   
-              xanchor = "center"   
-            ),
-            xaxis = list(
-              title = list(text = "Herbaceous Clumpy Index (scaled)", 
-                           font = list(size = 14))),
-            yaxis = list(
-              title = list(text = "Woody Number of Patches (scaled)", 
-                           font = list(size = 14))))
+# # Interactive effects
+# plot_ly(interaction_pred_df, 
+#         x = ~cov1_scaled, 
+#         y = ~cov2_scaled, 
+#         z = ~interaction_preds_mean, 
+#         type = "contour",
+#         colorscale = "Viridis",
+#         ncontours = 80,
+#         contours = list(showlabels = FALSE), 
+#         colorbar = list(title = "Interaction Effect", titlefont = list(size = 14)) 
+#         )%>%
+#           layout(
+#             title = list(
+#               text = paste0(model_name, " | Interaction Effect "),
+#               font = list(size = 18),  
+#               x = 0.5,   
+#               xanchor = "center"   
+#             ),
+#             xaxis = list(
+#               title = list(text = "Herbaceous Clumpy Index (scaled)", 
+#                            font = list(size = 14))),
+#             yaxis = list(
+#               title = list(text = "Woody Number of Patches (scaled)", 
+#                            font = list(size = 14))))
 
 
 # -------------------------------------------------------
@@ -791,8 +985,8 @@ ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) +
   geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +  # Adjust bandwidth for smoothing
   labs(x = "Model", y = "Density (N/acre)") +
   scale_fill_manual(values = c("AV Bnet" = "blue")) +  # Custom colors
-  scale_y_continuous(limits = c(0, 1000),
-                     breaks = seq(0, 1000, by = 100),
+  scale_y_continuous(limits = c(0, 1200),
+                     breaks = seq(0, 1200, by = 100),
                      labels = scales::comma) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
