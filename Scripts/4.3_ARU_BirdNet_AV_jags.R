@@ -31,7 +31,7 @@
 # install.packages("jagsUI")
 # install.packages("coda")
 # install.packages("mcmcplots")
-# install.packages("loo")
+
 
 # Load library
 library(tidyverse)
@@ -39,7 +39,6 @@ library(plotly)
 library(jagsUI)
 library(coda)
 library(mcmcplots)
-library(loo)
 
 # Set seed, scientific notation options, and working directory
 set.seed(123)
@@ -348,8 +347,8 @@ str(Bnet14.data)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-n.iter = 10000 # 50000
-n.burnin = 1000 # 10000
+n.iter = 50000
+n.burnin = 10000
 n.chains = 3 
 n.thin = 5
 n.adapt = 5000
@@ -674,7 +673,7 @@ fit_v_data <- data.frame(
 # print(y_PPC_Scatter)
 # 
 # # Export
-# ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Wolfe_Abund_Scatter.jpeg", width = 8, height = 5, dpi = 300)
+# ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Bnet_Abund_Scatter.jpeg", width = 8, height = 5, dpi = 300)
 # dev.off()
 
 # Alternatively using jagsUI
@@ -703,7 +702,7 @@ fit_v_data <- data.frame(
 # print(v_PPC_Scatter)
 # 
 # # Export
-# ggsave(plot = v_PPC_Scatter, "./Figures/PPC/AV_Wolfe_Call_Scatter.jpeg", width = 8, height = 5, dpi = 300)
+# ggsave(plot = v_PPC_Scatter, "./Figures/PPC/AV_Bnet_Call_Scatter.jpeg", width = 8, height = 5, dpi = 300)
 # dev.off()
 
 # jagsUI
@@ -735,7 +734,7 @@ y_PPC_Dens <- ggplot(fit_y_data) +
 print(y_PPC_Dens)
 
 # Export                
-ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Wolfe_Abund_Density.jpeg", width = 8, height = 5, dpi = 300)
+ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Bnet_Abund_Density.jpeg", width = 8, height = 5, dpi = 300)
 dev.off()
 
 
@@ -754,7 +753,7 @@ v_PPC_Dens <- ggplot(fit_v_data) +
 print(v_PPC_Dens)
 
 # Export                
-ggsave(plot = v_PPC_Dens, "./Figures/PPC/AV_Wolfe_Call_Density.jpeg", width = 8, height = 5, dpi = 300)
+ggsave(plot = v_PPC_Dens, "./Figures/PPC/AV_Bnet_Call_Density.jpeg", width = 8, height = 5, dpi = 300)
 dev.off()
 
 
