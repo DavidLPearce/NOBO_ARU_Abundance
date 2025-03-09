@@ -340,10 +340,10 @@ str(Wolfe14.data)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-n.iter = 10000 # 400000
-n.burnin = 1000 # 60000
+n.iter =  10000
+n.burnin = 1000
 n.chains = 3 
-n.thin = 3 # 15
+n.thin = 5
 n.adapt = 5000
 
 # Rough idea posterior samples
@@ -472,13 +472,13 @@ cat(" model {
       gamma2[d] ~ dnorm(0, 1) 
   }
 
-  # Double Sigmoid parameters
-  L1 ~ dunif(0, 100)           # Upper asymptote for increasing part
-  L2 ~ dunif(0, 100)           # Upper asymptote for decreasing part
-  k1 ~ dunif(0, 10)            # Steepness of the increasing part
-  k2 ~ dunif(0, 10)            # Steepness of the decreasing part
-  x1 ~ dunif(0, 100)           # Inflection point for increasing part
-  x2 ~ dunif(0, 100)           # Inflection point for decreasing part
+  # # Double Sigmoid parameters
+  # L1 ~ dunif(0, 100)           # Upper asymptote for increasing part
+  # L2 ~ dunif(0, 100)           # Upper asymptote for decreasing part
+  # k1 ~ dunif(0, 10)            # Steepness of the increasing part
+  # k2 ~ dunif(0, 10)            # Steepness of the decreasing part
+  # x1 ~ dunif(0, 100)           # Inflection point for increasing part
+  # x2 ~ dunif(0, 100)           # Inflection point for decreasing part
 
   # Survey random effect - Centered
   mu_j ~ dgamma(0.01, 0.01) 
@@ -511,7 +511,7 @@ cat(" model {
     # ---------------------------------
     
     # Poisson 
-    log(lambda[s]) <- beta0 + Sraneff[s] + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] + beta3 * X.abund[s, 7] * X.abund[s, 12]
+    log(lambda[s]) <- beta0 + Sraneff[s] + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] #+ beta3 * X.abund[s, 7] * X.abund[s, 12]
     N[s] ~ dpois(lambda[s]) 
 
     # Survey
@@ -526,14 +526,16 @@ cat(" model {
     # Call rate Submodel  
     # ---------------------------------
     
-    # Intercept + Sky Condition + Day of Year + Survey Random Effect   
-    #log(delta[s, j]) <- gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]] + Jraneff[days[s, j]]
+    # Intercept + Sky Condition + Day of Year + Survey Random Effect   gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]] +
+    log(delta[s, j]) <-  Jraneff[days[s, j]]
 
 
 
-    # Double sigmoid
-    conspecific_effect[s, j] <- L1 / (1 + exp(-k1 * (N[s] - x1))) - L2 / (1 + exp(-k2 * (N[s] - x2)))
-    log(delta[s, j]) <- gamma0 + conspecific_effect[s, j]
+    # Conspecifics - Double sigmoid
+    #conspecific_effect[s, j] <- L1 / (1 + exp(-k1 * (N[s] - x1))) - L2 / (1 + exp(-k2 * (N[s] - x2)))
+    #log(delta[s, j]) <- Jraneff[days[s, j]] #+ conspecific_effect[s, j]
+
+
 
     # ---------------------------------
     # Observations
