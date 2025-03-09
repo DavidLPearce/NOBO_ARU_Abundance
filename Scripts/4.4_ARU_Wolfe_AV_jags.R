@@ -361,7 +361,6 @@ params <- c('lambda', # Abundance
              'beta0',
              'beta1',
              'beta2',
-             'beta3',
              'Sraneff',
              'sigma_s',
              'mu_s',
@@ -425,8 +424,7 @@ cat(" model {
   # Covariate effect
   beta1 ~ dnorm(0, 1) # Herbaceous Clumpy Index 
   beta2 ~ dnorm(0, 1) # Woody Aggregation Index 
-  beta3 ~ dnorm(0, 1) # Interactive 
-  
+
   # Survey random effect - Non-Centered
   sigma_s ~ dunif(0, 10)
   for (s in 1:S) {
@@ -458,19 +456,6 @@ cat(" model {
   
   # Intercept
   gamma0 ~ dunif(log(1), log(60)) 
-
-  
-  # Fixed Effects
-  
-  # Sky Condition as a factor
-  for (i in 1:Sky_Lvls) {
-      gamma1[i] ~ dnorm(0, 1) 
-  }
-  
-  # DOY as a factor
-  for (d in 1:n.doy) {
-      gamma2[d] ~ dnorm(0, 1) 
-  }
 
   # # Double Sigmoid parameters
   # L1 ~ dunif(0, 100)           # Upper asymptote for increasing part
@@ -511,7 +496,7 @@ cat(" model {
     # ---------------------------------
     
     # Poisson 
-    log(lambda[s]) <- beta0 + Sraneff[s] + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] #+ beta3 * X.abund[s, 7] * X.abund[s, 12]
+    log(lambda[s]) <- beta0 + Sraneff[s] + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12]
     N[s] ~ dpois(lambda[s]) 
 
     # Survey
