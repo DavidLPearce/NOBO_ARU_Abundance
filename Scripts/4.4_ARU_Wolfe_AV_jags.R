@@ -454,9 +454,6 @@ cat(" model {
   # False positive rate
   omega  ~ dunif(0, 1000) # From Doser et al.  
   
-  # Intercept
-  gamma0 ~ dunif(log(1), log(60)) 
-
   # # Double Sigmoid parameters
   # L1 ~ dunif(0, 100)           # Upper asymptote for increasing part
   # L2 ~ dunif(0, 100)           # Upper asymptote for decreasing part
@@ -472,7 +469,6 @@ cat(" model {
     Jraneff[j] ~ dnorm(mu_j, tau_j)
   }
  
-
   # Overdispersion
   mu_phi ~ dgamma(0.01, 0.01)    
   tau_phi ~ dgamma(0.01, 0.01)   
@@ -496,7 +492,7 @@ cat(" model {
     # ---------------------------------
     
     # Poisson 
-    log(lambda[s]) <- beta0 + Sraneff[s] + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12]
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] + Sraneff[s]
     N[s] ~ dpois(lambda[s]) 
 
     # Survey
@@ -511,7 +507,7 @@ cat(" model {
     # Call rate Submodel  
     # ---------------------------------
     
-    # Intercept + Sky Condition + Day of Year + Survey Random Effect   gamma0 + gamma1[X.det[j,3]] + gamma2[X.det[j,4]] +
+    # Survey Random Effect
     log(delta[s, j]) <-  Jraneff[days[s, j]]
 
 
@@ -781,18 +777,16 @@ combined_chains <- as.mcmc(do.call(rbind, fm.1$samples))
 beta0_samples <- combined_chains[, "beta0"]
 beta1_samples <- combined_chains[, "beta1"]
 beta2_samples <- combined_chains[, "beta2"]
-beta3_samples <- combined_chains[, "beta3"]
 
 # Means
 beta0 <- mean(beta0_samples)
 beta1 <- mean(beta1_samples)
 beta2 <- mean(beta2_samples)
-beta3 <- mean(beta3_samples)
 
 # Compute 95% CI for each beta
 beta_df <- data.frame(
-  value = c(beta0_samples, beta1_samples, beta2_samples, beta3_samples), #  
-  parameter = rep(c("beta0", "beta1", "beta2", "beta3"), each = length(beta0_samples)) #
+  value = c(beta0_samples, beta1_samples, beta2_samples),  
+  parameter = rep(c("beta0", "beta1", "beta2"), each = length(beta0_samples))
 ) %>%
   group_by(parameter) %>%
   filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
@@ -840,25 +834,11 @@ cov2_scaled <- (X.abund[, Cov2_name] - mean(X.abund[, Cov2_name])) / (max(X.abun
 cov1_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov1_scaled))
 cov2_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov2_scaled))
 
-# Create a meshgrid of covariate values for interaction predictions
-interaction_grid <- expand.grid(cov1_scaled = cov1_scaled, cov2_scaled = cov2_scaled)
-interaction_grid$interaction_term <- interaction_grid$cov1_scaled * interaction_grid$cov2_scaled
-
-# Initialize matrix to store predictions
-interaction_preds <- matrix(NA, nrow = length(beta0_samples), ncol = nrow(interaction_grid))
-
-
 # Generate predictions
 for (i in 1:length(beta0_samples)) {
   cov1_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov1_scaled # Linear
   cov2_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * cov2_scaled
-
-  interaction_preds[i, ] <- beta0_samples[i] +                       # Interaction
-    beta1_samples[i] * interaction_grid$cov1_scaled +
-    beta2_samples[i] * interaction_grid$cov2_scaled +
-    beta3_samples[i] * interaction_grid$interaction_term
-
-}
+}# end loop
 
 
 # Calculate mean predictions
@@ -869,10 +849,6 @@ cov1_preds_HCI <- apply(cov1_preds, 2, quantile, probs = 0.975) # HCI
 cov2_preds_mean <- apply(cov2_preds, 2, mean)
 cov2_preds_LCI <- apply(cov2_preds, 2, quantile, probs = 0.025)
 cov2_preds_HCI <- apply(cov2_preds, 2, quantile, probs = 0.975)
-
-interaction_preds_mean <- apply(interaction_preds, 2, mean)
-interaction_preds_LCI <- apply(interaction_preds, 2, quantile, probs = 0.025)
-interaction_preds_HCI <- apply(interaction_preds, 2, quantile, probs = 0.975)
 
 # Combine into a single data frame
 cov1_pred_df <- data.frame(
@@ -886,15 +862,6 @@ cov2_pred_df <- data.frame(
   cov2_preds_mean = cov2_preds_mean,
   cov2_preds_LCI = cov2_preds_LCI,
   cov2_preds_HCI = cov2_preds_HCI)
-
-interaction_pred_df <- data.frame(
-  interaction_term = interaction_grid$interaction_term,
-  cov1_scaled = interaction_grid$cov1_scaled,
-  cov2_scaled = interaction_grid$cov2_scaled,
-  interaction_preds_mean = interaction_preds_mean,
-  interaction_preds_LCI = interaction_preds_LCI,
-  interaction_preds_HCI = interaction_preds_HCI)
-
 
 # Plot effect
 
@@ -924,34 +891,6 @@ ggplot(cov2_pred_df, aes(x = cov2_scaled, y = cov2_preds_mean)) +
        title = paste0(model_name, " | Predicted Effect of ", Cov2_name)) +
   theme_minimal() +
   theme(panel.grid = element_blank())
-
-# Clear
-dev.off()
-
-# Interactive effects
-plot_ly(interaction_pred_df,
-        x = ~cov1_scaled,
-        y = ~cov2_scaled,
-        z = ~interaction_preds_mean,
-        type = "contour",
-        colorscale = "Viridis",
-        ncontours = 80,
-        contours = list(showlabels = FALSE),
-        colorbar = list(title = "Interaction Effect", titlefont = list(size = 14))
-        )%>%
-          layout(
-            title = list(
-              text = paste0(model_name, " | Interaction Effect "),
-              font = list(size = 18),
-              x = 0.5,
-              xanchor = "center"
-            ),
-            xaxis = list(
-              title = list(text = "Herbaceous Clumpy Index (scaled)",
-                           font = list(size = 14))),
-            yaxis = list(
-              title = list(text = "Woody Aggregation Index (scaled)",
-                           font = list(size = 14))))
 
 # Clear
 dev.off()
