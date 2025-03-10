@@ -1,9 +1,9 @@
 # Define Hypergeometric Sampling Function
-rhyper_custom <- nimbleFunction(
+rhyper_nimble <- nimbleFunction(
   run = function(n = integer(0), K = double(0), Q = double(0), n_draws = double(0)) {
-    returnType(double(0))  # Must match `x` in `dhyper_custom`
+    returnType(double(0))  # Must match `x` in `dhyper_nimble
     
-    if (n != 1) print("rhyper_custom only allows n = 1; using n = 1.")
+    if (n != 1) print("rhyper_nimble only allows n = 1; using n = 1.")
     
     x <- 0
     K_remain <- K

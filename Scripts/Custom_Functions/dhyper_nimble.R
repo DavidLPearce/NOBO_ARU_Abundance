@@ -1,5 +1,5 @@
 # Define Hypergeometric Probability Function
-dhyper_custom <- nimbleFunction(
+dhyper_nimble <- nimbleFunction(
   run = function(x = double(0), K = double(0), Q = double(0), n_draws = double(0), log = integer(0, default = 0)) {
     returnType(double(0))
     
@@ -15,6 +15,6 @@ dhyper_custom <- nimbleFunction(
     
     # Return log probability if requested
     if (log) return(log(prob))
-    return(prob)
+    return(exp(log_prob))
   }
 )
