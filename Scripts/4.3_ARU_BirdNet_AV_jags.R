@@ -102,7 +102,7 @@ model_name <- "AV Bnet"
 # BirdNet detections
 bnet_dat_all <- read.csv("./Data/Acoustic_Data/NOBO_BirdNETall_2024.csv")
 
-# ARU weather covariates
+# ARU weather coreadRDS()# ARU weather covariates
 weather_dat <- read.csv("./Data/Acoustic_Data/ARU_weathercovs.csv")
 
 # Site covariates
@@ -130,6 +130,30 @@ nrow(bnet_dat)
 # Adding occasion column
 bnet_dat <- bnet_dat %>%
   mutate(Occasion = match(Date, date_order))
+
+# # Changing subset to 
+# bnet_dat <- bnet_dat_all %>%
+#   filter(Date >= as.Date("2024-06-10") & Date <= as.Date("2024-07-07"))
+# 
+# # Adding occasion column
+# date_order <- seq(as.Date("2024-06-10"), as.Date("2024-07-07"), by = "day")
+# 
+# bnet_dat <- bnet_dat %>%
+#   filter(Date %in% date_order) %>%   
+#   mutate(Occasion = match(Date, date_order))
+# 
+# # Check that it worked
+# min(bnet_dat$Date)
+# max(bnet_dat$Date)
+
+# # Subsetting data to only calls detected in last 10 mins of the recording
+# bnet_dat <- bnet_dat %>%
+#   filter(Time >= "06:45:00" & Time <= "06:55:00")
+# 
+# # Check that it worked
+# min(bnet_dat$Time)
+# max(bnet_dat$Time)
+
 
 # Adding a row count
 bnet_dat$Count <- 1
@@ -208,9 +232,10 @@ print(A.times)
 # Manually validated  
 # ---------------------------------------
 
+## This is from 14 day every 4 day data set
 
 # Validated Calls
-# Do not include sites with no calls 
+# Do not include sites with no calls
 # only include occasions where at least 1 call was validated for a site
 n <- read.csv("./Data/Acoustic_Data/Bnet14day_n.csv", row.names = 1)
 n <- as.matrix(n)
@@ -228,8 +253,36 @@ val.times <- as.matrix(val.times)
 S.val <- nrow(n)
 
 # How many surveys were validate
-J.val <- rep(14, S.val)  
- 
+J.val <- rep(14, S.val)
+
+# #### This is fake data ######
+# write.csv(v, "bnet_v.csv")
+#  
+# # Validated Calls
+# # Do not include sites with no calls
+# # only include occasions where at least 1 call was validated for a site
+# n <- read.csv("./bnet_n.csv", row.names = 1)
+# n <- as.matrix(n)
+# n
+# 
+# # True Calls
+# # Calls found to be true, same dimension as n
+# k <- read.csv("./bnet_k.csv", row.names = 1)
+# k <- as.matrix(k)
+# k
+# 
+# # Survey days calls were validated, same dimension as n
+# val.times <- read.csv("./bnet_val.times.csv", row.names = 1)
+# val.times <- as.matrix(val.times)
+# 
+# # Total number of sites with manually validated data
+# S.val <- nrow(n)
+# 
+# # How many surveys were validate
+# J.val <- rep(28, S.val)
+# 
+
+
 
 # Check
 dim(n) # dimensions
@@ -241,9 +294,6 @@ dim(val.times)
 # ---------------------------------------
 # Covariates 
 # ---------------------------------------
-
-# survey random effect index
-days <- matrix(rep(1:14, times = 27), nrow = 27, ncol = 14, byrow = TRUE)
 
 # Remove site, lat, long
 X.abund <- site_covs[,-c(1:4)]
@@ -325,7 +375,6 @@ Bnet14.data <- list(S = S,
                     S.A = S.A, 
                     J.A = J.A, 
                     sites.a.v = sites.a.v, 
-                    days = days,
                     n.days = max(J),
                     n.doy = length(unique(doy_vec)),
                     Sky_Lvls = length(unique(sky_mat)),
@@ -347,8 +396,8 @@ str(Bnet14.data)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-n.iter = 50000
-n.burnin = 10000
+n.iter = 10000
+n.burnin = 1000
 n.chains = 3 
 n.thin = 5
 n.adapt = 5000
@@ -430,8 +479,15 @@ cat(" model {
   sigma_s ~ dunif(0, 10)
   for (s in 1:S) {
     eta_s[s] ~ dnorm(0, 1)
-    Sraneff[s] <- beta0 + eta_s[s] * sigma_s 
+    Sraneff[s] <- beta0 + eta_s[s] * sigma_s
   }
+  
+  # # Site random effect - Centered
+  # mu_s ~ dgamma(0.01, 0.01)
+  # tau_s ~ dgamma(0.01, 0.01)
+  # for (s in 1:S) {
+  #   Sraneff[s] ~ dnorm(mu_s, tau_s)
+  # }
 
   # ------------------------
   # Detection Priors
@@ -456,7 +512,7 @@ cat(" model {
   omega  ~ dunif(0, 1000) # From Doser et al.  
   
   # Intercept
-  gamma0 ~ dunif(log(1), log(60))
+  gamma0 ~ dunif(log(1), log(20))
   
   # Survey random effect - Centered
   mu_j ~ dgamma(0.01, 0.01)
@@ -464,14 +520,7 @@ cat(" model {
   for (j in 1:n.days) {
     Jraneff[j] ~ dnorm(0, tau_j)
   }
-  
-  # # Survey random effect - Non-Centered
-  # sigma_j ~ dunif(0, 10)
-  # for (j in 1:n.days) {
-  #   eta_j[j] ~ dnorm(0, 1)
-  #   Jraneff[j] <- gamma0 + eta_j[j] * sigma_j 
-  # }
- 
+
   # Overdispersion
   mu_phi ~ dgamma(0.01, 0.01)    
   tau_phi ~ dgamma(0.01, 0.01)   
@@ -480,7 +529,7 @@ cat(" model {
       phi[s, j] ~ dgamma(mu_phi, tau_phi)
     }
   }
-
+  
   # -------------------------------------------
   #
   # Likelihood and Process Model 
@@ -495,7 +544,7 @@ cat(" model {
     # ---------------------------------
     
     # Poisson
-    log(lambda[s]) <- Sraneff[s] + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] 
+    log(lambda[s]) <- Sraneff[s] + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12]
     N[s] ~ dpois(lambda[s])
 
     # Survey
@@ -504,7 +553,7 @@ cat(" model {
     # ---------------------------------
     # Detection Submodel  
     # ---------------------------------
-    logit(p.a[s, j]) <- alpha0 + alpha1 * N[s] + alpha2 * X.abund[s,21] + alpha3 * X.det[j,2]
+    logit(p.a[s, j]) <- alpha0 + alpha1 * N[s] + alpha2 * X.abund[s,21] #+ alpha3 * X.det[j,2]
 
     # ---------------------------------
     # Call rate Submodel  
@@ -733,7 +782,7 @@ y_PPC_Dens <- ggplot(fit_y_data) +
 # View
 print(y_PPC_Dens)
 
-# Export                
+ # Export                
 ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Bnet_Abund_Density.jpeg", width = 8, height = 5, dpi = 300)
 dev.off()
 
