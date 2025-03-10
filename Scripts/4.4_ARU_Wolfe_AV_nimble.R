@@ -32,7 +32,6 @@
 # install.packages("coda")
 # install.packages("mcmcplots")
 
-
 # Load library
 library(tidyverse)
 library(plotly)
@@ -57,8 +56,59 @@ source("./Scripts/Custom_Functions/Rhat_check_function.R")
 # Source custom nimble functions for hypergeometric distribution
 source("./Scripts/Custom_Functions/log_factoral_nimble.R")
 source("./Scripts/Custom_Functions/binomial_coefficient_nimble.R")
-source("./Scripts/Custom_Functions/dhyper_nimble.R")
+# source("./Scripts/Custom_Functions/dhyper_nimble.R")
+
+dhyper_nimble <- nimbleFunction(
+  run = function(x = double(0), K = double(0), Q = double(0), n_draws = double(0), log = integer(0, default = 0)) {
+    returnType(double(0))
+    
+    # Check for missing values (NA handling)
+    if (is.nan(x) | is.nan(K) | is.nan(Q) | is.nan(n_draws)) {
+      if (log) return(-Inf)
+      return(0)
+    }
+    
+    if (x < 0 | is.na(x)) {
+      if (log) return(-Inf)
+      return(0)
+    }
+    if (K < 0 | is.na(K)) {
+      if (log) return(-Inf)
+      return(0)
+    }
+    if (Q < 0 | is.na(Q)) {
+      if (log) return(-Inf)
+      return(0)
+    }
+    if (n_draws < 0 | is.na(n_draws)) {
+      if (log) return(-Inf)
+      return(0)
+    }
+    
+    # Ensure valid hypergeometric conditions
+    if (x > K) {
+      if (log) return(-Inf)
+      return(0)
+    }
+    if ((n_draws - x) > Q) {
+      if (log) return(-Inf)
+      return(0)
+    }
+    
+    # Compute hypergeometric probability
+    log_prob <- lgamma(K + 1) - lgamma(x + 1) - lgamma(K - x + 1) +
+      lgamma(Q + 1) - lgamma(n_draws - x + 1) - lgamma(Q - (n_draws - x) + 1) -
+      (lgamma(K + Q + 1) - lgamma(n_draws + 1) - lgamma(K + Q - n_draws + 1))
+    
+    # Return log probability if requested
+    if (log) return(log_prob)
+    return(exp(log_prob))
+  }
+)
+
+
 source("./Scripts/Custom_Functions/rhyper_nimble.R")
+source("./Scripts/Custom_Functions/register_hypergeometric_distribution.R")
 
 # Model name object
 model_name <- "AV Wolfe"
@@ -160,6 +210,7 @@ rownames(v) <- as.numeric(1:27)
 # Get the site numbers with at least one call
 v_mat <- as.matrix(v)
 sites_a <- which(rowSums(!is.na(v_mat) & v >= 1) > 0)
+sites_a <- as.vector(sites_a)
 print(sites_a)
 
 # Creating a binary detection matrix, values >= 1 become 1, and 0 stays 0
@@ -224,7 +275,7 @@ S_val <- nrow(n)
 
 # How many surveys were validate
 J_val <- rep(14, S_val)  
-
+J_val <- as.vector(unname(J_val))
 
 # Check dimensions
 dim(n) 
@@ -292,9 +343,12 @@ X_det <- as.matrix(data.frame(temp = temp_mat,
                               doy = doy_vec))
 
 # Area surveyed 
-#area <- pi * (200^2) / 4046.86  # in acres
+# area <- pi * (200^2) / 4046.86  # in acres
 # area <- pi * (200^2) / 10000  # in hectares
 # Offset <- rep(area, 27)
+
+# For random effect
+n_days = max(J)
 
 # ----------------------
 # Bayesian P-value
@@ -308,30 +362,13 @@ J_A <- max(J)
 # ----------------------
 # Bundle Data 
 # ----------------------
-
-J_r_max <- max(J_r)  # Define the maximum number of surveys
-
-# Create a matrix of valid indices
-J_r_matrix <- matrix(0, nrow = length(J_r), ncol = J_r_max)
-for (s in 1:length(J_r)) {
-  if (J_r[s] > 0) {
-    J_r_matrix[s, 1:J_r[s]] <- 1  # Mark valid indices
-  }
-}
-
-Wolfe14.data <- list(A_times = A_times,
-                     val_times = val_times, 
-                     sites_a = sites_a, 
-                     sites_av = sites_av,
-                     J_r_matrix = J_r_matrix,
-                     v = v, 
+Wolfe14.data <- list(v = v, 
                      y = y,
                      n = n,
                      k = k, 
                      X_abund = X_abund,
                      X_det = X_det
                      # Offset = area
-                     
 )
 
 
@@ -343,14 +380,17 @@ str(Wolfe14.data)
 # ----------------------
 
 constants_list <- list(S = S, 
-                       #J = J, 
+                       A_times = A_times,
+                       val_times = val_times, 
+                       sites_a = sites_a, 
+                       sites_av = sites_av,
+                       # J = J,
                        S_val = S_val, 
                        J_val = J_val, 
-                       #S.A = S.A, 
+                       # S.A = S.A,
                        J_A = J_A,
                        J_r = J_r,
-                       J_r_max = max(J_r),
-                       n_days = max(J)
+                       n_days = n_days,
                        # days = days,
                        # n.doy = length(unique(doy_vec)),
                        # Sky_Lvls = length(unique(sky_mat))
@@ -370,9 +410,9 @@ str(constants_list)
 # MCMC Specifications
 # ----------------------
 n.iter = 1000
-n.burnin =  1000
+n.burnin =  100
 n.chains = 3 
-n.thin = 5
+n.thin = 1
 n.adapt = 5000
 
 # Rough idea posterior samples
@@ -403,8 +443,8 @@ params <- c('lambda', # Abundance
             'v_tau_j',
             'v_Jraneff',
             'omega',
-            # 'delta',
-            # 'phi',
+            'delta',
+            'phi',
             'mu_phi',
             'tau_phi',
             'fit_y',# Posterior Predictive Checks
@@ -412,90 +452,58 @@ params <- c('lambda', # Abundance
             'fit_v',
             'fit_v_pred',
             'bp_y', # Bayes p-value
-            'bp_v')
+            'bp_v'
+) # End Params
 
  
 
-# Initial Values 
-inits <- list(N = rep(1, S), # Abundance
-              beta0 = rnorm(1, 0, 5),
-              beta1 = rnorm(1, 0, 5),
-              beta2 = rnorm(1, 0, 5),
-              alpha1 = runif(1, 0, 1), # Detection
-              alpha2 = rnorm(1, 0, 5),
-              alpha3 = rnorm(1, 0, 5),
-              omega = runif(1, 0, 1) # Vocalization
-)# End inits
-
-
-## Distributions
-# library(ggfortify)
-# ggdistribution(dunif, seq(0, 1, 0.01), min = 0, max = 1)
-# ggdistribution(dnorm, seq(0, 1, 100), mean = 0, sd = 0.01)
-# ggdistribution(dgamma, seq(0, 0.01, 0.01), shape = 0.1, rate = 0.1)
-
-
-computeSumResid <- nimbleFunction(
-  run = function(resid_v = double(2), resid_v_pred = double(2), 
-                 sites_av = integer(1), J_r = integer(1)) {
-    returnType(double(1))
-    
-    out <- numeric(length(sites_av), init = FALSE)
-    out_pred <- numeric(length(sites_av), init = FALSE)
-    
-    for (s in 1:length(sites_av)) {
-      idx <- sites_av[s]  # Extract site index
-      J_r_s <- J_r[idx]  # Extract J_r[sites_av[s]] safely
-      out[s] <- sum(resid_v[idx, 1:J_r_s])
-      out_pred[s] <- sum(resid_v_pred[idx, 1:J_r_s])
-    }
-    
-    return(c(out, out_pred))
-  }
-)
-
-# Function to extract A_times[s, j]
-getATimesIndex <- nimbleFunction(
-  run = function(s = integer(0), j = integer(0), A_times = double(2)) {
-    returnType(integer(0))
-    return(A_times[s, j])   
-  }
-)
-
-
-# Function to extract J_r[s]
-getJrIndex <- nimbleFunction(
-  run = function(s = integer(0), J_r = integer(1)) {
-    returnType(integer(0))
-    return(J_r[s])
-  }
-)
-
-# Function to extract sites_a[s]
-getSitesAIndex <- nimbleFunction(
-  run = function(s = integer(0), sites_a = integer(1)) {
-    returnType(integer(0))
-    return(sites_a[s])  
-  }
-)
-# Function to extract J_val[s]
-getJvalIndex <- nimbleFunction(
-  run = function(s = integer(0), J_val = integer(1)) {
-    returnType(integer(0))
-    return(J_val[s]) 
-  }
+# # Initial Values 
+inits <- list(
+  # Abundance
+  N = rep(1, S),         
+  beta0 = rnorm(1, 0, 1),
+  beta1 = rnorm(1, 0, 1),
+  beta2 = rnorm(1, 0, 1),
+  
+  # Detection
+  alpha0 = 0,            
+  mu_alpha = 0.5,  
+  alpha1 = runif(1, 0, 1), 
+  alpha2 = rnorm(1, 0, 1),
+  alpha3 = rnorm(1, 0, 1),
+  
+  # Vocalization
+  omega = runif(1, 0, 1),  
+  gamma0 = log(10),  
+  
+  # Survey random effect
+  Jraneff = rep(0, n_days),
+  mu_j = 1,
+  tau_j = 1,
+  
+  # Overdispersion
+  mu_phi = 1,  
+  tau_phi = 1,
+  phi = matrix(1, nrow = S, ncol = J_A),  # Ensure phi is initialized
+  
+  # Detection submodel
+  p.a = matrix(0.5, nrow = S, ncol = J_A),  # Detection probability
+  delta = matrix(1, nrow = S, ncol = J_A),  # Call rate
+  tp = matrix(0.5, nrow = S, ncol = J_A),  # True positive rate
+  y.pred = matrix(0, nrow = S, ncol = J_A),  # Predicted counts
+  
+  # Vocalization model
+  v.pred = matrix(1, nrow = S, ncol = max(J_r)),  # Predicted vocalization counts
+  mu.v = matrix(1, nrow = S, ncol = max(J_r)),  # Mean vocalizations
+  resid.v = matrix(0, nrow = S, ncol = max(J_r)),
+  resid.v.pred = matrix(0, nrow = S, ncol = max(J_r)),
+  
+  # Manual validation
+  K = matrix(1, nrow = S_val, ncol = max(J_r))  # Validation parameter
 )
 
 
-# Function to extract val_times[s, j]
-getValTimesIndex <- nimbleFunction(
-  run = function(s = integer(0), j = integer(0), val_times = double(2)) {
-    returnType(integer(0))
-    return(val_times[s, j])  
-  }
-)
-
-
+ 
 # ----------------------------- 
 # Model Statement 
 # ----------------------------- 
@@ -621,63 +629,50 @@ acoustic_model <- nimbleCode({
     # ---------------------------------
     # Vocalizations  
     # ---------------------------------
-    
-    # # Extract J_r[s]
-    # J_r_s <- getJrIndex(s, J_r)
 
     # Surveys with Vocalizations
-    for (jr in 1:J_r[s]) {
-
-      # Extract A_times
-      a_idx <- getATimesIndex(s, jr, A_times)
+    for (j in 1:J_r[s]) {
 
       # Zero Truncated Negative Binomial
-      v[s, a_idx] ~ T(dpois((delta[s, a_idx] * N[s] + omega) * phi[s, a_idx] * y[s, a_idx]), 1, )
+      v[s, A_times[s, j]] ~ T(dpois((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]] * y[s, A_times[s, j]]), 1, )
 
 
       # ---------------------------------
       # PPC calls
       # ---------------------------------
-      v.pred[s, j] ~ T(dpois((delta[s, a_idx] * N[s] + omega) * phi[s, a_idx] * y[s, a_idx]), 1, )
-      mu.v[s, j] <- ((delta[s, a_idx] * N[s] + omega) * phi[s, a_idx]) / (1 - exp(-1 * ((delta[s, a_idx] * N[s] + omega) * phi[s, a_idx])))
-      resid.v[s, j] <- pow(pow(v[s, a_idx], 0.5) - pow(mu.v[s, j], 0.5), 2)
+      v.pred[s, j] ~ T(dpois((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]] * y[s, A_times[s, j]]), 1, )
+      mu.v[s, j] <- ((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]]) / (1 - exp(-1 * ((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]])))
+      resid.v[s, j] <- pow(pow(v[s, A_times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
       resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
 
 
-
+      }# End J_R
     
   } # End S
   
   # ------------------------
   # Manual Validation
   # ------------------------
-  
+
   for (s in 1:S_val) {
 
-    # Extract J_val index
-    J_val_s <- getJvalIndex(s, J.val)
+    for (j in 1:J_val[s]) {
+      
+      K[s, j] ~ dbin(tp[sites_a[s], j], v[sites_a[s], val_times[s, j]])
+      k[s, val_times[s, j]] ~ dhyper_nimble(K[s, j], v[sites_a[s], val_times[s, j]] - K[s, j], n[s, val_times[s, j]])
+    } # End J
+  } # End S
 
-    for (j in 1:J_val) {
-
-      # Extract sites_a[s]
-      site_idx <- getSitesAIndex(s, sites_a)
-
-      # Extract val_times[s, j]
-      val_idx <- getValTimesIndex(s, j, val_times)
-
-      # False Positive Model
-      K[s, j] ~ dbin(tp[site_idx, j], v[site_idx, val_idx])
-      k[s, val_idx] ~ dhyper_custom(K[s, j], v[site_idx, val_idx] - K[s, j], n[s, val_idx])
-    }
-  }
-
-  # # -------------------------------------------
-  # # PPC and Bayesian P-value
-  # # -------------------------------------------
+  # -------------------------------------------
+  # PPC and Bayesian P-value
+  # -------------------------------------------
   # for (s in 1:S.A) {
+  # 
   #   tmp.v[s] <- sum(resid.v[sites_av[s], 1:J.r[sites_av[s]]])
+  # 
   #   tmp.v.pred[s] <- sum(resid.v.pred[sites_av[s], 1:J.r[sites_av[s]]])
   # }
+  # 
   # fit_y <- sum(resid.y[sites_a, 1:J_A])
   # fit_y_pred <- sum(resid.y.pred[sites_a, 1:J_A])
   # fit_v <- sum(tmp.v[1:S.A])
@@ -690,13 +685,14 @@ acoustic_model <- nimbleCode({
   # -------------------------------------------
   
   # Abundance
-  N_tot <- sum(N[])
+  N_tot <- sum(N[1:S])
 })
 # ---------------------------- End Model ----------------------------
 
+ 
 
 # ------------------------
-# Define the Model in NIMBLE
+# Fit model
 # ------------------------
 model <- nimbleModel(
   code = acoustic_model, 
@@ -704,4 +700,7 @@ model <- nimbleModel(
   data = Wolfe14.data, 
   inits = inits
 )
+
+# Check variables not initialized
+model$initializeInfo()
 
