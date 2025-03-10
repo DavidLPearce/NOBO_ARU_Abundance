@@ -22,14 +22,21 @@ acoustic_data <- data.frame(
 
 
 # Directory containing the CSV files
-csv_directory <- "D:/LaCopita_Acoustics/Acoustics_Summer2024/Acoustics_Binned_Summer2024/Summer24_Dawn_BirdNET_RawResults"
+csv_directory <- "D:/LaCopita_Acoustics/Acoustics_Summer2024/Summer24_Dawn_BirdNET_RawResults"
 
 # List all CSV files in the directory
 csv_files <- list.files(csv_directory, pattern = "\\.csv$", full.names = TRUE)
 
+# Initialize progress bar
+total_files <- length(csv_files)
+pb <- txtProgressBar(min = 0, max = total_files, style = 3)
+
 
 # Adding study area, site, date, survey period to columns from file name
-for (file in csv_files) {
+for (i in seq_along(csv_files)) {
+  
+  # Subset file
+  file <- csv_files[i]
   
   # Extracting information from the file name
   file_name <- basename(file)
@@ -64,6 +71,9 @@ for (file in csv_files) {
   
   # Combining into one dataset
   acoustic_data <- data.frame(rbind(site_data, acoustic_data))  
+  
+  # Update progress bar
+  setTxtProgressBar(pb, i)
 
 }# end loop
 
@@ -104,8 +114,8 @@ View(acoustic_data)
 
 
 # Export to csv
-write.csv(acoustic_data, row.names = FALSE, "./Data/Acoustic_data/CH1_BirdNET.csv")
+write.csv(acoustic_data, row.names = FALSE, "./Data/Raw_Data/Acoustic_Data_Bnet_2024.csv")
           
 # Save an object to a file
-saveRDS(acoustic_data, file = "./Data/Acoustic_data/CH1_BirdNET.rds")
+saveRDS(acoustic_data, file = "./Data/Raw_Data/Acoustic_Data_Bnet_2024.rds")
 
