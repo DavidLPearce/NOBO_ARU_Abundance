@@ -87,7 +87,7 @@ model_name <- "AV Wolfe"
 # c = point count data
 # S = number of total sites
 # J = number of repeat visits for acoustic data at each site
-# J.A = max number of repeat visits at each acoustic data site. 
+# J_A = max number of repeat visits at each acoustic data site. 
 # S_val = number of sites where validation of acoustic data occurred
 # days = variable used to index different recording days. 
 # A_times = indexing variable used to determine specific indexes with v > 0.
@@ -240,39 +240,39 @@ dim(val_times)
 # survey random effect index
 days <- matrix(rep(1:14, times = 27), nrow = 27, ncol = 14, byrow = TRUE)
 
-# Format X.abund
-# X.abund <- as.matrix(site_covs[,-c(1:2)]) # Remove X and site id
-# print(X.abund)
+# Format X_abund
+# X_abund <- as.matrix(site_covs[,-c(1:2)]) # Remove X and site id
+# print(X_abund)
 
 # Remove site, lat, long
-X.abund <- site_covs[,-c(1:4)]
+X_abund <- site_covs[,-c(1:4)]
 
 # Mean and center scale values 
 # scale() also works, but stating to center or scale (scale(object, center = TRUE, scale = TRUE)) causes issues. 
 # So, manually doing it to avoid what ever issue scale() was causing.
-X.abund$woody_prp <- (X.abund$woody_prp - mean(X.abund$woody_prp, na.rm = TRUE)) / sd(X.abund$woody_prp, na.rm = TRUE) 
-X.abund$herb_prp <- (X.abund$herb_prp - mean(X.abund$herb_prp, na.rm = TRUE)) / sd(X.abund$herb_prp, na.rm = TRUE)
-X.abund$open_prp <- (X.abund$open_prp - mean(X.abund$open_prp, na.rm = TRUE)) / sd(X.abund$open_prp, na.rm = TRUE) 
-X.abund$woody_mnParea <- (X.abund$woody_mnParea - mean(X.abund$woody_mnParea, na.rm = TRUE)) / sd(X.abund$woody_mnParea, na.rm = TRUE)
-X.abund$herb_mnParea <- (X.abund$herb_mnParea - mean(X.abund$herb_mnParea, na.rm = TRUE)) / sd(X.abund$herb_mnParea, na.rm = TRUE)
-X.abund$woody_ClmIdx <- (X.abund$woody_ClmIdx - mean(X.abund$woody_ClmIdx, na.rm = TRUE)) / sd(X.abund$woody_ClmIdx, na.rm = TRUE)
-X.abund$herb_ClmIdx <- (X.abund$herb_ClmIdx - mean(X.abund$herb_ClmIdx, na.rm = TRUE)) / sd(X.abund$herb_ClmIdx, na.rm = TRUE)
-X.abund$woody_ShpInx <- (X.abund$woody_ShpInx - mean(X.abund$woody_ShpInx, na.rm = TRUE)) / sd(X.abund$woody_ShpInx, na.rm = TRUE)
-X.abund$herb_ShpInx <- (X.abund$herb_ShpInx - mean(X.abund$herb_ShpInx, na.rm = TRUE)) / sd(X.abund$herb_ShpInx, na.rm = TRUE)
-X.abund$woody_lrgPInx <- (X.abund$woody_lrgPInx - mean(X.abund$woody_lrgPInx, na.rm = TRUE)) / sd(X.abund$woody_lrgPInx, na.rm = TRUE)
-X.abund$herb_lrgPInx <- (X.abund$herb_lrgPInx - mean(X.abund$herb_lrgPInx, na.rm = TRUE)) / sd(X.abund$herb_lrgPInx, na.rm = TRUE)
-X.abund$woody_AggInx <- (X.abund$woody_AggInx - mean(X.abund$woody_AggInx, na.rm = TRUE)) / sd(X.abund$woody_AggInx, na.rm = TRUE)
-X.abund$herb_AggInx <- (X.abund$herb_AggInx - mean(X.abund$herb_AggInx, na.rm = TRUE)) / sd(X.abund$herb_AggInx, na.rm = TRUE)
-X.abund$woody_EdgDens <- (X.abund$woody_EdgDens - mean(X.abund$woody_EdgDens, na.rm = TRUE)) / sd(X.abund$woody_EdgDens, na.rm = TRUE)
-X.abund$herb_EdgDens <- (X.abund$herb_EdgDens - mean(X.abund$herb_EdgDens, na.rm = TRUE)) / sd(X.abund$herb_EdgDens, na.rm = TRUE)
-X.abund$woody_Pdens <- (X.abund$woody_Pdens - mean(X.abund$woody_Pdens, na.rm = TRUE)) / sd(X.abund$woody_Pdens, na.rm = TRUE)
-X.abund$herb_Pdens <- (X.abund$herb_Pdens - mean(X.abund$herb_Pdens, na.rm = TRUE)) / sd(X.abund$herb_Pdens, na.rm = TRUE)
-X.abund$woody_Npatches <- (X.abund$woody_Npatches - mean(X.abund$woody_Npatches, na.rm = TRUE)) / sd(X.abund$woody_Npatches, na.rm = TRUE)
-X.abund$herb_Npatches <- (X.abund$herb_Npatches - mean(X.abund$herb_Npatches, na.rm = TRUE)) / sd(X.abund$herb_Npatches, na.rm = TRUE)
-X.abund$woody_mnFocal30m <- (X.abund$woody_mnFocal30m - mean(X.abund$woody_mnFocal30m, na.rm = TRUE)) / sd(X.abund$woody_mnFocal30m, na.rm = TRUE)
-X.abund$vegDens50m <- (X.abund$vegDens50m - mean(X.abund$vegDens50m, na.rm = TRUE)) / sd(X.abund$vegDens50m, na.rm = TRUE)
-X.abund <- as.matrix(X.abund)
-print(X.abund)
+X_abund$woody_prp <- (X_abund$woody_prp - mean(X_abund$woody_prp, na.rm = TRUE)) / sd(X_abund$woody_prp, na.rm = TRUE) 
+X_abund$herb_prp <- (X_abund$herb_prp - mean(X_abund$herb_prp, na.rm = TRUE)) / sd(X_abund$herb_prp, na.rm = TRUE)
+X_abund$open_prp <- (X_abund$open_prp - mean(X_abund$open_prp, na.rm = TRUE)) / sd(X_abund$open_prp, na.rm = TRUE) 
+X_abund$woody_mnParea <- (X_abund$woody_mnParea - mean(X_abund$woody_mnParea, na.rm = TRUE)) / sd(X_abund$woody_mnParea, na.rm = TRUE)
+X_abund$herb_mnParea <- (X_abund$herb_mnParea - mean(X_abund$herb_mnParea, na.rm = TRUE)) / sd(X_abund$herb_mnParea, na.rm = TRUE)
+X_abund$woody_ClmIdx <- (X_abund$woody_ClmIdx - mean(X_abund$woody_ClmIdx, na.rm = TRUE)) / sd(X_abund$woody_ClmIdx, na.rm = TRUE)
+X_abund$herb_ClmIdx <- (X_abund$herb_ClmIdx - mean(X_abund$herb_ClmIdx, na.rm = TRUE)) / sd(X_abund$herb_ClmIdx, na.rm = TRUE)
+X_abund$woody_ShpInx <- (X_abund$woody_ShpInx - mean(X_abund$woody_ShpInx, na.rm = TRUE)) / sd(X_abund$woody_ShpInx, na.rm = TRUE)
+X_abund$herb_ShpInx <- (X_abund$herb_ShpInx - mean(X_abund$herb_ShpInx, na.rm = TRUE)) / sd(X_abund$herb_ShpInx, na.rm = TRUE)
+X_abund$woody_lrgPInx <- (X_abund$woody_lrgPInx - mean(X_abund$woody_lrgPInx, na.rm = TRUE)) / sd(X_abund$woody_lrgPInx, na.rm = TRUE)
+X_abund$herb_lrgPInx <- (X_abund$herb_lrgPInx - mean(X_abund$herb_lrgPInx, na.rm = TRUE)) / sd(X_abund$herb_lrgPInx, na.rm = TRUE)
+X_abund$woody_AggInx <- (X_abund$woody_AggInx - mean(X_abund$woody_AggInx, na.rm = TRUE)) / sd(X_abund$woody_AggInx, na.rm = TRUE)
+X_abund$herb_AggInx <- (X_abund$herb_AggInx - mean(X_abund$herb_AggInx, na.rm = TRUE)) / sd(X_abund$herb_AggInx, na.rm = TRUE)
+X_abund$woody_EdgDens <- (X_abund$woody_EdgDens - mean(X_abund$woody_EdgDens, na.rm = TRUE)) / sd(X_abund$woody_EdgDens, na.rm = TRUE)
+X_abund$herb_EdgDens <- (X_abund$herb_EdgDens - mean(X_abund$herb_EdgDens, na.rm = TRUE)) / sd(X_abund$herb_EdgDens, na.rm = TRUE)
+X_abund$woody_Pdens <- (X_abund$woody_Pdens - mean(X_abund$woody_Pdens, na.rm = TRUE)) / sd(X_abund$woody_Pdens, na.rm = TRUE)
+X_abund$herb_Pdens <- (X_abund$herb_Pdens - mean(X_abund$herb_Pdens, na.rm = TRUE)) / sd(X_abund$herb_Pdens, na.rm = TRUE)
+X_abund$woody_Npatches <- (X_abund$woody_Npatches - mean(X_abund$woody_Npatches, na.rm = TRUE)) / sd(X_abund$woody_Npatches, na.rm = TRUE)
+X_abund$herb_Npatches <- (X_abund$herb_Npatches - mean(X_abund$herb_Npatches, na.rm = TRUE)) / sd(X_abund$herb_Npatches, na.rm = TRUE)
+X_abund$woody_mnFocal30m <- (X_abund$woody_mnFocal30m - mean(X_abund$woody_mnFocal30m, na.rm = TRUE)) / sd(X_abund$woody_mnFocal30m, na.rm = TRUE)
+X_abund$vegDens50m <- (X_abund$vegDens50m - mean(X_abund$vegDens50m, na.rm = TRUE)) / sd(X_abund$vegDens50m, na.rm = TRUE)
+X_abund <- as.matrix(X_abund)
+print(X_abund)
 
 
 
@@ -286,7 +286,7 @@ doy_vec <- yday(as.Date(paste0(formatted_dates, "_2024"), format = "%b_%d_%Y"))
 doy_vec <-  as.integer(as.factor(doy_vec))
 
 # Combine into a single dataframe where each row corresponds to a survey
-X.det <- as.matrix(data.frame(temp = temp_mat, 
+X_det <- as.matrix(data.frame(temp = temp_mat, 
                               wind = wind_mat,
                               sky = sky_mat,
                               doy = doy_vec))
@@ -301,24 +301,35 @@ X.det <- as.matrix(data.frame(temp = temp_mat,
 # ----------------------
 
 S.A <- sum(J_r > 0)
-sites_a.v <- which(J_r > 0)
-J.A <- max(J)
+sites_av <- which(J_r > 0)
+J_A <- max(J)
 
 
 # ----------------------
 # Bundle Data 
 # ----------------------
 
+J_r_max <- max(J_r)  # Define the maximum number of surveys
+
+# Create a matrix of valid indices
+J_r_matrix <- matrix(0, nrow = length(J_r), ncol = J_r_max)
+for (s in 1:length(J_r)) {
+  if (J_r[s] > 0) {
+    J_r_matrix[s, 1:J_r[s]] <- 1  # Mark valid indices
+  }
+}
+
 Wolfe14.data <- list(A_times = A_times,
                      val_times = val_times, 
                      sites_a = sites_a, 
-                     sites_a.v = sites_a.v,
+                     sites_av = sites_av,
+                     J_r_matrix = J_r_matrix,
                      v = v, 
                      y = y,
                      n = n,
                      k = k, 
-                     X.abund = X.abund,
-                     X.det = X.det
+                     X_abund = X_abund,
+                     X_det = X_det
                      # Offset = area
                      
 )
@@ -336,9 +347,10 @@ constants_list <- list(S = S,
                        S_val = S_val, 
                        J_val = J_val, 
                        #S.A = S.A, 
-                       J.A = J.A,
-                       J_r = J_r
-                       #n_days = max(J)
+                       J_A = J_A,
+                       J_r = J_r,
+                       J_r_max = max(J_r),
+                       n_days = max(J)
                        # days = days,
                        # n.doy = length(unique(doy_vec)),
                        # Sky_Lvls = length(unique(sky_mat))
@@ -346,6 +358,7 @@ constants_list <- list(S = S,
 
 # Check structure
 str(constants_list)
+ 
 
 # ---------------------------------------------------------- 
 # 
@@ -424,15 +437,15 @@ inits <- list(N = rep(1, S), # Abundance
 
 computeSumResid <- nimbleFunction(
   run = function(resid_v = double(2), resid_v_pred = double(2), 
-                 sites_a_v = integer(1), J_r = integer(1)) {
+                 sites_av = integer(1), J_r = integer(1)) {
     returnType(double(1))
     
-    out <- numeric(length(sites_a_v), init = FALSE)
-    out_pred <- numeric(length(sites_a_v), init = FALSE)
+    out <- numeric(length(sites_av), init = FALSE)
+    out_pred <- numeric(length(sites_av), init = FALSE)
     
-    for (s in 1:length(sites_a_v)) {
-      idx <- sites_a_v[s]  # Extract site index
-      J_r_s <- J_r[idx]  # Extract J_r[sites_a.v[s]] safely
+    for (s in 1:length(sites_av)) {
+      idx <- sites_av[s]  # Extract site index
+      J_r_s <- J_r[idx]  # Extract J_r[sites_av[s]] safely
       out[s] <- sum(resid_v[idx, 1:J_r_s])
       out_pred[s] <- sum(resid_v_pred[idx, 1:J_r_s])
     }
@@ -441,7 +454,7 @@ computeSumResid <- nimbleFunction(
   }
 )
 
-# Function to safely extract A_times[s, j]
+# Function to extract A_times[s, j]
 getATimesIndex <- nimbleFunction(
   run = function(s = integer(0), j = integer(0), A_times = double(2)) {
     returnType(integer(0))
@@ -449,7 +462,8 @@ getATimesIndex <- nimbleFunction(
   }
 )
 
-# Function to extract J_r
+
+# Function to extract J_r[s]
 getJrIndex <- nimbleFunction(
   run = function(s = integer(0), J_r = integer(1)) {
     returnType(integer(0))
@@ -457,35 +471,29 @@ getJrIndex <- nimbleFunction(
   }
 )
 
-# Function to safely extract J_val[s]
-getJrIndex <- nimbleFunction(
-  run = function(s = integer(0), J_r = integer(1)) {
-    returnType(integer(0))
-    return(J_r[s])
-  }
-)
-
-# Function to safely extract sites_a[s]
+# Function to extract sites_a[s]
 getSitesAIndex <- nimbleFunction(
   run = function(s = integer(0), sites_a = integer(1)) {
     returnType(integer(0))
     return(sites_a[s])  
   }
 )
+# Function to extract J_val[s]
+getJvalIndex <- nimbleFunction(
+  run = function(s = integer(0), J_val = integer(1)) {
+    returnType(integer(0))
+    return(J_val[s]) 
+  }
+)
 
-# Function to safely extract val_times[s, j]
+
+# Function to extract val_times[s, j]
 getValTimesIndex <- nimbleFunction(
   run = function(s = integer(0), j = integer(0), val_times = double(2)) {
     returnType(integer(0))
     return(val_times[s, j])  
   }
 )
-
-valid_jr <- matrix(0, nrow = S, ncol = J_r_max)  # Initialize as all zeros
-
-for (s in 1:S) {
-  valid_jr[s, 1:J_r[s]] <- 1  # Mark valid indices for each site
-}
 
 
 # ----------------------------- 
@@ -504,12 +512,12 @@ acoustic_model <- nimbleCode({
   beta1 ~ dnorm(0, 1) # Herbaceous Clumpy Index 
   beta2 ~ dnorm(0, 1) # Woody Aggregation Index 
   
-  # Survey random effect - Non-Centered
-  sigma_s ~ dunif(0, 10)
-  for (s in 1:S) {
-    eta_s[s] ~ dnorm(0, 1)
-    Sraneff[s] <- beta0 + eta_s[s] * sigma_s 
-  }
+  # # Survey random effect - Non-Centered
+  # sigma_s ~ dunif(0, 10)
+  # for (s in 1:S) {
+  #   eta_s[s] ~ dnorm(0, 1)
+  #   Sraneff[s] <- beta0 + eta_s[s] * sigma_s 
+  # }
   
   # ------------------------
   # Detection Priors
@@ -539,13 +547,13 @@ acoustic_model <- nimbleCode({
   # Survey random effect - Centered
   mu_j ~ dgamma(0.01, 0.01)
   tau_j ~ dgamma(0.01, 0.01)
-  for (j in 1:n.days) {
+  for (j in 1:n_days) {
     Jraneff[j] ~ dnorm(0, tau_j)
   }
   
   # # Survey random effect - Non-Centered
   # sigma_j ~ dunif(0, 10)
-  # for (j in 1:n.days) {
+  # for (j in 1:n_days) {
   #   eta_j[j] ~ dnorm(0, 1)
   #   Jraneff[j] <- gamma0 + eta_j[j] * sigma_j 
   # }
@@ -554,7 +562,7 @@ acoustic_model <- nimbleCode({
   mu_phi ~ dgamma(0.01, 0.01)    
   tau_phi ~ dgamma(0.01, 0.01)   
   for (s in 1:S) {
-    for (j in 1:J.A) {
+    for (j in 1:J_A) {
       phi[s, j] ~ dgamma(mu_phi, tau_phi)
     }
   }
@@ -571,18 +579,18 @@ acoustic_model <- nimbleCode({
     # ---------------------------------
     
     # Poisson
-    log(lambda[s]) <- + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] 
+    log(lambda[s]) <- beta0 + beta1 * X_abund[s, 7] + beta2 * X_abund[s, 12] 
     N[s] ~ dpois(lambda[s])
     
     # Survey
-    for (j in 1:J.A) {
+    for (j in 1:J_A) {
       
     # ---------------------------------
     # Detection Submodel  
     # ---------------------------------
       
     # True Positives + Vegetation Density + Wind
-    logit(p.a[s, j]) <- alpha0 + alpha1 * N[s] + alpha2 * X.abund[s, 21] + alpha3 * X.det[j, 2]
+    logit(p.a[s, j]) <- alpha0 + alpha1 * N[s] + alpha2 * X_abund[s, 21] + alpha3 * X_det[j, 2]
       
     # ---------------------------------
     # Call rate Submodel  
@@ -614,28 +622,30 @@ acoustic_model <- nimbleCode({
     # Vocalizations  
     # ---------------------------------
     
-    # Extract J_r[s] dynamically before looping
-    J_r_s <- getJrIndex(s, J_r)  
-      
+    # # Extract J_r[s]
+    # J_r_s <- getJrIndex(s, J_r)
+
     # Surveys with Vocalizations
-    for (jr in 1:J_r_s) {
-      
+    for (jr in 1:J_r[s]) {
+
       # Extract A_times
-      a_idx <- getATimesIndex(s, J_r_s, A_times) 
-      
+      a_idx <- getATimesIndex(s, jr, A_times)
+
       # Zero Truncated Negative Binomial
       v[s, a_idx] ~ T(dpois((delta[s, a_idx] * N[s] + omega) * phi[s, a_idx] * y[s, a_idx]), 1, )
-                                      
-      
+
+
       # ---------------------------------
-      # PPC calls  
+      # PPC calls
       # ---------------------------------
       v.pred[s, j] ~ T(dpois((delta[s, a_idx] * N[s] + omega) * phi[s, a_idx] * y[s, a_idx]), 1, )
       mu.v[s, j] <- ((delta[s, a_idx] * N[s] + omega) * phi[s, a_idx]) / (1 - exp(-1 * ((delta[s, a_idx] * N[s] + omega) * phi[s, a_idx])))
       resid.v[s, j] <- pow(pow(v[s, a_idx], 0.5) - pow(mu.v[s, j], 0.5), 2)
       resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
 
-    } # End J_r_s
+
+
+    
   } # End S
   
   # ------------------------
@@ -643,33 +653,33 @@ acoustic_model <- nimbleCode({
   # ------------------------
   
   for (s in 1:S_val) {
-    
+
     # Extract J_val index
-    J_val_s <- getJvalIndex(s, J.val) 
-    
+    J_val_s <- getJvalIndex(s, J.val)
+
     for (j in 1:J_val) {
-      
-      # Extract sites.a[s]
-      site_idx <- getSitesAIndex(s, sites.a)
-      
-      # Extract val.times[s, j]
-      val_idx <- getValTimesIndex(s, j, val.times)
-      
-      # 
+
+      # Extract sites_a[s]
+      site_idx <- getSitesAIndex(s, sites_a)
+
+      # Extract val_times[s, j]
+      val_idx <- getValTimesIndex(s, j, val_times)
+
+      # False Positive Model
       K[s, j] ~ dbin(tp[site_idx, j], v[site_idx, val_idx])
       k[s, val_idx] ~ dhyper_custom(K[s, j], v[site_idx, val_idx] - K[s, j], n[s, val_idx])
     }
   }
-  
+
   # # -------------------------------------------
   # # PPC and Bayesian P-value
   # # -------------------------------------------
   # for (s in 1:S.A) {
-  #   tmp.v[s] <- sum(resid.v[sites.a.v[s], 1:J.r[sites.a.v[s]]])
-  #   tmp.v.pred[s] <- sum(resid.v.pred[sites.a.v[s], 1:J.r[sites.a.v[s]]])
+  #   tmp.v[s] <- sum(resid.v[sites_av[s], 1:J.r[sites_av[s]]])
+  #   tmp.v.pred[s] <- sum(resid.v.pred[sites_av[s], 1:J.r[sites_av[s]]])
   # }
-  # fit_y <- sum(resid.y[sites.a, 1:J.A])
-  # fit_y_pred <- sum(resid.y.pred[sites.a, 1:J.A])
+  # fit_y <- sum(resid.y[sites_a, 1:J_A])
+  # fit_y_pred <- sum(resid.y.pred[sites_a, 1:J_A])
   # fit_v <- sum(tmp.v[1:S.A])
   # fit_v_pred <- sum(tmp.v.pred[1:S.A])
   # bp_y <- step(fit_y_pred - fit_y)
@@ -682,6 +692,8 @@ acoustic_model <- nimbleCode({
   # Abundance
   N_tot <- sum(N[])
 })
+# ---------------------------- End Model ----------------------------
+
 
 # ------------------------
 # Define the Model in NIMBLE
