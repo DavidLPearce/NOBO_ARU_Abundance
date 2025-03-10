@@ -85,7 +85,7 @@ abund_sum <- abund_sum %>% mutate(Model = factor(Model, levels = c("PC CMR", "PC
 beta0_df <- beta_df %>% filter(parameter == "beta0") # Beta1
 beta1_df <- beta_df %>% filter(parameter == "beta1") # Beta1
 beta2_df <- beta_df %>% filter(parameter == "beta2") # Beta2
-beta3_df <- beta_df %>% filter(parameter == "beta3") # Beta3
+# beta3_df <- beta_df %>% filter(parameter == "beta3") # Beta3
 
 # -------------------------
 # Plot Beta 0 
@@ -94,7 +94,7 @@ beta3_df <- beta_df %>% filter(parameter == "beta3") # Beta3
 beta0_plot <- ggplot(beta0_df, aes(x = Model, y = value, fill = Model)) +
   geom_violin(trim = FALSE) + 
   geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) + 
-  labs(y = "beta0 Estimates", x = "Model") +
+  labs(y = "Beta0 Estimates", x = "Model") +
   scale_fill_manual(values = c("PC CMR" = "orange",   
                                "PC HDS" = "purple",
                                "AV Bnet" = "blue",
@@ -145,7 +145,7 @@ ggsave(plot = beta1_plot, "./Figures/CovEffects/beta1_plot.jpeg", width = 8, hei
 beta2_plot <- ggplot(beta2_df, aes(x = Model, y = value, fill = Model)) +
   geom_violin(trim = FALSE) + 
   geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) + 
-  labs(y = "beta2 Estimates", x = "Model") +
+  labs(y = "Beta2 Estimates", x = "Model") +
   scale_fill_manual(values = c("PC CMR" = "orange",   
                                "PC HDS" = "purple",
                                "AV Bnet" = "blue",
@@ -166,26 +166,26 @@ ggsave(plot = beta2_plot, "./Figures/CovEffects/beta2_plot.jpeg", width = 8, hei
 # Plot Beta 3 
 # -------------------------
 
-beta3_plot <- ggplot(beta3_df, aes(x = Model, y = value, fill = Model)) +
-  geom_violin(trim = FALSE) + 
-  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) + 
-  labs(y = "beta3 Estimates", x = "Model") +
-  scale_fill_manual(values = c("PC CMR" = "orange",   
-                               "PC HDS" = "purple",
-                               "AV Bnet" = "blue",
-                               "AV Wolfe" = "red")) + 
-  scale_y_continuous(limits = c(-2, 2), breaks = seq(-1, 1, by = 0.25)) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
-        axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
-        axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
-        panel.grid = element_blank(),
-        legend.position = "none")
-
-# View
-print(beta3_plot)
-ggsave(plot = beta3_plot, "./Figures/CovEffects/beta3_plot.jpeg", width = 8, height = 5, dpi = 300) 
-
+# beta3_plot <- ggplot(beta3_df, aes(x = Model, y = value, fill = Model)) +
+#   geom_violin(trim = FALSE) + 
+#   geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) + 
+#   labs(y = "Beta3 Estimates", x = "Model") +
+#   scale_fill_manual(values = c("PC CMR" = "orange",   
+#                                "PC HDS" = "purple",
+#                                "AV Bnet" = "blue",
+#                                "AV Wolfe" = "red")) + 
+#   scale_y_continuous(limits = c(-2, 2), breaks = seq(-1, 1, by = 0.25)) +
+#   theme_minimal() +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+#         axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
+#         axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
+#         panel.grid = element_blank(),
+#         legend.position = "none")
+# 
+# # View
+# print(beta3_plot)
+# ggsave(plot = beta3_plot, "./Figures/CovEffects/beta3_plot.jpeg", width = 8, height = 5, dpi = 300) 
+# 
 
 
 # -------------------------------------------------------
@@ -194,7 +194,7 @@ ggsave(plot = beta3_plot, "./Figures/CovEffects/beta3_plot.jpeg", width = 8, hei
 
 # Set covariate name 
 Cov1_name <- "herb_ClmIdx"
-Cov2_name <- "woody_Npatches"
+Cov2_name <- "woody_AggInx"
 
 # Create a prediction of covariate values
 PC_cov1 <- seq(min(pc_site_covs[, Cov1_name]), max(pc_site_covs[, Cov1_name]), length.out = 1000)
@@ -223,10 +223,10 @@ CMR_beta2 <- beta2_df %>% filter(Model == "PC CMR") %>% pull(value) # beta2
 HDS_beta2 <- beta2_df %>% filter(Model == "PC HDS") %>% pull(value)
 Bnet_beta2 <- beta2_df %>% filter(Model == "AV Bnet") %>% pull(value)
 Wolfe_beta2 <- beta2_df %>% filter(Model == "AV Wolfe") %>% pull(value)
-CMR_beta3 <- beta3_df %>% filter(Model == "PC CMR") %>% pull(value) # beta3
-HDS_beta3 <- beta3_df %>% filter(Model == "PC HDS") %>% pull(value)
-Bnet_beta3 <- beta3_df %>% filter(Model == "AV Bnet") %>% pull(value)
-Wolfe_beta3 <- beta3_df %>% filter(Model == "AV Wolfe") %>% pull(value)
+# CMR_beta3 <- beta3_df %>% filter(Model == "PC CMR") %>% pull(value) # beta3
+# HDS_beta3 <- beta3_df %>% filter(Model == "PC HDS") %>% pull(value)
+# Bnet_beta3 <- beta3_df %>% filter(Model == "AV Bnet") %>% pull(value)
+# Wolfe_beta3 <- beta3_df %>% filter(Model == "AV Wolfe") %>% pull(value)
 
 # Matrices for storing predictions
 CMR_cov1_preds <- matrix(NA, nrow = length(CMR_beta0), ncol = length(PC_cov1)) # Linear
@@ -385,7 +385,7 @@ CMR_cov1_plot <- ggplot(CMR_cov1_df, aes(x = cov1, y = cov1_preds_mean)) +
                                       fill = "orange", alpha = 0.3) +
                           geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) +
                           labs(x = "", 
-                               y = "Effect Estimate", 
+                               y = "Predicted Effect", 
                                title = "PC CMR") +
                           scale_x_continuous(limits = c(-0.5, 0.5),
                                              breaks = seq(-0.5, 0.5, by = 0.1)) +
@@ -423,7 +423,7 @@ Bnet_cov1_plot <- ggplot(Bnet_cov1_df, aes(x = cov1, y = cov1_preds_mean)) +
                                   fill = "blue", alpha = 0.3) +
                       geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) +
                       labs(x = "Herbaceous Clumpy Index (scaled)", 
-                           y = "Effect Estimate", 
+                           y = "Predicted Effect", 
                            title = "AV Bnet") +
                       scale_x_continuous(limits = c(-0.5, 0.5),
                                          breaks = seq(-0.5, 0.5, by = 0.1)) +
@@ -477,7 +477,7 @@ CMR_cov2_plot <- ggplot(CMR_cov2_df, aes(x = cov2, y = cov2_preds_mean)) +
                                 fill = "orange", alpha = 0.3) +
                     geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) +
                     labs(x = "", 
-                         y = "Effect Estimate", 
+                         y = "Predicted Effect", 
                          title = "PC CMR") +
                     scale_x_continuous(limits = c(-3, 3),
                                        breaks = seq(-2, 2, by = 0.5)) +
@@ -514,8 +514,8 @@ Bnet_cov2_plot <- ggplot(Bnet_cov2_df, aes(x = cov2, y = cov2_preds_mean)) +
                                     ymax = cov2_preds_HCI), 
                                 fill = "blue", alpha = 0.3) +
                     geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) +
-                    labs(x = "Woody Number of Patches (scaled)", 
-                         y = "Effect Estimate", 
+                    labs(x = "Woody Aggregation (scaled)", 
+                         y = "Predicted Effect", 
                          title = "AV Bnet") +
                     scale_x_continuous(limits = c(-3, 3),
                                        breaks = seq(-2, 2, by = 0.5)) +
@@ -532,7 +532,7 @@ Wolfe_cov2_plot <- ggplot(Wolfe_cov2_df, aes(x = cov2, y = cov2_preds_mean)) +
                                       ymax = cov2_preds_HCI), 
                                   fill = "red", alpha = 0.3) +
                       geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) +
-                      labs(x = "Woody Number of Patches (scaled)", 
+                      labs(x = "Woody Aggregation (scaled)", 
                            y = "", 
                            title = "AV Wolfe") +
                       scale_x_continuous(limits = c(-3, 3),
@@ -614,8 +614,8 @@ abundViolin <- ggplot(abund_df, aes(x = Model, y = Abundance, fill = Model)) +
                                                "PC HDS" = "purple", 
                                                "AV Bnet" = "blue",
                                                "AV Wolfe" = "red")) +  
-                  scale_y_continuous(limits = c(0, 800),
-                                     breaks = seq(0, 800, by = 50),
+                  scale_y_continuous(limits = c(300, 1200),
+                                     breaks = seq(300, 1200, by = 50),
                                      labels = scales::comma) +
                   theme_minimal() +
                   theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
