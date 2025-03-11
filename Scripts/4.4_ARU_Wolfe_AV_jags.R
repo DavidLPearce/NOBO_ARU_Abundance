@@ -52,7 +52,7 @@ workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncor
 print(workers)
 
 # Source custom function for checking Rhat values > 1.1
-source("./Scripts/Rhat_check_function.R")
+#source("./Scripts/Rhat_check_function.R")
 
 # Model name object
 model_name <- "AV Wolfe"
@@ -210,7 +210,7 @@ k <- read.csv("./Data/Acoustic_Data/Wolfe14day_k.csv", row.names = 1)
 k <- as.matrix(k)
 
 # Survey days calls were validated, same dimension as n
-val.times <- read.csv("./Data/Acoustic_Data/Wolfe14day_val.times.csv", row.names = 1)
+val.times <- read.csv("./Data/Acoustic_Data/Wolfe14day_val_times.csv", row.names = 1)
 val.times <- as.matrix(val.times)
 
 # Total number of sites with manually validated data
@@ -424,12 +424,12 @@ cat(" model {
   beta1 ~ dnorm(0, 1) # Herbaceous Clumpy Index 
   beta2 ~ dnorm(0, 1) # Woody Aggregation Index 
 
-  # Survey random effect - Non-Centered
-  sigma_s ~ dunif(0, 10)
-  for (s in 1:S) {
-    eta_s[s] ~ dnorm(0, 1)
-    Sraneff[s] <- beta0 + eta_s[s] * sigma_s 
-  }
+  # # Survey random effect - Non-Centered
+  # sigma_s ~ dunif(0, 10)
+  # for (s in 1:S) {
+  #   eta_s[s] ~ dnorm(0, 1)
+  #   Sraneff[s] <- beta0 + eta_s[s] * sigma_s 
+  # }
 
   # ------------------------
   # Detection Priors
@@ -478,6 +478,13 @@ cat(" model {
       phi[s, j] ~ dgamma(mu_phi, tau_phi)
     }
   }
+  
+  
+  tau_underdisp ~ dgamma(2, 2) 
+  for (s in 1:S) {
+      epsilon[s] ~ dnorm(0, tau_underdisp) 
+  }
+
 
   # -------------------------------------------
   #
@@ -492,9 +499,13 @@ cat(" model {
     # Abundance Submodel  
     # ---------------------------------
     
-    # Poisson
-    log(lambda[s]) <- Sraneff[s] + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] 
-    N[s] ~ dpois(lambda[s])
+    # # Poisson
+    # log(lambda[s]) <- Sraneff[s] + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] 
+    # N[s] ~ dpois(lambda[s])
+    
+    # Quasi-Poisson (Negative Binomial Approximation)
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] 
+    N[s] ~ dpois(exp(lambda[s] + epsilon[s]))          
 
     # Survey
     for (j in 1:J[s]) {
@@ -502,7 +513,7 @@ cat(" model {
     # ---------------------------------
     # Detection Submodel  
     # ---------------------------------
-    logit(p.a[s, j]) <- alpha0 + alpha1 * N[s] + alpha2 * X.abund[s,21] + alpha3 * X.det[j,2]
+    logit(p.a[s, j]) <- alpha0 + alpha1 * N[s] + alpha2# * X.abund[s,21] + alpha3 * X.det[j,2]
 
     # ---------------------------------
     # Call rate Submodel  
