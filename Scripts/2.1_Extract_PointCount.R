@@ -44,7 +44,8 @@ setwd(".")
 # ------------------------------------------------------------------------------
 
 # Read in raster data
-lulc_rast <- stack("D:/LaCopita_GIS_Data/LaCopitaLULC/LaCopitaLULC_60cm_SVM/LULC_60cm_SVM_Raster/LaCopitaLULC_60cm_SVM.tif")
+lulc_rast <- stack("D:/LaCopita_GIS_Data/LaCopitaLULC/LaCopitaLULC_60cm_SVM_Buffered/LaCopitaLULC_60cm_SVM_Buffered.tif")
+print(lulc_rast)
 
 # Read in LiDAR data
 las_folder <- "D:/LaCopita_GIS_Data/LIDAR2018_70cm/LaCopita_LiDAR_tiles/LAS"# Set directory to las files
@@ -368,42 +369,7 @@ print(site_dat)
 
 
 
-# -----------------------------------
-# Formatting
-# -----------------------------------
-
-# Colnames
-unique(colnames(site_dat))
-
-# Remove site, lat, long
-X.abund <- site_dat[,-c(2:3)]
-
-# Mean and center scale values
-X.abund$woody_prp <- scale(site_dat$woody_prp, center = TRUE, scale = TRUE)
-X.abund$herb_prp <- scale(site_dat$herb_prp, center = TRUE, scale = TRUE)
-X.abund$open_prp <- scale(site_dat$open_prp, center = TRUE, scale = TRUE)
-X.abund$woody_mnParea <- scale(site_dat$woody_mnParea, center = TRUE, scale = TRUE)
-X.abund$herb_mnParea <- scale(site_dat$herb_mnParea, center = TRUE, scale = TRUE)
-X.abund$woody_ClmIdx <- scale(site_dat$woody_ClmIdx, center = TRUE, scale = TRUE)
-X.abund$herb_ClmIdx <- scale(site_dat$herb_ClmIdx, center = TRUE, scale = TRUE)
-X.abund$woody_ShpInx <- scale(site_dat$woody_ShpInx, center = TRUE, scale = TRUE)
-X.abund$herb_ShpInx <- scale(site_dat$herb_ShpInx, center = TRUE, scale = TRUE)
-X.abund$woody_lrgPInx <- scale(site_dat$woody_lrgPInx, center = TRUE, scale = TRUE)
-X.abund$herb_lrgPInx  <- scale(site_dat$herb_lrgPInx, center = TRUE, scale = TRUE)
-X.abund$woody_AggInx <- scale(site_dat$woody_AggInx, center = TRUE, scale = TRUE)
-X.abund$herb_AggInx  <- scale(site_dat$herb_AggIn, center = TRUE, scale = TRUE)
-X.abund$woody_EdgDens <- scale(site_dat$woody_EdgDens, center = TRUE, scale = TRUE)
-X.abund$herb_EdgDens  <- scale(site_dat$herb_EdgDens, center = TRUE, scale = TRUE)
-X.abund$woody_Pdens <- scale(site_dat$woody_Pdens, center = TRUE, scale = TRUE)
-X.abund$herb_Pdens  <- scale(site_dat$herb_Pdens, center = TRUE, scale = TRUE)
-X.abund$woody_Npatches <- scale(site_dat$woody_Npatches, center = TRUE, scale = TRUE)
-X.abund$herb_Npatches  <- scale(site_dat$herb_Npatches, center = TRUE, scale = TRUE)
-X.abund$woody_mnFocal30m  <- scale(site_dat$woody_mnFocal30m, center = TRUE, scale = TRUE)
-X.abund$vegDens50m  <- scale(site_dat$vegDens50m, center = TRUE, scale = TRUE)
-print(X.abund)
-
-
 # Export data
-write.csv(X.abund, "./Data/Point_Count_Data/PointCount_siteCovs.csv")
+write.csv(site_dat, "./Data/Point_Count_Data/PointCount_siteCovs.csv")
 
 # --------------------End Script -----------------------------
