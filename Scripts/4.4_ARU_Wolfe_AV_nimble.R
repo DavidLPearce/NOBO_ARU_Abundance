@@ -131,7 +131,7 @@ model_name <- "AV Wolfe"
 # n.days = number of recording days.
 # N = latent abundance process
 # tp = true positive rate
-# p.a = prob of detecting at least one vocalization in an acoustic recording
+# p_a = prob of detecting at least one vocalization in an acoustic recording
 # v = acoustic vocalization data from clustering algorithm
 # y = binary summary of v, takes value 0 if v = 0 and value 1 if v > 0. 
 # c = point count data
@@ -354,7 +354,7 @@ n_days = max(J)
 # Bayesian P-value
 # ----------------------
 
-S.A <- sum(J_r > 0)
+S_A <- sum(J_r > 0)
 sites_av <- which(J_r > 0)
 J_A <- max(J)
 
@@ -383,14 +383,14 @@ constants_list <- list(S = S,
                        A_times = A_times,
                        val_times = val_times, 
                        sites_a = sites_a, 
-                       sites_av = sites_av,
+                       # sites_av = sites_av,
                        # J = J,
                        S_val = S_val, 
                        J_val = J_val, 
-                       # S.A = S.A,
+                       # S_A = S_A,
                        J_A = J_A,
                        J_r = J_r,
-                       n_days = n_days,
+                       n_days = n_days
                        # days = days,
                        # n.doy = length(unique(doy_vec)),
                        # Sky_Lvls = length(unique(sky_mat))
@@ -457,7 +457,7 @@ params <- c('lambda', # Abundance
 
  
 
-# # Initial Values 
+# Initial Values 
 inits <- list(
   # Abundance
   N = rep(1, S),         
@@ -484,24 +484,12 @@ inits <- list(
   # Overdispersion
   mu_phi = 1,  
   tau_phi = 1,
-  phi = matrix(1, nrow = S, ncol = J_A),  # Ensure phi is initialized
-  
-  # Detection submodel
-  p.a = matrix(0.5, nrow = S, ncol = J_A),  # Detection probability
-  delta = matrix(1, nrow = S, ncol = J_A),  # Call rate
-  tp = matrix(0.5, nrow = S, ncol = J_A),  # True positive rate
-  y.pred = matrix(0, nrow = S, ncol = J_A),  # Predicted counts
-  
-  # Vocalization model
-  v.pred = matrix(1, nrow = S, ncol = max(J_r)),  # Predicted vocalization counts
-  mu.v = matrix(1, nrow = S, ncol = max(J_r)),  # Mean vocalizations
-  resid.v = matrix(0, nrow = S, ncol = max(J_r)),
-  resid.v.pred = matrix(0, nrow = S, ncol = max(J_r)),
-  
-  # Manual validation
-  K = matrix(1, nrow = S_val, ncol = max(J_r))  # Validation parameter
+  phi = matrix(1, nrow = S, ncol = J_A)
+
 )
 
+
+ 
 
  
 # ----------------------------- 
@@ -587,6 +575,7 @@ acoustic_model <- nimbleCode({
     # ---------------------------------
     
     # Poisson
+    # Intercept + Herbaceous Clumpy Indx + Woody Aggregation Indx
     log(lambda[s]) <- beta0 + beta1 * X_abund[s, 7] + beta2 * X_abund[s, 12] 
     N[s] ~ dpois(lambda[s])
     
@@ -598,19 +587,19 @@ acoustic_model <- nimbleCode({
     # ---------------------------------
       
     # True Positives + Vegetation Density + Wind
-    logit(p.a[s, j]) <- alpha0 + alpha1 * N[s] + alpha2 * X_abund[s, 21] + alpha3 * X_det[j, 2]
+    logit(p_a[s, j]) <- alpha0 + alpha1 * N[s] + alpha2 * X_abund[s, 21] + alpha3 * X_det[j, 2]
       
     # ---------------------------------
     # Call rate Submodel  
     # ---------------------------------
       
-    # Survey Random Effect
-    log(delta[s, j]) <- Jraneff[j]
+    # Intercept + Survey Random Effect
+    log(delta[s, j]) <- gamma0 + Jraneff[j]
       
     # ---------------------------------
     # Observations
     # ---------------------------------
-    y[s, j] ~ dbin(p.a[s, j], 1)
+    y[s, j] ~ dbin(p_a[s, j], 1)
       
     # ---------------------------------
     # True Positives 
@@ -620,9 +609,9 @@ acoustic_model <- nimbleCode({
     # ---------------------------------
     # PPC Abundance  
     # ---------------------------------
-    y.pred[s, j] ~ dbin(p.a[s, j], 1)
-    resid.y[s, j] <- pow(pow(y[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
-    resid.y.pred[s, j] <- pow(pow(y.pred[s, j], 0.5) - pow(p.a[s, j], 0.5), 2)
+    # y_pred[s, j] ~ dbin(p_a[s, j], 1)
+    # resid_y[s, j] <- pow(pow(y[s, j], 0.5) - pow(p_a[s, j], 0.5), 2)
+    # resid_y_pred[s, j] <- pow(pow(y_pred[s, j], 0.5) - pow(p_a[s, j], 0.5), 2)
     
     } # End J
     
@@ -640,10 +629,10 @@ acoustic_model <- nimbleCode({
       # ---------------------------------
       # PPC calls
       # ---------------------------------
-      v.pred[s, j] ~ T(dpois((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]] * y[s, A_times[s, j]]), 1, )
-      mu.v[s, j] <- ((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]]) / (1 - exp(-1 * ((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]])))
-      resid.v[s, j] <- pow(pow(v[s, A_times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
-      resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
+      # v_pred[s, j] ~ T(dpois((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]] * y[s, A_times[s, j]]), 1, )
+      # mu_v[s, j] <- ((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]]) / (1 - exp(-1 * ((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]])))
+      # resid_v[s, j] <- pow(pow(v[s, A_times[s, j]], 0.5) - pow(mu_v[s, j], 0.5), 2)
+      # resid_v_pred[s, j] <- pow(pow(v_pred[s, j], 0.5) - pow(mu_v[s, j], 0.5), 2)
 
 
       }# End J_R
@@ -666,19 +655,50 @@ acoustic_model <- nimbleCode({
   # -------------------------------------------
   # PPC and Bayesian P-value
   # -------------------------------------------
-  # for (s in 1:S.A) {
-  # 
-  #   tmp.v[s] <- sum(resid.v[sites_av[s], 1:J.r[sites_av[s]]])
-  # 
-  #   tmp.v.pred[s] <- sum(resid.v.pred[sites_av[s], 1:J.r[sites_av[s]]])
+  # # Initialize accumulators
+  # for (s in 1:S_A) {
+  #   tmp.v[s] <- 0
+  #   tmp.v.pred[s] <- 0
   # }
   # 
-  # fit_y <- sum(resid.y[sites_a, 1:J_A])
-  # fit_y_pred <- sum(resid.y.pred[sites_a, 1:J_A])
-  # fit_v <- sum(tmp.v[1:S.A])
-  # fit_v_pred <- sum(tmp.v.pred[1:S.A])
-  # bp_y <- step(fit_y_pred - fit_y)
-  # bp_v <- step(fit_v_pred - fit_v)
+  # # Loop over S_A and J_r to compute residuals for v
+  # for (s in 1:S_A) {
+  #   site_idx <- sites_a_v[s]  # Extract site index
+  #   for (j in 1:J_r[site_idx]) {
+  #     tmp.v[s] <- tmp.v[s] + resid.v[site_idx, j]
+  #     tmp.v.pred[s] <- tmp.v.pred[s] + resid.v.pred[site_idx, j]
+  #   }
+  # }
+  # 
+  # # Initialize fit accumulators
+  # fit_y <- 0
+  # fit_y_pred <- 0
+  # 
+  # 
+  # # Loop over S_val and J_A to compute residuals for y
+  # for (s in 1:S_val) {
+  #   site_idx <- getSiteIndex(s, sites_a)
+  #   for (j in 1:J_A) {
+  #     fit_y <- fit_y + resid.y[site_idx, j]
+  #     fit_y_pred <- fit_y_pred + resid.y.pred[site_idx, j]
+  #   }
+  # }
+  # 
+  # # Initialize fit_v accumulators
+  # fit_v <- 0
+  # fit_v_pred <- 0
+  # 
+  # # Loop over S_A to compute fit_v
+  # for (s in 1:S_A) {
+  #   fit_v <- fit_v + tmp.v[s]
+  #   fit_v_pred <- fit_v_pred + tmp.v.pred[s]
+  # }
+  # 
+  # # Compute Bayesian P-values  
+  # bp_y <- step(fit_y_pred - fit_y) 
+  # bp_v <- step(fit_v_pred - fit_v)  
+  
+  
   
   # -------------------------------------------
   # Derive Parameters
@@ -696,11 +716,11 @@ acoustic_model <- nimbleCode({
 # ------------------------
 model <- nimbleModel(
   code = acoustic_model, 
-  constants = constants_list,  # Pass constants separately
+  constants = constants_list,  
   data = Wolfe14.data, 
   inits = inits
 )
 
-# Check variables not initialized
+ 
 model$initializeInfo()
 
