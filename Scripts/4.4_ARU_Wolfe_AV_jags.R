@@ -105,7 +105,7 @@ wolfe_dat <- read.csv("./Data/Acoustic_Data/NOBO_Wolfe_14day2024.csv")
 weather_dat <- read.csv("./Data/Acoustic_Data/ARU_weathercovs.csv")
 
 # Site covariates
-site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs_not_scaled.csv")
+site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
 
 # -------------------------------------------------------
 #
@@ -479,13 +479,6 @@ cat(" model {
     }
   }
   
-  
-  tau_underdisp ~ dgamma(2, 2) 
-  for (s in 1:S) {
-      epsilon[s] ~ dnorm(0, tau_underdisp) 
-  }
-
-
   # -------------------------------------------
   #
   # Likelihood and Process Model 
@@ -499,13 +492,9 @@ cat(" model {
     # Abundance Submodel  
     # ---------------------------------
     
-    # # Poisson
-    # log(lambda[s]) <- Sraneff[s] + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] 
-    # N[s] ~ dpois(lambda[s])
-    
-    # Quasi-Poisson (Negative Binomial Approximation)
-    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] 
-    N[s] ~ dpois(exp(lambda[s] + epsilon[s]))          
+    # Poisson # Sraneff[s]
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12]
+    N[s] ~ dpois(lambda[s])
 
     # Survey
     for (j in 1:J[s]) {
