@@ -53,62 +53,15 @@ print(workers)
 # Source custom function for checking Rhat values > 1.1
 source("./Scripts/Custom_Functions/Rhat_check_function.R")
 
-# Source custom nimble functions for hypergeometric distribution
-source("./Scripts/Custom_Functions/log_factoral_nimble.R")
-source("./Scripts/Custom_Functions/binomial_coefficient_nimble.R")
-# source("./Scripts/Custom_Functions/dhyper_nimble.R")
-
-dhyper_nimble <- nimbleFunction(
-  run = function(x = double(0), K = double(0), Q = double(0), n_draws = double(0), log = integer(0, default = 0)) {
-    returnType(double(0))
-    
-    # Check for missing values (NA handling)
-    if (is.nan(x) | is.nan(K) | is.nan(Q) | is.nan(n_draws)) {
-      if (log) return(-Inf)
-      return(0)
-    }
-    
-    if (x < 0 | is.na(x)) {
-      if (log) return(-Inf)
-      return(0)
-    }
-    if (K < 0 | is.na(K)) {
-      if (log) return(-Inf)
-      return(0)
-    }
-    if (Q < 0 | is.na(Q)) {
-      if (log) return(-Inf)
-      return(0)
-    }
-    if (n_draws < 0 | is.na(n_draws)) {
-      if (log) return(-Inf)
-      return(0)
-    }
-    
-    # Ensure valid hypergeometric conditions
-    if (x > K) {
-      if (log) return(-Inf)
-      return(0)
-    }
-    if ((n_draws - x) > Q) {
-      if (log) return(-Inf)
-      return(0)
-    }
-    
-    # Compute hypergeometric probability
-    log_prob <- lgamma(K + 1) - lgamma(x + 1) - lgamma(K - x + 1) +
-      lgamma(Q + 1) - lgamma(n_draws - x + 1) - lgamma(Q - (n_draws - x) + 1) -
-      (lgamma(K + Q + 1) - lgamma(n_draws + 1) - lgamma(K + Q - n_draws + 1))
-    
-    # Return log probability if requested
-    if (log) return(log_prob)
-    return(exp(log_prob))
-  }
-)
-
-
+# Source, assign, and register hypergeometric distribution for NIMBLE
+source("./Scripts/Custom_Functions/dhyper_nimble.R")
 source("./Scripts/Custom_Functions/rhyper_nimble.R")
 source("./Scripts/Custom_Functions/register_hypergeometric_distribution.R")
+
+# Source, assign, and register Conway-Maxwell Poisson distribution for NIMBLE
+source("./Scripts/Custom_Functions/dCMPois_nimble.R")
+source("./Scripts/Custom_Functions/rCMPois_nimble.R")
+source("./Scripts/Custom_Functions/register_Conway-Maxwell_Poisson_distribution.R")
 
 # Model name object
 model_name <- "AV Wolfe"
@@ -161,7 +114,7 @@ wolfe_dat <- read.csv("./Data/Acoustic_Data/NOBO_Wolfe_14day2024.csv")
 weather_dat <- read.csv("./Data/Acoustic_Data/ARU_weathercovs.csv")
 
 # Site covariates
-site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs_not_scaled.csv")
+site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
 
 # -------------------------------------------------------
 #
@@ -413,7 +366,6 @@ n.iter = 1000
 n.burnin =  100
 n.chains = 3 
 n.thin = 1
-n.adapt = 5000
 
 # Rough idea posterior samples
 est_post_samps = (((n.iter - n.burnin) / n.thin) * n.chains)
@@ -430,29 +382,28 @@ params <- c('lambda', # Abundance
             'beta0',
             'beta1',
             'beta2',
-            'Sraneff',
-            'sigma_s',
-            'mu_s',
+            # 'Sraneff',
+            # 'sigma_s',
+            # 'mu_s',
             'alpha0', # Detection 
             'alpha1', 
             'alpha2',
             'gamma0', #  Vocalization
-            'gamma1',
-            'sigma',
-            'v_mu_j', 
-            'v_tau_j',
-            'v_Jraneff',
+            # 'gamma1',
+            'mu_j',
+            'tau_j',
+            'jRE',
             'omega',
             'delta',
             'phi',
             'mu_phi',
-            'tau_phi',
-            'fit_y',# Posterior Predictive Checks
-            'fit_y_pred',
-            'fit_v',
-            'fit_v_pred',
-            'bp_y', # Bayes p-value
-            'bp_v'
+            'tau_phi'
+            # 'fit_y',# Posterior Predictive Checks
+            # 'fit_y_pred',
+            # 'fit_v',
+            # 'fit_v_pred',
+            # 'bp_y', # Bayes p-value
+            # 'bp_v'
 ) # End Params
 
  
@@ -477,7 +428,7 @@ inits <- list(
   gamma0 = log(10),  
   
   # Survey random effect
-  Jraneff = rep(0, n_days),
+  jRE = rep(0, n_days),
   mu_j = 1,
   tau_j = 1,
   
@@ -509,10 +460,9 @@ acoustic_model <- nimbleCode({
   beta2 ~ dnorm(0, 1) # Woody Aggregation Index 
   
   # # Survey random effect - Non-Centered
-  # sigma_s ~ dunif(0, 10)
+  # tau_s ~ dgamma(0.01, 0.01)
   # for (s in 1:S) {
-  #   eta_s[s] ~ dnorm(0, 1)
-  #   Sraneff[s] <- beta0 + eta_s[s] * sigma_s 
+  #  sRE[s] ~ dnorm(0, tau_s)
   # }
   
   # ------------------------
@@ -544,7 +494,7 @@ acoustic_model <- nimbleCode({
   mu_j ~ dgamma(0.01, 0.01)
   tau_j ~ dgamma(0.01, 0.01)
   for (j in 1:n_days) {
-    Jraneff[j] ~ dnorm(0, tau_j)
+    jRE[j] ~ dnorm(mu_j, tau_j)
   }
   
   # # Survey random effect - Non-Centered
@@ -594,7 +544,7 @@ acoustic_model <- nimbleCode({
     # ---------------------------------
       
     # Intercept + Survey Random Effect
-    log(delta[s, j]) <- gamma0 + Jraneff[j]
+    log(delta[s, j]) <- gamma0 + jRE[j]
       
     # ---------------------------------
     # Observations
@@ -644,9 +594,7 @@ acoustic_model <- nimbleCode({
   # ------------------------
 
   for (s in 1:S_val) {
-
     for (j in 1:J_val[s]) {
-      
       K[s, j] ~ dbin(tp[sites_a[s], j], v[sites_a[s], val_times[s, j]])
       k[s, val_times[s, j]] ~ dhyper_nimble(K[s, j], v[sites_a[s], val_times[s, j]] - K[s, j], n[s, val_times[s, j]])
     } # End J
@@ -709,18 +657,35 @@ acoustic_model <- nimbleCode({
 })
 # ---------------------------- End Model ----------------------------
 
- 
 
 # ------------------------
-# Fit model
+# Fit Model 
 # ------------------------
-model <- nimbleModel(
-  code = acoustic_model, 
-  constants = constants_list,  
-  data = Wolfe14.data, 
-  inits = inits
-)
 
- 
-model$initializeInfo()
+# Note: This uses the basic NIMBLE MCMC
+fm2 <- nimbleMCMC(code = acoustic_model, 
+                  data = Wolfe14.data, 
+                  constants = constants_list,
+                  inits = inits,
+                  monitors = params,
+                  niter = n.iter,
+                  nburnin = n.burnin,
+                  nchains = n.chains,
+                  thin = n.thin,
+                  progressBar = getNimbleOption("MCMCprogressBar"),
+                  samplesAsCodaMCMC = TRUE)
 
+
+summary(fm2$samples)
+
+
+# -------------------------------------------------------
+# Check Convergence
+# -------------------------------------------------------
+
+# Traceplots
+par(mfrow=c(3,5))
+coda::traceplot(fm1)
+
+# Rhat
+coda::gelman.diag(fm1)

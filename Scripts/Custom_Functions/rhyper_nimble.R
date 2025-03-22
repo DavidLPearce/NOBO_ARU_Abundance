@@ -1,6 +1,7 @@
 # Define Hypergeometric Sampling Function from R
 rhyper_nimble <- nimbleRcall(
-  function(n = double(0), m = double(0), n_draws = double(0), k = double(0)){},
+  # n_blk is n since NIMBLE expects first argument in simulation function to be n
+  function(n = double(0), m = double(0), n_draws  = double(0), k = double(0)){},
   Rfun = 'rhyper',
   returnType = double()
 )
