@@ -59,16 +59,16 @@ source("./Scripts/Custom_Functions/rhyper_nimble.R")
 source("./Scripts/Custom_Functions/register_hypergeometric_distribution.R")
 
 # Source, assign, and register Conway-Maxwell Poisson distribution for NIMBLE
-source("./Scripts/Custom_Functions/dCMPois_nimble.R")
-source("./Scripts/Custom_Functions/rCMPois_nimble.R")
-source("./Scripts/Custom_Functions/register_Conway-Maxwell_Poisson_distribution.R")
+# source("./Scripts/Custom_Functions/dCMPois_nimble.R")
+# source("./Scripts/Custom_Functions/rCMPois_nimble.R")
+# source("./Scripts/Custom_Functions/register_Conway-Maxwell_Poisson_distribution.R")
 
 # Model name object
 model_name <- "AV Wolfe"
 
 # -------------------------------------------------------
 #
-# Variable and Object Definitions
+# Variable and Object Definitions *** Not finished
 #
 # -------------------------------------------------------
 
@@ -435,7 +435,10 @@ inits <- list(
   # Overdispersion
   mu_phi = 1,  
   tau_phi = 1,
-  phi = matrix(1, nrow = S, ncol = J_A)
+  phi = matrix(1, nrow = S, ncol = J_A),
+  
+  # False Positive
+  K = k # initializing with observed true vocalizations
 
 )
 
@@ -453,11 +456,11 @@ acoustic_model <- nimbleCode({
   # ----------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 1) 
+  beta0 ~ dnorm(0, 10) 
   
   # Covariate effect
-  beta1 ~ dnorm(0, 1) # Herbaceous Clumpy Index 
-  beta2 ~ dnorm(0, 1) # Woody Aggregation Index 
+  beta1 ~ dnorm(0, 10) # Herbaceous Clumpy Index 
+  beta2 ~ dnorm(0, 10) # Woody Aggregation Index 
   
   # # Survey random effect - Non-Centered
   # tau_s ~ dgamma(0.01, 0.01)
@@ -477,8 +480,8 @@ acoustic_model <- nimbleCode({
   alpha1 ~ dunif(0, 1000) # Constrained to be positive
   
   # Covariate effect
-  alpha2 ~ dnorm(0, 1) # Vegetation Density
-  alpha3 ~ dnorm(0, 1) # Wind
+  alpha2 ~ dnorm(0, 10) # Vegetation Density
+  alpha3 ~ dnorm(0, 10) # Wind
   
   # ------------------------
   # Call Rate Priors
@@ -663,7 +666,7 @@ acoustic_model <- nimbleCode({
 # ------------------------
 
 # Note: This uses the basic NIMBLE MCMC
-fm2 <- nimbleMCMC(code = acoustic_model, 
+fm1 <- nimbleMCMC(code = acoustic_model, 
                   data = Wolfe14.data, 
                   constants = constants_list,
                   inits = inits,
@@ -676,7 +679,7 @@ fm2 <- nimbleMCMC(code = acoustic_model,
                   samplesAsCodaMCMC = TRUE)
 
 
-summary(fm2$samples)
+summary(fm1)
 
 
 # -------------------------------------------------------
