@@ -336,11 +336,10 @@ constants_list <- list(S = S,
                        A_times = A_times,
                        val_times = val_times, 
                        sites_a = sites_a, 
-                       # sites_av = sites_av,
-                       # J = J,
+                       sites_av = sites_av,
                        S_val = S_val, 
                        J_val = J_val, 
-                       # S_A = S_A,
+                       S_A = S_A,
                        J_A = J_A,
                        J_r = J_r,
                        n_days = n_days
@@ -362,14 +361,13 @@ str(constants_list)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-n.iter = 1000
-n.burnin =  100
+n.iter = 10000
+n.burnin =  1000
 n.chains = 3 
 n.thin = 1
 
-# Rough idea posterior samples
-est_post_samps = (((n.iter - n.burnin) / n.thin) * n.chains)
-print(est_post_samps)
+# Posterior samples
+(((n.iter - n.burnin) / n.thin) * n.chains)
 
 # ----------------------
 # Model Specifications
@@ -388,22 +386,22 @@ params <- c('lambda', # Abundance
             'alpha0', # Detection 
             'alpha1', 
             'alpha2',
-            'gamma0', #  Vocalization
+            'delta_tot', # Vocalization
+            'gamma0', 
             # 'gamma1',
             'mu_j',
             'tau_j',
             'jRE',
             'omega',
-            'delta',
             'phi',
             'mu_phi',
-            'tau_phi'
-            # 'fit_y',# Posterior Predictive Checks
-            # 'fit_y_pred',
-            # 'fit_v',
-            # 'fit_v_pred',
-            # 'bp_y', # Bayes p-value
-            # 'bp_v'
+            'tau_phi',
+            'fit_y',# Posterior Predictive Checks
+            'fit_y_pred',
+            'fit_v',
+            'fit_v_pred',
+            'bp_y', # Bayes p-value
+            'bp_v'
 ) # End Params
 
  
@@ -562,9 +560,9 @@ acoustic_model <- nimbleCode({
     # ---------------------------------
     # PPC Abundance  
     # ---------------------------------
-    # y_pred[s, j] ~ dbin(p_a[s, j], 1)
-    # resid_y[s, j] <- pow(pow(y[s, j], 0.5) - pow(p_a[s, j], 0.5), 2)
-    # resid_y_pred[s, j] <- pow(pow(y_pred[s, j], 0.5) - pow(p_a[s, j], 0.5), 2)
+    y_pred[s, j] ~ dbin(p_a[s, j], 1)
+    resid_y[s, j] <- pow(pow(y[s, j], 0.5) - pow(p_a[s, j], 0.5), 2)
+    resid_y_pred[s, j] <- pow(pow(y_pred[s, j], 0.5) - pow(p_a[s, j], 0.5), 2)
     
     } # End J
     
@@ -582,10 +580,10 @@ acoustic_model <- nimbleCode({
       # ---------------------------------
       # PPC calls
       # ---------------------------------
-      # v_pred[s, j] ~ T(dpois((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]] * y[s, A_times[s, j]]), 1, )
-      # mu_v[s, j] <- ((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]]) / (1 - exp(-1 * ((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]])))
-      # resid_v[s, j] <- pow(pow(v[s, A_times[s, j]], 0.5) - pow(mu_v[s, j], 0.5), 2)
-      # resid_v_pred[s, j] <- pow(pow(v_pred[s, j], 0.5) - pow(mu_v[s, j], 0.5), 2)
+      v_pred[s, j] ~ T(dpois((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]] * y[s, A_times[s, j]]), 1, )
+      mu_v[s, j] <- ((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]]) / (1 - exp(-1 * ((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]])))
+      resid_v[s, j] <- pow(pow(v[s, A_times[s, j]], 0.5) - pow(mu_v[s, j], 0.5), 2)
+      resid_v_pred[s, j] <- pow(pow(v_pred[s, j], 0.5) - pow(mu_v[s, j], 0.5), 2)
 
 
       }# End J_R
@@ -606,48 +604,24 @@ acoustic_model <- nimbleCode({
   # -------------------------------------------
   # PPC and Bayesian P-value
   # -------------------------------------------
-  # # Initialize accumulators
-  # for (s in 1:S_A) {
-  #   tmp.v[s] <- 0
-  #   tmp.v.pred[s] <- 0
-  # }
-  # 
-  # # Loop over S_A and J_r to compute residuals for v
-  # for (s in 1:S_A) {
-  #   site_idx <- sites_a_v[s]  # Extract site index
-  #   for (j in 1:J_r[site_idx]) {
-  #     tmp.v[s] <- tmp.v[s] + resid.v[site_idx, j]
-  #     tmp.v.pred[s] <- tmp.v.pred[s] + resid.v.pred[site_idx, j]
-  #   }
-  # }
-  # 
-  # # Initialize fit accumulators
-  # fit_y <- 0
-  # fit_y_pred <- 0
-  # 
-  # 
-  # # Loop over S_val and J_A to compute residuals for y
-  # for (s in 1:S_val) {
-  #   site_idx <- getSiteIndex(s, sites_a)
-  #   for (j in 1:J_A) {
-  #     fit_y <- fit_y + resid.y[site_idx, j]
-  #     fit_y_pred <- fit_y_pred + resid.y.pred[site_idx, j]
-  #   }
-  # }
-  # 
-  # # Initialize fit_v accumulators
-  # fit_v <- 0
-  # fit_v_pred <- 0
-  # 
-  # # Loop over S_A to compute fit_v
-  # for (s in 1:S_A) {
-  #   fit_v <- fit_v + tmp.v[s]
-  #   fit_v_pred <- fit_v_pred + tmp.v.pred[s]
-  # }
-  # 
-  # # Compute Bayesian P-values  
-  # bp_y <- step(fit_y_pred - fit_y) 
-  # bp_v <- step(fit_v_pred - fit_v)  
+  for (s in 1:S_A) {
+    tmp_v[s] <- sum(resid_v[sites_av[s], 1:J_r[sites_av[s]]])
+    tmp_v_pred[s] <- sum(resid_v_pred[sites_av[s], 1:J_r[sites_av[s]]])
+
+  }
+  
+  for (s in 1:S) {
+    tmp_y[s] <- sum(resid_y[sites_a[s], 1:J_A])
+    tmp_y_pred[s] <- sum(resid_y_pred[sites_a[s], 1:J_A])
+    
+  }
+  
+  fit_y <- sum(tmp_y[1:S])
+  fit_y_pred <-sum(tmp_y_pred[1:S])
+  fit_v <- sum(tmp_v[1:S_A])
+  fit_v_pred <- sum(tmp_v_pred[1:S_A])
+  bp_y <- step(fit_y_pred - fit_y)
+  bp_v <- step(fit_v_pred - fit_v)
   
   
   
@@ -657,9 +631,15 @@ acoustic_model <- nimbleCode({
   
   # Abundance
   N_tot <- sum(N[1:S])
+  
+  # Call Rate
+  delta_tot <- sum(delta[1:S, 1:J_A])
+  
+
 })
 # ---------------------------- End Model ----------------------------
 
+ 
 
 # ------------------------
 # Fit Model 
@@ -678,17 +658,289 @@ fm1 <- nimbleMCMC(code = acoustic_model,
                   progressBar = getNimbleOption("MCMCprogressBar"),
                   samplesAsCodaMCMC = TRUE)
 
-
 summary(fm1)
-
 
 # -------------------------------------------------------
 # Check Convergence
 # -------------------------------------------------------
 
-# Traceplots
-par(mfrow=c(3,5))
-coda::traceplot(fm1)
+# Trace plots
+mcmcplots::mcmcplot(fm1, parms = params) 
 
 # Rhat
 coda::gelman.diag(fm1)
+
+# -------------------------------------------------------
+# Combine Chains for Posterior inference
+# -------------------------------------------------------
+
+# Combine chains
+combined_chains <- as.mcmc(do.call(rbind, fm1))
+
+# -------------------------------------------------------
+# Posterior Predictive Checks
+# -------------------------------------------------------
+
+# ----------------------
+# Bayes P-value
+# ----------------------
+
+# Extracting samples and calculating mean
+bp_y_samples <- combined_chains[, "bp_y"]
+bp_v_samples <- combined_chains[, "bp_v"]
+mn_bp_y <- mean(bp_y_samples)
+mn_bp_v <- mean(bp_v_samples)
+
+# P-value = 0.5 means good fit, = 1 or 0 is a poor fit
+
+# Abundance
+cat("Abundance Model Bayesian p-value =", mn_bp_y, "\n")
+
+# Call    
+cat("Call Model Bayesian p-value =", mn_bp_v, "\n") 
+
+# ----------------------
+# Extract Fits
+# ----------------------
+
+# Abundance
+fit_y_data <- data.frame(
+  Observed = as.vector(combined_chains[, "fit_y"]),       # Observed values
+  Predicted = as.vector(combined_chains[, "fit_y_pred"]) # Predicted values
+)
+
+# Calls
+fit_v_data <- data.frame(
+  Observed = as.vector(combined_chains[, "fit_v"]),
+  Predicted = as.vector(combined_chains[, "fit_v_pred"])
+)
+
+# ----------------------
+# Density Plot
+# ----------------------
+
+# Abundance
+y_PPC_Dens <- ggplot(fit_y_data) +
+  geom_density(aes(x = Observed, fill = "Observed"), alpha = 0.5) +   
+  geom_density(aes(x = Predicted, fill = "Predicted"), alpha = 0.5) +  
+  scale_fill_manual(values = c("Observed" = "blue", "Predicted" = "red")) +  
+  labs(title = "Posterior Predictive Check for Abundance", 
+       x = "Fit Values", 
+       y = "Density") +
+  theme_minimal() +
+  theme(legend.title = element_blank()) 
+
+# View
+print(y_PPC_Dens)
+
+# Export                
+ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Wolfe_Abund_Density.jpeg", width = 8, height = 5, dpi = 300)
+dev.off()
+
+
+# Call
+v_PPC_Dens <- ggplot(fit_v_data) +
+  geom_density(aes(x = Observed, fill = "Observed"), alpha = 0.5) +   
+  geom_density(aes(x = Predicted, fill = "Predicted"), alpha = 0.5) +  
+  scale_fill_manual(values = c("Observed" = "blue", "Predicted" = "red")) +  
+  labs(title = "Posterior Predictive Check for Call", 
+       x = "Fit Values", 
+       y = "Density") +
+  theme_minimal() +
+  theme(legend.title = element_blank()) 
+
+# View
+print(v_PPC_Dens)
+
+# Export                
+ggsave(plot = v_PPC_Dens, "./Figures/PPC/AV_Wolfe_Call_Density.jpeg", width = 8, height = 5, dpi = 300)
+dev.off()
+
+
+# -------------------------------------------------------
+# Beta Estimates **** interactive effect
+# -------------------------------------------------------
+
+# Extract beta estimates
+beta0_samples <- combined_chains[, "beta0"]
+beta1_samples <- combined_chains[, "beta1"]
+beta2_samples <- combined_chains[, "beta2"]
+
+# Means
+beta0 <- mean(beta0_samples)
+beta1 <- mean(beta1_samples)
+beta2 <- mean(beta2_samples)
+
+# Compute 95% CI for each beta
+beta_df <- data.frame(
+  value = c(beta0_samples, beta1_samples, beta2_samples),  
+  parameter = rep(c("beta0", "beta1", "beta2"), each = length(beta0_samples))
+) %>%
+  group_by(parameter) %>%
+  filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  
+
+# Add model
+beta_df$Model <- model_name
+
+# Plot
+ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
+  geom_violin(alpha = 0.5, trim = TRUE) +   
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 1) + 
+  labs(title = "Violin Plots for Beta Estimates", x
+       = "Parameter", 
+       y = "Estimate") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2") 
+
+# Clear
+dev.off()
+
+
+# Export beta dataframe
+saveRDS(beta_df, "./Data/Model_Data/ARU_WolfeAV_beta_df.rds")
+
+# -------------------------------------------------------
+# Covariate Effects
+# -------------------------------------------------------
+
+# Covariate names
+print(colnames(X_abund))
+
+# Set covariate name 
+Cov1_name <- "herb_ClmIdx"
+Cov2_name <- "woody_AggInx"
+
+# Create a prediction of covariate values
+cov1_scaled <- (X_abund[, Cov1_name] - mean(X_abund[, Cov1_name])) / (max(X_abund[, Cov1_name]) - min(X_abund[, Cov1_name]))
+cov2_scaled <- (X_abund[, Cov2_name] - mean(X_abund[, Cov2_name])) / (max(X_abund[, Cov2_name]) - min(X_abund[, Cov2_name]))
+
+# Matrices for storing predictions
+cov1_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov1_scaled))
+cov2_preds <- matrix(NA, nrow = length(beta0_samples), ncol = length(cov2_scaled))
+
+# Generate predictions
+for (i in 1:length(beta0_samples)) {
+  cov1_preds[i, ] <- beta0_samples[i] + beta1_samples[i] * cov1_scaled  
+  cov2_preds[i, ] <- beta0_samples[i] + beta2_samples[i] * cov2_scaled
+}# end loop
+
+
+# Calculate mean predictions
+cov1_preds_mean <- apply(cov1_preds, 2, mean)# mean
+cov1_preds_LCI <- apply(cov1_preds, 2, quantile, probs = 0.025) # LCI
+cov1_preds_HCI <- apply(cov1_preds, 2, quantile, probs = 0.975) # HCI
+
+cov2_preds_mean <- apply(cov2_preds, 2, mean)
+cov2_preds_LCI <- apply(cov2_preds, 2, quantile, probs = 0.025)
+cov2_preds_HCI <- apply(cov2_preds, 2, quantile, probs = 0.975)
+
+# Combine into a single data frame
+cov1_pred_df <- data.frame(
+  cov1_scaled = cov1_scaled,
+  cov1_preds_mean = cov1_preds_mean,
+  cov1_preds_LCI = cov1_preds_LCI,
+  cov1_preds_HCI = cov1_preds_HCI)
+
+cov2_pred_df <- data.frame(
+  cov2_scaled = cov2_scaled,
+  cov2_preds_mean = cov2_preds_mean,
+  cov2_preds_LCI = cov2_preds_LCI,
+  cov2_preds_HCI = cov2_preds_HCI)
+
+# Plot effect
+
+# Cov 1
+ggplot(cov1_pred_df, aes(x = cov1_scaled, y = cov1_preds_mean)) +
+  geom_line(color = "black", linewidth = 1.5) +   
+  geom_ribbon(aes(ymin = cov1_preds_LCI, 
+                  ymax = cov1_preds_HCI), 
+              fill = "forestgreen", alpha = 0.3) +
+  labs(x = "Covariate Value", 
+       y = "Effect Estimate", 
+       title = paste0(model_name, " | Predicted Effect of ", Cov1_name)) +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+# Clear
+dev.off()
+
+# Cov 2
+ggplot(cov2_pred_df, aes(x = cov2_scaled, y = cov2_preds_mean)) +
+  geom_line(color = "black", linewidth = 1.5) +
+  geom_ribbon(aes(ymin = cov2_preds_LCI,
+                  ymax = cov2_preds_HCI),
+              fill = "forestgreen", alpha = 0.3) +
+  labs(x = "Covariate Value",
+       y = "Effect Estimate",
+       title = paste0(model_name, " | Predicted Effect of ", Cov2_name)) +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+# Clear
+dev.off()
+
+# -------------------------------------------------------
+#  Estimating Abundance 
+# -------------------------------------------------------
+
+# Extract abundance posterior
+Ntot_samples <- combined_chains[ ,"N_tot"]
+
+# Ntotal is the abundance based on 27 acoustic sites at a radius of 200m.
+# To correct for density, Ntotal needs to be divided by 27 * area surveyed
+area <- pi * (200^2) / 4046.86  # Area in acres
+dens_samples <- Ntot_samples / (area * 27)
+
+# Create data frame for density
+dens_df <- data.frame(Model = rep(model_name, length(dens_samples)), Density = dens_samples)
+colnames(dens_df)[2] <- "Density"
+head(dens_df)
+
+# Calculate the mean and 95% Credible Interval
+dens_summary <- dens_df %>%
+  group_by(Model) %>%
+  summarise(
+    Mean = mean(Density),
+    Lower_CI = quantile(Density, 0.025),
+    Upper_CI = quantile(Density, 0.975)
+  )
+
+# Subset the data within the 95% credible interval
+dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI & dens_df$Density <= dens_summary$Upper_CI, ]
+
+# Getting total abundance
+abund_summary <- dens_summary
+abund_summary[,2:4] <- abund_summary[,2:4] * 2710
+
+# Plot Abundance - Violin
+abund_df <- dens_df
+abund_df$Density <- abund_df$Density * 2710
+
+ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) + 
+  geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +   
+  labs(x = "Model", y = "Total Abundance") +
+  scale_fill_manual(values = c("AV Wolfe" = "red")) +   
+  scale_y_continuous(limits = c(0, 1000),
+                     breaks = seq(0, 1000, by = 100),
+                     labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
+        axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
+        axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
+        panel.grid = element_blank(),
+        legend.position = "none")  
+
+
+
+# Total abundance
+abund_summary
+
+# Clear
+dev.off()
+
+# Export density dataframe
+saveRDS(dens_df, "./Data/Model_Data/ARU_WolfeAV__dens_df.rds")
+saveRDS(dens_summary, "./Data/Model_Data/ARU_WolfeAV_dens_summary.rds")
+saveRDS(abund_summary, "./Data/Model_Data/ARU_WolfeAV_abund_summary.rds")
+
+# End Script
