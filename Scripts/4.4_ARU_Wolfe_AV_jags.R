@@ -340,10 +340,10 @@ str(Wolfe14.data)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-n.iter = 50000
-n.burnin =  10000
+n.iter = 1000
+n.burnin =  100
 n.chains = 3 
-n.thin = 5
+n.thin = 1
 n.adapt = 5000
 
 # Rough idea posterior samples
@@ -423,13 +423,16 @@ cat(" model {
   # Covariate effect
   beta1 ~ dnorm(0, 1) # Herbaceous Clumpy Index 
   beta2 ~ dnorm(0, 1) # Woody Aggregation Index 
+  
+  qp.tau ~ dgamma(0.001, 0.001)
+  qp.sigma <- pow(qp.tau, -2)
+  
+  # Survey random effect - Non-Centered
+  sigma_s ~ dunif(0, 10)
+  for (s in 1:S) {
 
-  # # Survey random effect - Non-Centered
-  # sigma_s ~ dunif(0, 10)
-  # for (s in 1:S) {
-  #   eta_s[s] ~ dnorm(0, 1)
-  #   Sraneff[s] <- beta0 + eta_s[s] * sigma_s 
-  # }
+    siteRE[s] ~ dnorm(0, qp.tau)
+  }
 
   # ------------------------
   # Detection Priors
@@ -479,6 +482,8 @@ cat(" model {
     }
   }
   
+
+  
   # -------------------------------------------
   #
   # Likelihood and Process Model 
@@ -492,9 +497,13 @@ cat(" model {
     # Abundance Submodel  
     # ---------------------------------
     
-    # Poisson # Sraneff[s]
+    # Poisson 
     log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12]
     N[s] ~ dpois(lambda[s])
+    
+    # Quasi-Poisson 
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12]
+    N[s] ~ dpois(lambda[s] * exp(siteRE[s]))
 
     # Survey
     for (j in 1:J[s]) {
