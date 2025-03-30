@@ -4,6 +4,7 @@
 #
 # ------------------------------------------------------------------------------
 
+library(tidyverse)
 library(reshape2) # used for heatmap
 library(psych) # used for pairs panel plotting
 
@@ -77,9 +78,9 @@ ggsave("./Figures/Correlations/ARU_Corr_Heatmap.jpg", plot = aru_heatmap, width 
 
 
 
-# Filter covarite combinations less than 50% correlated
-pc_low_corr <- which(abs(pc_cor_mat) <= 0.50, arr.ind = TRUE)
-aru_low_corr <- which(abs(aru_cor_mat) <= 0.50, arr.ind = TRUE)
+# Filter covarite combinations less than 40% correlated
+pc_low_corr <- which(abs(pc_cor_mat) <= 0.40, arr.ind = TRUE)
+aru_low_corr <- which(abs(aru_cor_mat) <= 0.40, arr.ind = TRUE)
 
 
 # Remove redundant and diagonal elements
