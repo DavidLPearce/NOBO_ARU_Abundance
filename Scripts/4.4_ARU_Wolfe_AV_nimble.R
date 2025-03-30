@@ -371,7 +371,9 @@ nthin = 10
 # ----------------------
 
 # Parameters monitored
-params <- c('lambda', # Abundance
+params <- c(
+            # Abundance
+            'lambda', 
             'N_tot',
             'N',
             'beta0',
@@ -379,20 +381,26 @@ params <- c('lambda', # Abundance
             'beta2',
             'beta3',
             'nu',
-            'p_a_tot',# Detection 
+            
+            # Detection 
+            'p_a',
             'alpha0', 
             'alpha1', 
             'alpha2',
-            'delta_tot', # Vocalization
-            # 'gamma0', 
+            
+            # Vocalization
+            'delta', 
+            'gamma0',
             'mu_j',
             'tau_j',
             'jRE',
             'omega',
-            # 'phi',
-            # 'mu_phi',
-            # 'tau_phi',
-            'fit_y',# Posterior Predictive Checks
+            'phi',
+            'mu_phi',
+            'tau_phi',
+            
+            # Posterior Predictive Checks
+            'fit_y',
             'fit_y_pred',
             'fit_v',
             'fit_v_pred',
@@ -406,7 +414,7 @@ params <- c('lambda', # Abundance
 inits <- list(
   # Abundance
   N = rep(1, S),
-  nu = 2, # >1 is underdispersed        
+  nu = rep(1, S), # <1 = overdispersed, 1 = Poisson,  >1 = underdispersed        
   beta0 = rnorm(1, 0, 1),
   beta1 = rnorm(1, 0, 1),
   beta2 = rnorm(1, 0, 1),
@@ -457,8 +465,9 @@ acoustic_model <- nimbleCode({
   beta3 ~ dnorm(0, 10) # Interactive effect
   
   # Underdispersion
-  nu ~ dunif(1, 3)
-  
+  for (s in 1:S) {
+  nu[s] ~ dunif(0, 50)
+  }
 
   # ------------------------
   # Detection Priors
@@ -489,7 +498,7 @@ acoustic_model <- nimbleCode({
   mu_j ~ dgamma(0.01, 0.01)
   tau_j ~ dgamma(0.01, 0.01)
   for (j in 1:n_days) {
-    jRE[j] ~ dnorm(mu_j, tau_j)
+    jRE[j] ~ dnorm(0, tau_j)
   }
   
   # Overdispersion
@@ -520,7 +529,7 @@ acoustic_model <- nimbleCode({
     # Conway-Maxwell Poisson
     # Intercept + Herbaceous Clumpy Indx + Woody Aggregation Indx  
     log(lambda[s]) <- beta0 + beta1 * X_abund[s, 7] + beta2 * X_abund[s, 12]
-    N[s] ~ dCOMPois_nimble(lambda[s], nu)
+    N[s] ~ dCOMPois_nimble(lambda[s], nu[s])
     
     # Survey
     for (j in 1:J_A) {
@@ -565,7 +574,7 @@ acoustic_model <- nimbleCode({
     # Surveys with Vocalizations
     for (j in 1:J_r[s]) {
 
-      # Zero Truncated Negative Binomial
+      # Zero Truncated Negative Binomial - Implementation as seen in Doser et al. 2021
       v[s, A_times[s, j]] ~ T(dpois((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]] * y[s, A_times[s, j]]), 1, )
 
 
@@ -624,14 +633,6 @@ acoustic_model <- nimbleCode({
   # Abundance
   N_tot <- sum(N[1:S])
   
-  # Detection 
-  p_a_tot <- sum(p_a[1:S, 1:J_A])
-  
-  # Call Rate
-  delta_tot <- sum(delta[1:S, 1:J_A])
-  
-
-
 })
 # ---------------------------- End Model ----------------------------
 
@@ -654,7 +655,11 @@ fm1 <- nimbleMCMC(code = acoustic_model,
                   progressBar = getNimbleOption("MCMCprogressBar"),
                   samplesAsCodaMCMC = TRUE,
                   summary = TRUE)
-fm1$summary
+ 
+# Export model
+saveRDS(fm1, "./Data/Model_Data/ARU_WolfeAV_fm1.rds")
+
+
 # -------------------------------------------------------
 # Check Convergence
 # -------------------------------------------------------
