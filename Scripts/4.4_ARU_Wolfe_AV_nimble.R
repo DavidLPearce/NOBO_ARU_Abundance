@@ -4,7 +4,7 @@
 
 # This code extends code from the following sources: 
 #     1. Chambert, T., Waddle, J. H., Miller, D. A., Walls, S. C., 
-#           and Nichols, J. D. (2018b). A new framework for analysing 
+#           and Nichols, J. D. (2018). A new framework for analysing 
 #           automated acoustic species detection data: Occupancy estimation 
 #           and optimization of recordings post-processing. 
 #           Methods in Ecology and Evolution, 9(3):560–570.
@@ -31,6 +31,7 @@
 # install.packages("nimble")
 # install.packages("coda")
 # install.packages("mcmcplots")
+# install.packages("COMPoissonReg")
 
 # Load library
 library(tidyverse)
@@ -38,17 +39,12 @@ library(plotly)
 library(nimble)
 library(coda)
 library(mcmcplots)
+library(COMPoissonReg)
 
 # Set seed, scientific notation options, and working directory
 set.seed(123)
 options(scipen = 9999)
 setwd(".")
-
-# Setting up cores
-Ncores <- parallel::detectCores()
-print(Ncores) # Number of available cores
-workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
-print(workers)
 
 # Source custom function for checking Rhat values > 1.1
 source("./Scripts/Custom_Functions/Rhat_check_function.R")
@@ -59,9 +55,10 @@ source("./Scripts/Custom_Functions/rhyper_nimble.R")
 source("./Scripts/Custom_Functions/register_hypergeometric_distribution.R")
 
 # Source, assign, and register Conway-Maxwell Poisson distribution for NIMBLE
-# source("./Scripts/Custom_Functions/dCMPois_nimble.R")
-# source("./Scripts/Custom_Functions/rCMPois_nimble.R")
-# source("./Scripts/Custom_Functions/register_Conway-Maxwell_Poisson_distribution.R")
+source("./Scripts/Custom_Functions/dCMPois_nimble.R")
+source("./Scripts/Custom_Functions/rCMPois_nimble.R")
+source("./Scripts/Custom_Functions/register_Conway-Maxwell_Poisson_distribution.R")
+
 
 # Model name object
 model_name <- "AV Wolfe"
@@ -107,7 +104,7 @@ model_name <- "AV Wolfe"
 #
 # -------------------------------------------------------
 
-# BirdNet detections
+# Wolfe et al. detections
 wolfe_dat <- read.csv("./Data/Acoustic_Data/NOBO_Wolfe_14day2024.csv")
 
 # ARU weather covariates
@@ -332,24 +329,24 @@ str(Wolfe14.data)
 # Constants 
 # ----------------------
 
-constants_list <- list(S = S, 
-                       A_times = A_times,
-                       val_times = val_times, 
-                       sites_a = sites_a, 
-                       sites_av = sites_av,
-                       S_val = S_val, 
-                       J_val = J_val, 
-                       S_A = S_A,
-                       J_A = J_A,
-                       J_r = J_r,
-                       n_days = n_days
-                       # days = days,
-                       # n.doy = length(unique(doy_vec)),
-                       # Sky_Lvls = length(unique(sky_mat))
+constants<- list(S = S, 
+                 A_times = A_times,
+                 val_times = val_times, 
+                 sites_a = sites_a, 
+                 sites_av = sites_av,
+                 S_val = S_val, 
+                 J_val = J_val, 
+                 S_A = S_A,
+                 J_A = J_A,
+                 J_r = J_r,
+                 n_days = n_days
+                 # days = days,
+                 # n.doy = length(unique(doy_vec)),
+                 # Sky_Lvls = length(unique(sky_mat))
 )
 
 # Check structure
-str(constants_list)
+str(constants)
  
 
 # ---------------------------------------------------------- 
@@ -361,13 +358,13 @@ str(constants_list)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-n.iter = 10000
-n.burnin =  1000
-n.chains = 3 
-n.thin = 1
+niter = 200000
+nburnin =  80000
+nchains = 3 
+nthin = 10
 
 # Posterior samples
-(((n.iter - n.burnin) / n.thin) * n.chains)
+(((niter - nburnin) / nthin) * nchains)
 
 # ----------------------
 # Model Specifications
@@ -380,22 +377,21 @@ params <- c('lambda', # Abundance
             'beta0',
             'beta1',
             'beta2',
-            # 'Sraneff',
-            # 'sigma_s',
-            # 'mu_s',
-            'alpha0', # Detection 
+            'beta3',
+            'nu',
+            'p_a_tot',# Detection 
+            'alpha0', 
             'alpha1', 
             'alpha2',
             'delta_tot', # Vocalization
-            'gamma0', 
-            # 'gamma1',
+            # 'gamma0', 
             'mu_j',
             'tau_j',
             'jRE',
             'omega',
-            'phi',
-            'mu_phi',
-            'tau_phi',
+            # 'phi',
+            # 'mu_phi',
+            # 'tau_phi',
             'fit_y',# Posterior Predictive Checks
             'fit_y_pred',
             'fit_v',
@@ -409,10 +405,12 @@ params <- c('lambda', # Abundance
 # Initial Values 
 inits <- list(
   # Abundance
-  N = rep(1, S),         
+  N = rep(1, S),
+  nu = 2, # >1 is underdispersed        
   beta0 = rnorm(1, 0, 1),
   beta1 = rnorm(1, 0, 1),
   beta2 = rnorm(1, 0, 1),
+  beta3 = rnorm(1, 0, 1),
   
   # Detection
   alpha0 = 0,            
@@ -441,9 +439,6 @@ inits <- list(
 )
 
 
- 
-
- 
 # ----------------------------- 
 # Model Statement 
 # ----------------------------- 
@@ -459,13 +454,12 @@ acoustic_model <- nimbleCode({
   # Covariate effect
   beta1 ~ dnorm(0, 10) # Herbaceous Clumpy Index 
   beta2 ~ dnorm(0, 10) # Woody Aggregation Index 
+  beta3 ~ dnorm(0, 10) # Interactive effect
   
-  # # Survey random effect - Non-Centered
-  # tau_s ~ dgamma(0.01, 0.01)
-  # for (s in 1:S) {
-  #  sRE[s] ~ dnorm(0, tau_s)
-  # }
+  # Underdispersion
+  nu ~ dunif(1, 3)
   
+
   # ------------------------
   # Detection Priors
   # ------------------------
@@ -498,13 +492,6 @@ acoustic_model <- nimbleCode({
     jRE[j] ~ dnorm(mu_j, tau_j)
   }
   
-  # # Survey random effect - Non-Centered
-  # sigma_j ~ dunif(0, 10)
-  # for (j in 1:n_days) {
-  #   eta_j[j] ~ dnorm(0, 1)
-  #   Jraneff[j] <- gamma0 + eta_j[j] * sigma_j 
-  # }
-  
   # Overdispersion
   mu_phi ~ dgamma(0.01, 0.01)    
   tau_phi ~ dgamma(0.01, 0.01)   
@@ -525,10 +512,15 @@ acoustic_model <- nimbleCode({
     # Abundance Submodel  
     # ---------------------------------
     
-    # Poisson
-    # Intercept + Herbaceous Clumpy Indx + Woody Aggregation Indx
-    log(lambda[s]) <- beta0 + beta1 * X_abund[s, 7] + beta2 * X_abund[s, 12] 
-    N[s] ~ dpois(lambda[s])
+    # # Poisson
+    # # Intercept + Herbaceous Clumpy Indx + Woody Aggregation Indx + Interactive effect
+    # log(lambda[s]) <- beta0 + beta1 * X_abund[s, 7] + beta2 * X_abund[s, 12] + beta3 * X_abund[s, 7] * X_abund[s, 12]
+    # N[s] ~ dpois(lambda[s])
+    
+    # Conway-Maxwell Poisson
+    # Intercept + Herbaceous Clumpy Indx + Woody Aggregation Indx  
+    log(lambda[s]) <- beta0 + beta1 * X_abund[s, 7] + beta2 * X_abund[s, 12]
+    N[s] ~ dCOMPois_nimble(lambda[s], nu)
     
     # Survey
     for (j in 1:J_A) {
@@ -545,7 +537,7 @@ acoustic_model <- nimbleCode({
     # ---------------------------------
       
     # Intercept + Survey Random Effect
-    log(delta[s, j]) <- gamma0 + jRE[j]
+    log(delta[s, j]) <- jRE[j]
       
     # ---------------------------------
     # Observations
@@ -632,9 +624,13 @@ acoustic_model <- nimbleCode({
   # Abundance
   N_tot <- sum(N[1:S])
   
+  # Detection 
+  p_a_tot <- sum(p_a[1:S, 1:J_A])
+  
   # Call Rate
   delta_tot <- sum(delta[1:S, 1:J_A])
   
+
 
 })
 # ---------------------------- End Model ----------------------------
@@ -645,37 +641,38 @@ acoustic_model <- nimbleCode({
 # Fit Model 
 # ------------------------
 
-# Note: This uses the basic NIMBLE MCMC
-fm1 <- nimbleMCMC(code = acoustic_model, 
-                  data = Wolfe14.data, 
-                  constants = constants_list,
+# Fit model with standard NIMBLE MCMC sampler
+fm1 <- nimbleMCMC(code = acoustic_model,
+                  data = Wolfe14.data,
+                  constants = constants,
                   inits = inits,
                   monitors = params,
-                  niter = n.iter,
-                  nburnin = n.burnin,
-                  nchains = n.chains,
-                  thin = n.thin,
+                  niter = niter,
+                  nburnin = nburnin,
+                  nchains = nchains,
+                  thin = nthin,
                   progressBar = getNimbleOption("MCMCprogressBar"),
-                  samplesAsCodaMCMC = TRUE)
-
-summary(fm1)
-
+                  samplesAsCodaMCMC = TRUE,
+                  summary = TRUE)
+fm1$summary
 # -------------------------------------------------------
 # Check Convergence
 # -------------------------------------------------------
 
 # Trace plots
-mcmcplots::mcmcplot(fm1, parms = params) 
+mcmcplots::mcmcplot(fm1$samples, 
+                    parms = params) 
 
 # Rhat
-coda::gelman.diag(fm1)
+coda::gelman.diag(fm1$samples)
+check_rhat(coda::gelman.diag(fm1$samples), threshold = 1.05) 
 
 # -------------------------------------------------------
 # Combine Chains for Posterior inference
 # -------------------------------------------------------
 
 # Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm1))
+combined_chains <- as.mcmc(do.call(rbind, fm1$samples))
 
 # -------------------------------------------------------
 # Posterior Predictive Checks
