@@ -358,13 +358,10 @@ str(constants)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-niter = 200000
-nburnin =  80000
+niter = 600000
+nburnin =  100000
 nchains = 3 
-nthin = 10
-
-# Posterior samples
-(((niter - nburnin) / nthin) * nchains)
+nthin = 20
 
 # ----------------------
 # Model Specifications
@@ -383,19 +380,19 @@ params <- c(
             'nu',
             
             # Detection 
-            'p_a',
+            #'p_a',
             'alpha0', 
             'alpha1', 
             'alpha2',
             
             # Vocalization
-            'delta', 
+            #'delta', 
             'gamma0',
             'mu_j',
             'tau_j',
             'jRE',
             'omega',
-            'phi',
+            #'phi',
             'mu_phi',
             'tau_phi',
             
@@ -466,7 +463,8 @@ acoustic_model <- nimbleCode({
   
   # Underdispersion
   for (s in 1:S) {
-  nu[s] ~ dunif(0, 50)
+    log_nu[s] ~ dnorm(1, 0.25)  # mean = 1, precision = 0.25 so SD = 2
+    nu[s] <- exp(log_nu[s])
   }
 
   # ------------------------
@@ -498,7 +496,7 @@ acoustic_model <- nimbleCode({
   mu_j ~ dgamma(0.01, 0.01)
   tau_j ~ dgamma(0.01, 0.01)
   for (j in 1:n_days) {
-    jRE[j] ~ dnorm(0, tau_j)
+    jRE[j] ~ dnorm(gamma0, tau_j)
   }
   
   # Overdispersion
@@ -528,7 +526,7 @@ acoustic_model <- nimbleCode({
     
     # Conway-Maxwell Poisson
     # Intercept + Herbaceous Clumpy Indx + Woody Aggregation Indx  
-    log(lambda[s]) <- beta0 + beta1 * X_abund[s, 7] + beta2 * X_abund[s, 12]
+    log(lambda[s]) <- beta0 + beta1 * X_abund[s, 7] + beta2 * X_abund[s, 12] + beta3 * X_abund[s, 7] * X_abund[s, 12]
     N[s] ~ dCOMPois_nimble(lambda[s], nu[s])
     
     # Survey
@@ -657,20 +655,27 @@ fm1 <- nimbleMCMC(code = acoustic_model,
                   summary = TRUE)
  
 # Export model
-saveRDS(fm1, "./Data/Model_Data/ARU_WolfeAV_fm1.rds")
+saveRDS(fm1, "./Data/Model_Data/ModelFits_WolfeAV_fm1.rds")
 
-
+fm1 <- readRDS("./Data/Model_Data/ModelFits_WolfeAV_fm1.rds")
+ 
 # -------------------------------------------------------
 # Check Convergence
 # -------------------------------------------------------
 
+# Extract posterior samples
+fm1_samples <- as.mcmc.list(fm1$samples)
+
 # Trace plots
-mcmcplots::mcmcplot(fm1$samples, 
+mcmcplots::mcmcplot(fm1_samples, 
                     parms = params) 
 
 # Rhat
-coda::gelman.diag(fm1$samples)
-check_rhat(coda::gelman.diag(fm1$samples), threshold = 1.05) 
+coda::gelman.diag(fm1_samples, multivariate = FALSE)
+
+# Effective sample size
+as.data.frame(coda::effectiveSize(fm1_samples))
+
 
 # -------------------------------------------------------
 # Combine Chains for Posterior inference
