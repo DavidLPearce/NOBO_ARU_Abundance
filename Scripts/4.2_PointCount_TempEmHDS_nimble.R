@@ -236,10 +236,10 @@ str(constants)
 # MCMC Specifications
 # -------------------
 
-niter = 1000
-nburnin = 100
+niter = 600000
+nburnin = 100000
 nchains = 3 
-nthin =  1
+nthin =  15
 
 # ----------------------
 # Model Specifications
@@ -483,7 +483,7 @@ fm1 <- nimbleMCMC(code = TEHDS_model,
 
 
 # Export model
-# saveRDS(fm1, "./Data/Model_Data/ModelFits_PC-TEHDS_fm1.rds")
+saveRDS(fm1, "./Data/Model_Data/ModelFits_PC-TEHDS_fm1.rds")
 
 # -------------------------------------------------------
 # Check Convergence
