@@ -358,10 +358,10 @@ str(constants)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-niter = 600000
-nburnin =  100000
+niter = 200000
+nburnin =  40000
 nchains = 3 
-nthin = 20
+nthin = 15
 
 # ----------------------
 # Model Specifications
@@ -463,8 +463,7 @@ acoustic_model <- nimbleCode({
   
   # Underdispersion
   for (s in 1:S) {
-    log_nu[s] ~ dnorm(1, 0.25)  # mean = 1, precision = 0.25 so SD = 2
-    nu[s] <- exp(log_nu[s])
+    nu[s] ~ T(dgamma(2, 1), 1, )
   }
 
   # ------------------------
@@ -655,9 +654,9 @@ fm1 <- nimbleMCMC(code = acoustic_model,
                   summary = TRUE)
  
 # Export model
-saveRDS(fm1, "./Data/Model_Data/ModelFits_WolfeAV_fm1.rds")
+# saveRDS(fm1, "./Data/Model_Data/ModelFits_WolfeAV_fm1.rds")
 
-fm1 <- readRDS("./Data/Model_Data/ModelFits_WolfeAV_fm1.rds")
+# fm1 <- readRDS("./Data/Model_Data/ModelFits_WolfeAV_fm1.rds")
  
 # -------------------------------------------------------
 # Check Convergence
@@ -676,6 +675,9 @@ coda::gelman.diag(fm1_samples, multivariate = FALSE)
 # Effective sample size
 as.data.frame(coda::effectiveSize(fm1_samples))
 
+# Summary
+fm1_summary <- summary(fm1_samples)
+View(fm1_summary$statistics)
 
 # -------------------------------------------------------
 # Combine Chains for Posterior inference
