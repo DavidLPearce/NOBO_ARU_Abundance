@@ -340,14 +340,15 @@ constants<- list(S = S,
                  J_A = J_A,
                  J_r = J_r,
                  n_days = n_days
+                 # Sky_Lvls = length(unique(sky_mat))
                  # days = days,
                  # n.doy = length(unique(doy_vec)),
-                 # Sky_Lvls = length(unique(sky_mat))
+                 
 )
 
 # Check structure
 str(constants)
- 
+
 
 # ---------------------------------------------------------- 
 # 
@@ -358,8 +359,8 @@ str(constants)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-niter = 200000
-nburnin =  60000
+niter = 400000
+nburnin = 80000
 nchains = 3 
 nthin = 15
 
@@ -369,70 +370,72 @@ nthin = 15
 
 # Parameters monitored
 params <- c(
-            # Abundance
-            'lambda', 
-            'N_tot',
-            'N',
-            'beta0',
-            'beta1',
-            'beta2',
-            'beta3',
-            'nu',
-            
-            # Detection 
-            #'p_a',
-            'alpha0', 
-            'alpha1', 
-            'alpha2',
-            
-            # Vocalization
-            #'delta', 
-            'tau_j',
-            'jRE',
-            'omega',
-            #'phi',
-            'mu_phi',
-            'tau_phi',
-            
-            # Posterior Predictive Checks
-            'y',
-            'y_pred',
-            'resid_y',
-            'resid_y_pred',
-            'fit_y',
-            'fit_y_pred',
-            'fit_v',
-            'fit_v_pred',
-            'bp_y', # Bayesian p-value
-            'bp_v'
-          
+  # Abundance
+  'lambda', 
+  'N_tot',
+  'N',
+  'beta0',
+  'beta1',
+  'beta2',
+  'beta3',
+  # 'sRE',
+  # 'tau_s',
+  # 'nu',
+  
+  # Detection 
+  'p_a',
+  'alpha0', 
+  'alpha1', 
+  'alpha2',
+  
+  # Vocalization
+  'delta', 
+  # 'gamma0',
+  # 'gamma1',
+  'tau_j',
+  'jRE',
+  'omega',
+  'phi',
+  'mu_phi',
+  'tau_phi',
+  
+  # Posterior Predictive Checks
+  'fit_y',
+  'fit_y_pred',
+  'fit_v',
+  'fit_v_pred',
+  'bp_y', # Bayes p-value
+  'bp_v'
 ) # End Params
 
- 
+
+
 
 # Initial Values 
 inits <- list(
   # Abundance
   N = rep(1, S),
-  nu = rep(10, S), # <1 = overdispersed, 1 = Poisson,  >1 = underdispersed        
+  # nu = rep(5, S), # <1 = overdispersed, 1 = Poisson,  >1 = underdispersed        
   beta0 = rnorm(1, 0, 1),
   beta1 = rnorm(1, 0, 1),
   beta2 = rnorm(1, 0, 1),
   beta3 = rnorm(1, 0, 1),
+  # sRE = rep(0, S),
+  # tau_s = 1,
   
   # Detection
   alpha0 = 0,            
   mu_alpha = 0.5,  
-  alpha1 = runif(1, 0, 1), 
+  alpha1 = runif(1, 0, 1),
   alpha2 = rnorm(1, 0, 1),
   alpha3 = rnorm(1, 0, 1),
   
   # Vocalization
   omega = runif(1, 0, 1),  
-  # gamma0 = log(10),  
+  # gamma0 = 10,  
   
   # Survey random effect
-  jRE = rep(0, n_days),
+  jRE = rep(0, max(J)),
   tau_j = 1,
   
   # Overdispersion
@@ -463,11 +466,19 @@ acoustic_model <- nimbleCode({
   beta2 ~ dnorm(0, 10) # Woody Aggregation Index 
   beta3 ~ dnorm(0, 10) # Interactive effect
   
-  # Underdispersion
-  for (s in 1:S) {
-    #nu[s] ~ T(dgamma(3, 0.5), 1, )
-    nu[s] ~ T(dgamma(2, 0.002), 1, )
-  }
+  # # Underdispersion
+  # for (s in 1:S) {
+  #   #nu[s] ~ T(dgamma(3, 0.5), 1, )
+  #   nu[s] ~ T(dgamma(2, 0.002), 1, )
+  # }
+  
+  
+  # # Site random effect
+  # tau_s ~ dgamma(0.01, 0.01)
+  # for (s in 1:S){
+  #   sRE[s] ~ dnorm(0, tau_s)
+  # }
+  
   
   
   # ------------------------
@@ -479,11 +490,7 @@ acoustic_model <- nimbleCode({
   mu_alpha ~ dunif(0, 1)
   
   # True individuals
-  
-  for (s in 1:S){
-    alpha1[s] ~ dunif(0, 1000) # Constrained to be positive
-  }
-  
+  alpha1~ dunif(0, 1000) # Constrained to be positive
   
   # Covariate effect
   alpha2 ~ dnorm(0, 10) # Vegetation Density
@@ -495,7 +502,10 @@ acoustic_model <- nimbleCode({
   
   # False positive rate
   omega  ~ dunif(0, 1000) # From Doser et al.  
-
+  
+  # Intercept
+  # gamma0 ~ dunif(1, 60)
+  
   # Survey random effect  
   tau_j ~ dgamma(0.01, 0.01)
   for (j in 1:n_days) {
@@ -511,41 +521,39 @@ acoustic_model <- nimbleCode({
     }
   }
   
-  # ----------------------------------------
-  #
-  #     Likelihood and Process Model
-  #
-  # ----------------------------------------
+  # ------------------------
+  # Likelihood and Process Model
+  # ------------------------
   
   # Site
   for (s in 1:S) {
     
     # ---------------------------------
-    # Abundance   
+    # Abundance Submodel  
     # ---------------------------------
     
     # # Poisson
-    # # Intercept + Herbaceous Clumpy Indx + Woody Aggregation Indx 
-    # log(lambda[s]) <- beta0 + beta1 * X_abund[s, 7] + beta2 * X_abund[s, 12] 
-    # N[s] ~ dpois(lambda[s])
+    # # Intercept + Herbaceous Clumpy Indx + Woody Aggregation Indx
+    log(lambda[s]) <- beta0 + beta1 * X_abund[s, 7] + beta2 * X_abund[s, 12] 
+    N[s] ~ dpois(lambda[s])
     
     # Conway-Maxwell Poisson
     # Intercept + Herbaceous Clumpy Indx + Woody Aggregation Indx  
-    log(lambda[s]) <- beta0 + beta1 * X_abund[s, 7] + beta2 * X_abund[s, 12] + beta3 * X_abund[s, 7] * X_abund[s, 12]
-    N[s] ~ dCOMPois_nimble(lambda[s], nu[s])
+    # log(lambda[s]) <- beta0 + beta1 * X_abund[s, 7] + beta2 * X_abund[s, 12] + beta3 * X_abund[s, 7] * X_abund[s, 12]
+    # N[s] ~ dCOMPois_nimble(lambda[s], nu[s])
     
     # Survey
     for (j in 1:J_A) {
       
       # ---------------------------------
-      # Detection   
+      # Detection Submodel  
       # ---------------------------------
       
       # True Positives + Vegetation Density + Wind
-      logit(p_a[s, j]) <- alpha0 + alpha1[s] * N[s] + alpha2 * X_abund[s, 21] + alpha3 * X_det[j, 2]
+      logit(p_a[s, j]) <- alpha0 + alpha1 * N[s] # + alpha2 * X_abund[s, 21] + alpha3 * X_det[j, 2]
       
       # ---------------------------------
-      # Call rate   
+      # Call rate Submodel  
       # ---------------------------------
       
       # Intercept + Survey Random Effect
@@ -567,7 +575,7 @@ acoustic_model <- nimbleCode({
       y_pred[s, j] ~ dbin(p_a[s, j], 1)
       resid_y[s, j] <- pow(pow(y[s, j], 0.5) - pow(p_a[s, j], 0.5), 2)
       resid_y_pred[s, j] <- pow(pow(y_pred[s, j], 0.5) - pow(p_a[s, j], 0.5), 2)
-
+      
     } # End J
     
     # ---------------------------------
@@ -588,7 +596,7 @@ acoustic_model <- nimbleCode({
       mu_v[s, j] <- ((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]]) / (1 - exp(-1 * ((delta[s, A_times[s, j]] * N[s] + omega) * phi[s, A_times[s, j]])))
       resid_v[s, j] <- pow(pow(v[s, A_times[s, j]], 0.5) - pow(mu_v[s, j], 0.5), 2)
       resid_v_pred[s, j] <- pow(pow(v_pred[s, j], 0.5) - pow(mu_v[s, j], 0.5), 2)
-
+      
       
     }# End J_R
     
@@ -611,15 +619,15 @@ acoustic_model <- nimbleCode({
   for (s in 1:S_A) {
     tmp_v[s] <- sum(resid_v[sites_av[s], 1:J_r[sites_av[s]]])
     tmp_v_pred[s] <- sum(resid_v_pred[sites_av[s], 1:J_r[sites_av[s]]])
-
+    
   }
-
+  
   for (s in 1:S) {
     tmp_y[s] <- sum(resid_y[sites_a[s], 1:J_A])
     tmp_y_pred[s] <- sum(resid_y_pred[sites_a[s], 1:J_A])
-
+    
   }
-
+  
   fit_y <- sum(tmp_y[1:S])
   fit_y_pred <-sum(tmp_y_pred[1:S])
   fit_v <- sum(tmp_v[1:S_A])
@@ -647,7 +655,7 @@ acoustic_model <- nimbleCode({
 
 # Fit model with standard NIMBLE MCMC sampler
 fm1 <- nimbleMCMC(code = acoustic_model,
-                  data = Wolfe14.data,
+                  data = data,
                   constants = constants,
                   inits = inits,
                   monitors = params,
