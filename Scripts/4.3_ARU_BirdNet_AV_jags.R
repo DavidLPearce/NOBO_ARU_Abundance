@@ -51,9 +51,6 @@ print(Ncores) # Number of available cores
 workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
 print(workers)
 
-# Source custom function for checking Rhat values > 1.1
-source("./Scripts/Rhat_check_function.R")
-
 # Model name object
 model_name <- "AV Bnet"
 
@@ -106,7 +103,7 @@ bnet_dat_all <- read.csv("./Data/Acoustic_Data/NOBO_BirdNETall_2024.csv")
 weather_dat <- read.csv("./Data/Acoustic_Data/ARU_weathercovs.csv")
 
 # Site covariates
-site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs_not_scaled.csv")
+site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
 
 
 # -------------------------------------------------------
@@ -115,52 +112,65 @@ site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs_not_scaled.csv")
 #
 # -------------------------------------------------------
 
+# ----------------------------
+# 14 Days
+# ----------------------------
 
-# Subset to 14 days starting at May 26 and ending on July 17. Dates are every 4 days.
-date_order <- c("2024-05-26", "2024-05-30", "2024-06-03", "2024-06-07", # in ascending order
-                "2024-06-11", "2024-06-15", "2024-06-19", "2024-06-23",
-                "2024-06-27", "2024-07-01", "2024-07-05", "2024-07-09",
-                "2024-07-13", "2024-07-17")
+# 
+# # Subset to 14 days starting at May 26 and ending on July 17. Dates are every 4 days.
+# date_order <- c("2024-05-26", "2024-05-30", "2024-06-03", "2024-06-07", # in ascending order
+#                 "2024-06-11", "2024-06-15", "2024-06-19", "2024-06-23",
+#                 "2024-06-27", "2024-07-01", "2024-07-05", "2024-07-09",
+#                 "2024-07-13", "2024-07-17")
+# 
+# # Dates and their corresponding occasion numbers
+# bnet_dat <- bnet_dat_all %>% filter(Date %in% date_order)
+# head(bnet_dat)
+# nrow(bnet_dat)
+# 
+# # Adding occasion column
+# bnet_dat <- bnet_dat %>%
+#   mutate(Occasion = match(Date, date_order))
 
-# Dates and their corresponding occasion numbers
-bnet_dat <- bnet_dat_all %>% filter(Date %in% date_order)
+# ----------------------------
+# 21 Days
+# ----------------------------
+  
+
+# Subsetting to a 21 day period
+start_date <- as.Date("2024-06-18")
+end_date <- start_date + 20  # 21 days total
+bnet_dat <- bnet_dat_all[bnet_dat_all$Date >= start_date & bnet_dat_all$Date <= end_date, ]
 head(bnet_dat)
 nrow(bnet_dat)
 
-# Adding occasion column
-bnet_dat <- bnet_dat %>%
+# Subsetting to the last 10 mins of the recording
+bnet_dat$Time <- as.POSIXct(bnet_dat$Time, format = "%H:%M:%S")
+start_time <- as.POSIXct("06:45:00", format = "%H:%M:%S")
+end_time   <- as.POSIXct("06:55:00", format = "%H:%M:%S")
+bnet_dat <- bnet_dat[bnet_dat$Time >= start_time & bnet_dat$Time <= end_time, ]
+head(bnet_dat)
+min(bnet_dat$Time)
+max(bnet_dat$Time)
+nrow(bnet_dat)
+
+
+# Creating an occasion column using dates
+date_order <- seq(from = start_date, to = end_date, by = "day")
+bnet_dat <- bnet_dat %>%  # Adding occasion column
   mutate(Occasion = match(Date, date_order))
 
-# # Changing subset to 
-# bnet_dat <- bnet_dat_all %>%
-#   filter(Date >= as.Date("2024-06-10") & Date <= as.Date("2024-07-07"))
-# 
-# # Adding occasion column
-# date_order <- seq(as.Date("2024-06-10"), as.Date("2024-07-07"), by = "day")
-# 
-# bnet_dat <- bnet_dat %>%
-#   filter(Date %in% date_order) %>%   
-#   mutate(Occasion = match(Date, date_order))
-# 
-# # Check that it worked
-# min(bnet_dat$Date)
-# max(bnet_dat$Date)
 
-# # Subsetting data to only calls detected in last 10 mins of the recording
-# bnet_dat <- bnet_dat %>%
-#   filter(Time >= "06:45:00" & Time <= "06:55:00")
-# 
-# # Check that it worked
-# min(bnet_dat$Time)
-# max(bnet_dat$Time)
-
+# ----------------------------
+# Observation Matrix
+# ----------------------------
 
 # Adding a row count
 bnet_dat$Count <- 1
 
 
 # Initialize a site by survey matrix
-v <- matrix(0, nrow = 27, ncol = 14)        
+v <- matrix(0, nrow = 27, ncol = 21)        
 
 # Extract count data
 for (i in 1:nrow(bnet_dat)) {
@@ -207,7 +217,7 @@ print(y)
 S <- as.integer(27) 
 
 # Number of repeat visits for each site
-J <- rep(14, S)  
+J <- rep(21, S)  
 
 # J.r contains the number of surveys at each acoustic site that contains at least 1 detected vocalization. 
 J.r <- apply(v_mat, 1, function(a) {sum(a != 0)})
@@ -232,62 +242,72 @@ print(A.times)
 # Manually validated  
 # ---------------------------------------
 
-## This is from 14 day every 4 day data set
+# ----------------------------
+# 14 Days
+# ----------------------------
 
-# Validated Calls
-# Do not include sites with no calls
-# only include occasions where at least 1 call was validated for a site
-n <- read.csv("./Data/Acoustic_Data/Bnet14day_n.csv", row.names = 1)
-n <- as.matrix(n)
-
-# True Calls
-# Calls found to be true, same dimension as n
-k <- read.csv("./Data/Acoustic_Data/Bnet14day_k.csv", row.names = 1)
-k <- as.matrix(k)
-
-# Survey days calls were validated, same dimension as n
-val.times <- read.csv("./Data/Acoustic_Data/Bnet14day_val.times.csv", row.names = 1)
-val.times <- as.matrix(val.times)
-
-# Total number of sites with manually validated data
-S.val <- nrow(n)
-
-# How many surveys were validate
-J.val <- rep(14, S.val)
-
-# #### This is fake data ######
-# write.csv(v, "bnet_v.csv")
-#  
 # # Validated Calls
 # # Do not include sites with no calls
 # # only include occasions where at least 1 call was validated for a site
-# n <- read.csv("./bnet_n.csv", row.names = 1)
+# n <- read.csv("./Data/Acoustic_Data/Bnet14day_n.csv", row.names = 1)
 # n <- as.matrix(n)
-# n
 # 
 # # True Calls
 # # Calls found to be true, same dimension as n
-# k <- read.csv("./bnet_k.csv", row.names = 1)
+# k <- read.csv("./Data/Acoustic_Data/Bnet14day_k.csv", row.names = 1)
 # k <- as.matrix(k)
-# k
 # 
 # # Survey days calls were validated, same dimension as n
-# val.times <- read.csv("./bnet_val.times.csv", row.names = 1)
+# val.times <- read.csv("./Data/Acoustic_Data/Bnet14day_val_times.csv", row.names = 1)
 # val.times <- as.matrix(val.times)
 # 
 # # Total number of sites with manually validated data
 # S.val <- nrow(n)
 # 
 # # How many surveys were validate
-# J.val <- rep(28, S.val)
-# 
+# J.val <- rep(14, S.val)
+
+# ----------------------------
+# 21 Days
+# ----------------------------
 
 
+# #### This is fake data ######
+# write.csv(v, "bnet_v.csv")
 
-# Check
-dim(n) # dimensions
+# Validated Calls
+# Do not include sites with no calls
+# only include occasions where at least 1 call was validated for a site
+n <- read.csv("./bnet_n_21days30mins.csv", row.names = 1)
+n <- as.matrix(n)
+n
+
+# True Calls
+# Calls found to be true, same dimension as n
+k <- read.csv("./bnet_k_21days30mins.csv", row.names = 1)
+k <- as.matrix(k)
+k
+
+# Survey days calls were validated, same dimension as n
+val.times <- read.csv("./bnet_valtimes_21days30mins.csv", row.names = 1)
+val.times <- as.matrix(val.times)
+
+# Check dimensions
+dim(n) 
 dim(k)
 dim(val.times)
+
+
+# Total number of sites with manually validated data
+S.val <- nrow(n)
+
+# How many surveys were validate
+J.val <- rep(21, S.val)
+
+# Check dimensions
+S.val
+length(J.val)
+ 
 
 
 
@@ -327,20 +347,20 @@ print(X.abund)
 
 
 
-## Extract and scale detection covariates to matrix ## 
-temp_mat <- scale(weather_dat$Temp_degF)
-wind_mat <- scale(weather_dat$Wind_mph)
-sky_mat <- as.integer(as.factor(weather_dat$Sky_Condition))
-
-# Making a day of year matrix
-doy_vec <- yday(as.Date(paste0(formatted_dates, "_2024"), format = "%b_%d_%Y"))
-doy_vec <-  as.integer(as.factor(doy_vec))
-                   
-# Combine into a single dataframe where each row corresponds to a survey
-X.det <- as.matrix(data.frame(temp = temp_mat, 
-                              wind = wind_mat,
-                              sky = sky_mat,
-                              doy = doy_vec))
+# ## Extract and scale detection covariates to matrix ## 
+# temp_mat <- scale(weather_dat$Temp_degF)
+# wind_mat <- scale(weather_dat$Wind_mph)
+# sky_mat <- as.integer(as.factor(weather_dat$Sky_Condition))
+# 
+# # Making a day of year matrix
+# doy_vec <- yday(as.Date(paste0(formatted_dates, "_2024"), format = "%b_%d_%Y"))
+# doy_vec <-  as.integer(as.factor(doy_vec))
+#                    
+# # Combine into a single dataframe where each row corresponds to a survey
+# X.det <- as.matrix(data.frame(temp = temp_mat, 
+#                               wind = wind_mat,
+#                               sky = sky_mat,
+#                               doy = doy_vec))
 
 # Area surveyed 
 #area <- pi * (200^2) / 4046.86  # in acres
@@ -376,10 +396,10 @@ Bnet14.data <- list(S = S,
                     J.A = J.A, 
                     sites.a.v = sites.a.v, 
                     n.days = max(J),
-                    n.doy = length(unique(doy_vec)),
-                    Sky_Lvls = length(unique(sky_mat)),
+                    # n.doy = length(unique(doy_vec)),
+                    # Sky_Lvls = length(unique(sky_mat)),
                     X.abund = X.abund,
-                    X.det = X.det,
+                    # X.det = X.det,
                     Offset = area)
 
 # Check structure
@@ -401,10 +421,6 @@ n.burnin = 1000
 n.chains = 3 
 n.thin = 5
 n.adapt = 5000
-
-# Rough idea posterior samples
-est_post_samps = (((n.iter - n.burnin) / n.thin) * n.chains)
-print(est_post_samps)
 
 # ----------------------
 # Model Specifications
@@ -475,20 +491,24 @@ cat(" model {
   beta1 ~ dnorm(0, 1) # Herbaceous Clumpy Index 
   beta2 ~ dnorm(0, 1) # Woody Aggregation Index 
 
-  # Survey random effect - Non-Centered
-  sigma_s ~ dunif(0, 10)
+  # # Survey random effect - Non-Centered
+  # sigma_s ~ dunif(0, 10)
+  # for (s in 1:S) {
+  #   eta_s[s] ~ dnorm(0, 1)
+  #   Sraneff[s] <- beta0 + eta_s[s] * sigma_s
+  # }
+  
+  # Site random effect - Centered
+  mu_s ~ dgamma(0.01, 0.01)
+  tau_s ~ dgamma(0.01, 0.01)
   for (s in 1:S) {
-    eta_s[s] ~ dnorm(0, 1)
-    Sraneff[s] <- beta0 + eta_s[s] * sigma_s
+    Sraneff[s] ~ dnorm(0, tau_s)
   }
   
-  # # Site random effect - Centered
-  # mu_s ~ dgamma(0.01, 0.01)
-  # tau_s ~ dgamma(0.01, 0.01)
-  # for (s in 1:S) {
-  #   Sraneff[s] ~ dnorm(mu_s, tau_s)
-  # }
-
+  for (s in 1:S) {
+  sigma[s] ~ dunif(0, 50)
+  }
+  
   # ------------------------
   # Detection Priors
   # ------------------------
@@ -544,8 +564,11 @@ cat(" model {
     # ---------------------------------
     
     # Poisson
-    log(lambda[s]) <- Sraneff[s] + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12]
+    log(lambda[s]) <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12]+ Sraneff[s]
     N[s] ~ dpois(lambda[s])
+    
+    # mu[s] <- beta0 + beta1 * X.abund[s, 7] + beta2 * X.abund[s, 12] 
+    # N[s] ~ dnorm(mu[s], sigma[s])
 
     # Survey
     for (j in 1:J[s]) {
@@ -589,12 +612,16 @@ cat(" model {
     # ---------------------------------
     
     # Zero Truncated Negative Binomial
-    v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
+    # v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
+    v[s, A.times[s, j]] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] ) T(1, ) 
 
     # ---------------------------------
     # PPC calls  
     # ---------------------------------
-    v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
+    # v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] * y[s, A.times[s, j]]) T(1, )
+    v.pred[s, j] ~ dpois((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]] ) T(1, ) 
+ 
+
     mu.v[s, j] <- ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]]) / (1 - exp(-1 * ((delta[s, A.times[s, j]] * N[s] + omega) * phi[s, A.times[s, j]])))
     resid.v[s, j] <- pow(pow(v[s, A.times[s, j]], 0.5) - pow(mu.v[s, j], 0.5), 2)
     resid.v.pred[s, j] <- pow(pow(v.pred[s, j], 0.5) - pow(mu.v[s, j], 0.5), 2)
@@ -782,7 +809,7 @@ y_PPC_Dens <- ggplot(fit_y_data) +
 # View
 print(y_PPC_Dens)
 
- # Export                
+# Export                
 ggsave(plot = y_PPC_Dens, "./Figures/PPC/AV_Bnet_Abund_Density.jpeg", width = 8, height = 5, dpi = 300)
 dev.off()
 
