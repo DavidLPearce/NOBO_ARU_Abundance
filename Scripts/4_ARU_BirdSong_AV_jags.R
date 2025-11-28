@@ -335,6 +335,7 @@ n_adapt <- 5000
 post_samps = (((n_iter - n_burnin) / n_thin) * n_chains)
 print(post_samps)
 
+
 # ----------------------
 # Model Specifications
 # ----------------------
@@ -391,6 +392,57 @@ make_inits <- function() {
 # Initial Values for each chain
 inits <- lapply(1:n_chains, function(x) make_inits())
 
+# ----------------------
+# Prior Check
+# ----------------------
+
+# install.packages("ggfortify")
+library(ggplot2)
+library(ggfortify) 
+
+
+# -------- 
+# Normal
+# -------- 
+mean = 0
+tau <- 0.1
+sigma <- 1 / sqrt(tau)
+
+ggdistribution(
+  dnorm,
+  x = seq(-5 * sigma, 5 * sigma, length.out = 1000),
+  mean = mean,
+  sd = sigma,
+  xlab = "Value",
+  ylab = "Density",
+  fill = "black"
+) +
+  ggtitle(paste0("Normal Distribution (tau = ", tau,
+                 ", sigma = ", round(sigma, 3), ")")) +
+  theme_classic()
+
+
+# -------- 
+# Gamma
+# -------- 
+shape <- 1
+rate  <- 0.1
+
+ggdistribution(
+  dgamma,
+  x = seq(0, qgamma(0.999, shape, rate), length.out = 1000),
+  shape = shape,
+  rate = rate,
+  xlab = "Value",
+  ylab = "Density",
+  fill = "black"
+) +
+  ggtitle(paste0("Gamma Distribution (shape = ", shape,
+                 ", rate = ", rate, ")"))
+  theme_classic()
+
+
+
 # ----------------------------- 
 # Model Statement 
 # ----------------------------- 
@@ -443,9 +495,9 @@ cat(" model {
   
   # Survey random effect
   mu_jre ~ dnorm(0, 0.01)
-  tau_jre ~ dgamma(0.01, 0.01)
+  tau_jre ~ dgamma(1, 0.01)
   for (j in 1:n.days) {
-     J_RE[j] ~ dnorm(mu_jre, tau_jre)
+     J_RE[j] ~ dnorm(0, tau_jre)
   }
 
   # Overdispersion
