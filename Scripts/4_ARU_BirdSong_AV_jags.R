@@ -49,11 +49,11 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- Ncores * 0.3 # For low background use 80%, for medium use 50% of Ncores
+workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
 print(workers)
 
 # Source custom function for checking Rhat values > 1.1
-source("./Scripts/Rhat_check_function.R")
+source("./Scripts/Functions/Rhat_check_function.R")
 
 # Model name object
 model_name <- "AV Bsong"
@@ -105,8 +105,11 @@ Bsong_dat <- read.csv("./Data/Acoustic_Data/BirdSong_Classifier/Subset14day_Bird
 # ARU weather covariates
 weather_dat <- read.csv("./Data/Acoustic_Data/ARU_weathercovs.csv")
 
-# Site covariates
+# Surveyed Site covariates
 site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
+
+# Not Sampled area covariates
+predict_covs <- read.csv("./Data/Acoustic_Data/ARU_PredictsiteCovs.csv")
 
 # -------------------------------------------------------
 #
@@ -229,8 +232,8 @@ dim(val_times)
 days <- matrix(rep(1:14, times = 27), nrow = 27, ncol = 14, byrow = TRUE)
 
 # Format abundance covariates
-Herb_COH <- as.matrix(scale(site_covs[,'herb_ClmIdx'])) # herb_COH
-Woody_SPLIT <- as.matrix(scale(site_covs[, 'woody_AggInx']))# woody_SPLIT
+Herb_COH <- as.matrix(scale(site_covs[,'herb_COH']))  
+Woody_SPLIT <- as.matrix(scale(site_covs[, 'woody_SPLIT']))  
 
 # Inspect
 head(Herb_COH)
@@ -240,10 +243,23 @@ head(Woody_SPLIT)
 Wind <- as.matrix(scale(weather_dat[, 'Wind_mph']))
 VegDens <- scale(site_covs[,'vegDens50m'])
 
-# Area surveyed 
-area <- pi * (200^2) / 10000  # in hectares
-Offset <- rep(area, 27)
- 
+
+# ----------------------
+# Prepare prediction data
+# ----------------------
+
+# Scale prediction covariates using the SAME scaling from training data
+pred_Herb_COH <- scale(predict_covs[,'herb_COH'])
+pred_Woody_SPLIT <- scale(predict_covs[,'woody_SPLIT'])
+
+# Calculate area ratios
+A_sampled <- pi * (227^2)
+A_unsampled <- predict_covs$area_m2
+rho <- A_unsampled / A_sampled
+
+# Number of unsampled sites
+U <- nrow(predict_covs)
+
 # ----------------------
 # Bayesian P-value
 # ----------------------
@@ -251,7 +267,6 @@ Offset <- rep(area, 27)
 S_A <- sum(J_r > 0)
 sites_a_v <- which(J_r > 0)
 J_A <- max(J)
-
 
 # ----------------------
 # Bundle Data 
@@ -272,14 +287,16 @@ data <- list(S = S,
              S_A = S_A, 
              J_A = J_A, 
              sites_a_v = sites_a_v, 
-             days = days,
              n.days = max(J),
-             Herb_COH = Herb_COH,
-             Woody_SPLIT = Woody_SPLIT,
-             Wind = Wind,
-             VegDens = VegDens,
-             Offset = area)
-                   
+             Herb_COH = as.numeric(Herb_COH),
+             Woody_SPLIT = as.numeric(Woody_SPLIT),
+             Wind = as.numeric(Wind),
+             VegDens = as.numeric(VegDens),
+             U = U,
+             Herb_COH_pred = as.numeric(pred_Herb_COH),
+             Woody_SPLIT_pred = as.numeric(pred_Woody_SPLIT),
+             rho = rho
+)
 
 # Check structure
 str(data)
@@ -294,11 +311,25 @@ str(data)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-n_iter = 600000
-n_burnin = 100000
-n_chains = 3 
-n_thin = 10
-n_adapt = 5000
+# n_iter = 750000
+# n_burnin = 250000
+# n_chains = 3
+# n_thin = 50
+# n_adapt = 5000
+
+# Doser et al. settings
+n_iter <- 200000
+n_burnin <- 60000
+n_chains <- 3
+n_thin <- 50
+n_adapt <- 5000
+
+# Test Settings
+# n_iter <- 20000
+# n_burnin <- 1000
+# n_chains <- 3
+# n_thin <- 10
+# n_adapt <- 5000
 
 # posterior samples
 post_samps = (((n_iter - n_burnin) / n_thin) * n_chains)
@@ -310,26 +341,32 @@ print(post_samps)
 
 # Parameters monitored
 params <- c('mu', # Abundance
-            'N_tot',
+            'N_samp_tot',
             'N',
             'beta0',
             'beta1',
             'beta2',
-            'tau_s',
-            'S_RE',
-            'sigma_mu',
+            'N_tau',
+            'N_tau_pred',
+            'mu_Ntau',
+            'tau_Ntau',
+            'sigma',
+            'N_pred', 
+            'N_pred_tot',
+            'mu_pred',
+            'N_tot',
             'p_a',# Detection 
             'alpha0', 
             'alpha1', 
             'alpha2',
             'alpha3',
-            'tau_j',#  Vocalization
+            'mu_jre',#  Vocalization
+            'tau_jre',
             'J_RE',
             'omega',
             'delta',
             'phi',
             'r_phi',
-            'lam_phi',
             'fit_y',# Posterior Predictive Checks
             'fit_y_pred',
             'fit_v',
@@ -340,20 +377,19 @@ params <- c('mu', # Abundance
 # Initial Values 
 make_inits <- function() {
   list(
-    N      = rep (1, S),  # Abundance
+    N      = rep(1, S),     # Abundance
     beta0  = rnorm(1, 0, 1),
     beta1  = rnorm(1, 0, 1),
     beta2  = rnorm(1, 0, 1),
-    alpha1 = runif(1, 0, 1),        # Detection
+    alpha1 = runif(1, 0, 1), # Detection
     alpha2 = rnorm(1, 0, 1),
     alpha3 = rnorm(1, 0, 1),
-    omega  = runif(1, 0, 1)         # Vocalization
+    omega  = runif(1, 0, 0.25) #,  # Vocalization
   )
 }
 
 # Initial Values for each chain
 inits <- lapply(1:n_chains, function(x) make_inits())
-
 
 # ----------------------------- 
 # Model Statement 
@@ -365,21 +401,22 @@ cat(" model {
   # ----------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 0.001) 
+  beta0 ~ dnorm(0, 0.1) 
   
   # Covariate effect
-  beta1 ~ dnorm(0, 0.001) # Herbaceous
-  beta2 ~ dnorm(0, 0.001) # Woody 
+  beta1 ~ dnorm(0, 0.1) # Herbaceous
+  beta2 ~ dnorm(0, 0.1) # Woody 
   
-  # # Site random effect
-  # tau_s ~ dgamma(0.001, 0.001)
-  # for (s in 1:S) {
-  #    S_RE[s] ~ dnorm(beta0, tau_s)
-  # }
-
   # Underdispersion
-  for (s in 1:S) {
-  sigma_mu[s] ~ dnorm(0, 1) T(0,)
+  mu_Ntau ~ dgamma(2, 0.1)
+  tau_Ntau ~ dgamma(2, 0.1)
+
+  for (s in 1:S) { # Sampled sites
+  N_tau[s] ~ dnorm(mu_Ntau, tau_Ntau) T(0,) 
+  }
+  
+  for (u in 1:U) { # Unsampled sites
+  N_tau_pred[u] ~ dnorm(mu_Ntau, tau_Ntau) T(0,)
   }
   
   # ------------------------
@@ -394,8 +431,8 @@ cat(" model {
   alpha1 ~ dunif(0, 1000) # Constrained to be positive
   
   # Covariate effect
-  alpha2 ~ dnorm(0, 0.001) # Wind
-  alpha3 ~ dnorm(0, 0.001) # Vegetation Density
+  alpha2 ~ dnorm(0, 0.1) # Wind
+  alpha3 ~ dnorm(0, 0.1) # Vegetation Density
   
   # ------------------------
   # Call Rate Priors
@@ -405,22 +442,20 @@ cat(" model {
   omega  ~ dunif(0, 1000) # From Doser et al.  
   
   # Survey random effect
-  tau_j ~ dgamma(0.001, 0.001)
+  mu_jre ~ dnorm(0, 0.01)
+  tau_jre ~ dgamma(0.01, 0.01)
   for (j in 1:n.days) {
-     J_RE[j] ~ dnorm(0, tau_j)
+     J_RE[j] ~ dnorm(mu_jre, tau_jre)
   }
 
   # Overdispersion
-  r_phi ~ dgamma(0.001, 0.001)
-  lam_phi ~ dgamma(0.001, 0.001)
+  r_phi ~ dgamma(0.01, 0.01)
   for (s in 1:S) {
     for (j in 1:J_A) {
-      phi[s, j] ~ dgamma(r_phi, lam_phi)
+      phi[s, j] ~ dgamma(r_phi, r_phi)
     }
   }
-  
 
-  
   # -------------------------------------------
   #
   # Likelihood and Process Model 
@@ -431,27 +466,23 @@ cat(" model {
   for (s in 1:S) {
     
     # ---------------------------------
-    # Abundance Submodel  
+    # Abundance  
     # ---------------------------------
     
     # Normal 
-    log(mu[s]) <- beta0 + beta1 * Herb_COH[s, 1] +  beta2 * Woody_SPLIT[s, 1]
-    N[s] ~ dnorm(mu[s], sigma_mu[s])
-    
-    # # Log-Normal
-    # mu[s] <-  S_RE[s] + beta1 * Herb_COH[s, 1] +  beta2 * Woody_SPLIT[s, 1]
-    # N[s] ~ dlnorm(mu[s], sigma_mu[s]) 
+    log(mu[s]) <- beta0 + beta1 * Herb_COH[s] +  beta2 * Woody_SPLIT[s]
+    N[s] ~ dnorm(mu[s], N_tau[s])
 
     # Survey
     for (j in 1:J[s]) {
+    
+    # ---------------------------------
+    # Detection   
+    # ---------------------------------
+    logit(p_a[s, j]) <- alpha0 + alpha1 * N[s]  + alpha2 * Wind[j] + alpha3 * VegDens[s] 
 
     # ---------------------------------
-    # Detection Submodel  
-    # ---------------------------------
-    logit(p_a[s, j]) <- alpha0 + alpha1 * N[s]  + alpha2 * Wind[j,1] + alpha3 * VegDens[s, 1] 
-
-    # ---------------------------------
-    # Call rate Submodel  
+    # Call rate  
     # ---------------------------------
     
     # Survey Random Effect
@@ -507,6 +538,19 @@ cat(" model {
     } # End J
   } # End S
   
+  
+  # -------------------------------------------
+  # Predict Abundance at Unsampled Areas 
+  # -------------------------------------------
+  for (u in 1:U) {
+  
+    # Predict abundance
+    log(mu_pred[u]) <- log(rho[u]) + beta0 + beta1 * Herb_COH_pred[u] + beta2 * Woody_SPLIT_pred[u]
+    N_pred[u] ~ dnorm(mu_pred[u], N_tau_pred[u] * rho[u])
+    
+
+  }
+  
   # -------------------------------------------
   # PPC and Bayesian P-value
   # -------------------------------------------
@@ -525,9 +569,15 @@ cat(" model {
   # Derive Parameters
   # -------------------------------------------
   
-  # Abundance
-  N_tot <- sum(N[])
-
+  # Abundance at sampled sites
+  N_samp_tot <- sum(N[])
+  
+  # Abundance at unsampled sites
+  N_pred_tot <- sum(N_pred[])
+  
+  # Total abundance
+  N_tot <- sum(N[]) + sum(N_pred[])
+  
 }
 ", fill = TRUE, file = "./JAGs_Models/AV_Bsong_Model.txt")
 # ------------End Model-------------
@@ -545,8 +595,8 @@ fm1 <- jagsUI::jags(data = data,
                      n.chains = n_chains,
                      n.thin = n_thin,
                      n.adapt = n_adapt,
-                     parallel = FALSE,
-                     # n.cores = workers,
+                     parallel = TRUE,
+                     n.cores = workers,
                      verbose = TRUE,
                      DIC = FALSE)
 
@@ -555,37 +605,48 @@ fm1 <- jagsUI::jags(data = data,
 # Check Convergence
 # -------------------------------------------------------
 
-# Rhat
-check_rhat(fm1$Rhat, threshold = 1.1) 
-
 # Trace plots
 MCMCvis::MCMCtrace(fm1, 
-                   params = c('mu',  
-                              'N_tot',
-                              'N',
+                   params = c('N_tot',
+                              'N_samp_tot',
+                              'N_pred_tot',
+                              'mu_Ntau',
+                              'tau_Ntau',
+                              'r_phi',
+                              'omega',
                               'beta0',
                               'beta1',
                               'beta2',
-                              'tau_s',
-                              'S_RE',
-                              'sigma_mu',
                               'alpha0',  
                               'alpha1', 
                               'alpha2',
                               'alpha3',
-                              'mu_j', 
-                              'tau_j',
+                              'N_tau',
+                              'N_tau_pred',
+                              'mu_jre',
+                              'tau_jre',
                               'J_RE',
-                              'omega',
-                              'delta',
+                              'mu',
+                              'mu_pred',
+                              'N',
+                              'N_pred',
                               'phi',
-                              'r_phi',
-                              'lam_phi'
+                              'delta'
+
                    ),
                    pdf = T,
                    filename = "ARU_Bsong_TracePlots.pdf",
                    wd = "./Figures"
 )
+
+# Rhat
+check_rhat(fm1$Rhat, threshold = 1.1) 
+
+# gelman.diag(fm1)  # Rhat should be < 1.1
+# effectiveSize(fm1) 
+
+# Save model
+saveRDS(fm1, "./Data/Model_Data/BsongModelOutput.rds")
 
 # -------------------------------------------------------
 # Posterior Predictive Checks
@@ -715,11 +776,8 @@ alpha2_samples <- combined_chains[, "alpha2"]
 alpha3_samples <- combined_chains[, "alpha3"]
 
 # Extract site random effect
-jRE_samples <- combined_chains[, c("J_RE[1]", "J_RE[2]","J_RE[3]","J_RE[4]","J_RE[5]",
-                                   "J_RE[6]", "J_RE[7]", "J_RE[8]", "J_RE[9]", "J_RE[10]",
-                                   "J_RE[11]", "J_RE[12]", "J_RE[13]", "J_RE[14]"
-)]
-
+jRE_cols  <- grep("^J_RE\\[", colnames(combined_chains), value = TRUE)
+jRE_samples <- combined_chains[, jRE_cols]
 jRE_samples <- rowMeans(jRE_samples) # Row means
 
 # Compute 95% CI for each beta
@@ -770,7 +828,7 @@ all_p_samples <- as.vector(p_samples)
 
 # Create summary
 p_summary <- data.frame(
-  mean = mean(all_p_samples),
+  Mean = mean(all_p_samples),
   LCI = quantile(all_p_samples, 0.025),
   UCI = quantile(all_p_samples, 0.975)
 )
@@ -779,7 +837,7 @@ p_summary <- data.frame(
 p_summary$Model <- model_name
 
 # Add parameter name
-p_summary$Parameter <- "detection"
+p_summary$Parameter <- "Detection"
 
 # view
 print(p_summary)
@@ -798,7 +856,7 @@ all_deltas <- as.vector(delta_samples)
 
 # Create summary
 delta_summary <- data.frame(
-  mean = mean(all_deltas),
+  Mean = mean(all_deltas),
   LCI = quantile(all_deltas, 0.025),
   UCI = quantile(all_deltas, 0.975)
 )
@@ -807,7 +865,7 @@ delta_summary <- data.frame(
 delta_summary$Model <- model_name
 
 # Add parameter name
-delta_summary$Parameter <- "vocal rate"
+delta_summary$Parameter <- "Vocal Rate"
 
 # View
 print(delta_summary)
@@ -819,60 +877,75 @@ param_summary <- rbind(p_summary, delta_summary)
 print(param_summary)
 
 # -------------------------------------------------------
-#  Estimating Abundance 
+#  Predict Abundance 
 # -------------------------------------------------------
 
-# Extract abundance posterior
-Ntot_samples <- combined_chains[ ,"N_tot"]
+# Extract abundance at surveyed sites
+N_survyed_cols <- grep("^N\\[", colnames(combined_chains), value = TRUE)
+N_survyed_samples <- combined_chains[, N_survyed_cols, drop = FALSE] 
+colnames(N_survyed_samples) <- paste0("S", 1:S)
 
-# Ntotal is the abundance based on 27 acoustic sites at a radius of 200m.
+# Extract abundance at unsurveyed sites
+N_unsurvyed_cols <- grep("^N_pred\\[", colnames(combined_chains), value = TRUE)
+N_unsurvyed_samples <- combined_chains[, N_unsurvyed_cols, drop = FALSE] 
+colnames(N_unsurvyed_samples) <- paste0("U", 1:U)
+min(N_unsurvyed_samples)
 
-# Area in hectares of a 200m radius circle
-area <- pi * (200^2) / 10000  # Area in hectares
+# Combine into one dataframe
+N_samples_df <- cbind(N_survyed_samples, N_unsurvyed_samples)
+str(N_samples_df)
 
-# Calculate density (individuals per hectare)
-dens_samples <- Ntot_samples / (area * 27)
 
-# Create data frame for density
-dens_df <- data.frame(Model = rep(model_name, length(dens_samples)), Density = dens_samples)
-colnames(dens_df)[2] <- "Density"
-head(dens_df)
 
-# Abundance estimates
-abund_df <- dens_df # posterior estimates
-abund_df$Density <- abund_df$Density * 1096  
+# Site Summary
+site_summary <- data.frame(
+  Site = colnames(N_samples_df),
+  Mean = apply(N_samples_df, 2, mean),
+  LCL  = apply(N_samples_df, 2, quantile, 0.025),
+  UCL  = apply(N_samples_df, 2, quantile, 0.975)
+)
 
-abund_summary <- abund_df %>% # summary
-  group_by(Model) %>%
-  summarise(
-    mean = mean(Density),
-    LCI = quantile(Density, 0.025),
-    UCI = quantile(Density, 0.975)
-  )
+print(site_summary)
 
-# View
-print(abund_summary)
+# Total Summary 
+total_N_samples <- combined_chains[,'N_tot']
+total_summary <- data.frame(
+  Mean = mean(total_N_samples),
+  LCI  = quantile(total_N_samples, 0.025),
+  UCI  = quantile(total_N_samples, 0.975),
+  Model = model_name,
+  Parameter = "Abundance"
+)
 
-# Add parameter name
-abund_summary$Parameter <- "abundance"
+print(total_summary)
+
+# Density hectare
+dens_summary_ha <- total_summary[,1:3] / 1098
+dens_summary_ha$Model <- model_name
+dens_summary_ha$Parameter <- "Density (N/ha)"
+dens_summary_ha
+
+# Density Acre
+dens_summary_ac <- total_summary[,1:3] / 2710
+dens_summary_ac$Model <- model_name
+dens_summary_ac$Parameter <- "Density (N/ac)"
+dens_summary_ac
 
 # Combine with detection and vocal rate
-param_summary <- rbind(param_summary, abund_summary)
-
-# View
+param_summary <- rbind(param_summary, total_summary, dens_summary_ha, dens_summary_ac)
 print(param_summary)
 
-
-
-# Trim abund df to 95% CI
-abund_95df <- abund_df %>%
-  left_join(abund_summary, by = "Model") %>%
-  filter(Density >= LCI & Density <= UCI) %>%
-  select(-LCI, -UCI)
+# Trim total_abundance_samples to 95% CI
+total_N_samples_95CI <- total_N_samples[
+  total_N_samples >= quantile(total_N_samples, 0.025) &
+    total_N_samples <= quantile(total_N_samples, 0.975)
+]
 
 
 # Export abundance df and parameter summary
-saveRDS(abund_95df, "./Data/Model_Data/ARU_Bsong_abund_df.rds")
+saveRDS(total_N_samples_95CI, "./Data/Model_Data/ARU_Bsong_abund_df.rds")
 saveRDS(param_summary, "./Data/Model_Data/ARU_Bsong_param_summary.rds")
+
+
 
 # ------------ End Script -----------------
