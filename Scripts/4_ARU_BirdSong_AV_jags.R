@@ -28,6 +28,7 @@
 
 # Install packages (if needed)
 # install.packages("tidyverse")
+# install.packages("ggfortify")
 # install.packages("gridExtra")
 # install.packages("jagsUI")
 # install.packages("coda")
@@ -35,11 +36,11 @@
 
 # Load library
 library(tidyverse)
+library(ggfortify)
 library(gridExtra)
 library(jagsUI)
 library(coda)
 library(MCMCvis)
-
 
 # Set seed, scientific notation options, and working directory
 set.seed(123)
@@ -73,7 +74,7 @@ model_name <- "AV Bsong"
 # tau.day = precision for random day effect on true vocalization detection rate. 
 # a.phi = overdispersion parameter for zero-truncated negative binomial. 
 # gamma.1 = random day effect on true vocalization detection rate
-# n.days = number of recording days.
+# n_days = number of recording days.
 # N = latent abundance process
 # tp = true positive rate
 # p_a = prob of detecting at least one vocalization in an acoustic recording
@@ -243,6 +244,10 @@ head(Woody_SPLIT)
 Wind <- as.matrix(scale(weather_dat[, 'Wind_mph']))
 VegDens <- scale(site_covs[,'vegDens50m'])
 
+# Format vocalization covariates
+Sky <- weather_dat[, 'Sky_Condition']
+Sky <- as.numeric(as.factor(Sky))
+Sky_Lvls = length(unique(Sky))
 
 # ----------------------
 # Prepare prediction data
@@ -287,11 +292,13 @@ data <- list(S = S,
              S_A = S_A, 
              J_A = J_A, 
              sites_a_v = sites_a_v, 
-             n.days = max(J),
+             n_days = max(J),
              Herb_COH = as.numeric(Herb_COH),
              Woody_SPLIT = as.numeric(Woody_SPLIT),
              Wind = as.numeric(Wind),
              VegDens = as.numeric(VegDens),
+             Sky = Sky, 
+             Sky_Lvls = Sky_Lvls,
              U = U,
              Herb_COH_pred = as.numeric(pred_Herb_COH),
              Woody_SPLIT_pred = as.numeric(pred_Woody_SPLIT),
@@ -311,23 +318,23 @@ str(data)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-# n_iter = 750000
-# n_burnin = 250000
-# n_chains = 3
-# n_thin = 50
-# n_adapt = 5000
+n_iter = 500000
+n_burnin = 250000
+n_chains = 3
+n_thin = 50
+n_adapt = 5000
 
 # Doser et al. settings
-n_iter <- 200000
-n_burnin <- 60000
-n_chains <- 3
-n_thin <- 50
-n_adapt <- 5000
-
-# Test Settings
-# n_iter <- 20000
-# n_burnin <- 1000
+# n_iter <- 200000
+# n_burnin <- 60000
 # n_chains <- 3
+# n_thin <- 50
+# n_adapt <- 5000
+
+# # Test Settings
+# n_iter <- 10000
+# n_burnin <- 0
+# n_chains <- 6
 # n_thin <- 10
 # n_adapt <- 5000
 
@@ -341,106 +348,67 @@ print(post_samps)
 # ----------------------
 
 # Parameters monitored
-params <- c('mu', # Abundance
-            'N_samp_tot',
-            'N',
-            'beta0',
+params <- c(# Abundance
+            'beta0',  
             'beta1',
             'beta2',
-            'N_tau',
-            'N_tau_pred',
-            'mu_Ntau',
-            'tau_Ntau',
-            'sigma',
-            'N_pred', 
-            'N_pred_tot',
+            'tau_N',
+            'sigma_N',
+            'mu', 
+            'N',
+            'N_samp_tot',
             'mu_pred',
+            'N_pred',
+            'N_pred_tot',
             'N_tot',
-            'p_a',# Detection 
+            # Detection
+            'p_a', 
+            'mu_alpha',
             'alpha0', 
             'alpha1', 
             'alpha2',
             'alpha3',
-            'mu_jre',#  Vocalization
+            #  Vocalization
+            'gamma0',
+            'gamma1',
             'tau_jre',
             'J_RE',
             'omega',
             'delta',
             'phi',
             'r_phi',
-            'fit_y',# Posterior Predictive Checks
+            # Posterior Predictive Checks
+            'fit_y',   
             'fit_y_pred',
             'fit_v',
             'fit_v_pred',
-            'bp_y', # Bayes p-value
+            
+            'bp_y',
             'bp_v')
 
 # Initial Values 
 make_inits <- function() {
   list(
-    N      = rep(1, S),     # Abundance
+    # Abundance
+    N      = rep(1, S),
     beta0  = rnorm(1, 0, 1),
     beta1  = rnorm(1, 0, 1),
     beta2  = rnorm(1, 0, 1),
-    alpha1 = runif(1, 0, 1), # Detection
+    a_Ntau = rgamma(1, 2, 0.5),
+    b_Ntau = rgamma(1, 2, 0.5),
+    # Detection
+    alpha1 = runif(1, 0, 1), 
     alpha2 = rnorm(1, 0, 1),
     alpha3 = rnorm(1, 0, 1),
-    omega  = runif(1, 0, 0.25) #,  # Vocalization
+    # Vocalization
+    gamma0 = runif(1, log(6), log(15)),
+    gamma1 = rnorm(Sky_Lvls, 0, 1),
+    omega  = runif(1, 0, 0.25)
   )
 }
 
 # Initial Values for each chain
 inits <- lapply(1:n_chains, function(x) make_inits())
-
-# ----------------------
-# Prior Check
-# ----------------------
-
-# install.packages("ggfortify")
-library(ggplot2)
-library(ggfortify) 
-
-
-# -------- 
-# Normal
-# -------- 
-mean = 0
-tau <- 0.1
-sigma <- 1 / sqrt(tau)
-
-ggdistribution(
-  dnorm,
-  x = seq(-5 * sigma, 5 * sigma, length.out = 1000),
-  mean = mean,
-  sd = sigma,
-  xlab = "Value",
-  ylab = "Density",
-  fill = "black"
-) +
-  ggtitle(paste0("Normal Distribution (tau = ", tau,
-                 ", sigma = ", round(sigma, 3), ")")) +
-  theme_classic()
-
-
-# -------- 
-# Gamma
-# -------- 
-shape <- 1
-rate  <- 0.1
-
-ggdistribution(
-  dgamma,
-  x = seq(0, qgamma(0.999, shape, rate), length.out = 1000),
-  shape = shape,
-  rate = rate,
-  xlab = "Value",
-  ylab = "Density",
-  fill = "black"
-) +
-  ggtitle(paste0("Gamma Distribution (shape = ", shape,
-                 ", rate = ", rate, ")"))
-  theme_classic()
-
 
 
 # ----------------------------- 
@@ -460,23 +428,15 @@ cat(" model {
   beta2 ~ dnorm(0, 0.1) # Woody 
   
   # Underdispersion
-  mu_Ntau ~ dgamma(2, 0.1)
-  tau_Ntau ~ dgamma(2, 0.1)
-
-  for (s in 1:S) { # Sampled sites
-  N_tau[s] ~ dnorm(mu_Ntau, tau_Ntau) T(0,) 
-  }
-  
-  for (u in 1:U) { # Unsampled sites
-  N_tau_pred[u] ~ dnorm(mu_Ntau, tau_Ntau) T(0,)
-  }
+  tau_N ~ dgamma(0.01, 0.01)  
+  sigma_N <- 1 / sqrt(tau_N)
   
   # ------------------------
   # Detection Priors
   # ------------------------
   
   # Intercept
-  alpha0 <- logit(mu_alpha) # Constrains alpha0 to be between 0 and 1 on the logit scale (propability)
+  alpha0 <- logit(mu_alpha)
   mu_alpha ~ dunif(0, 1)
   
   # True individuals
@@ -491,12 +451,22 @@ cat(" model {
   # ------------------------
   
   # False positive rate
-  omega  ~ dunif(0, 1000) # From Doser et al.  
+  omega  ~ dunif(0, 1000) # From Doser et al. 
+  
+  # base vocal rate/30 min: 
+  # ~2 calls/10 mins * 3 ten min periods = 6 calls/30 mins
+  # must be on the log scale to match the log-link function on delta,
+  # making the intercept 6 calls on the natural scale.
+  gamma0 ~ dnorm(log(6), 1 / pow(0.75, 2) ) T(0,)
+  
+  # Sky (condition) is a categorical covariate
+  for (l in 1:Sky_Lvls){
+  gamma1[l] ~ dnorm(0, 0.1)
+  }
   
   # Survey random effect
-  mu_jre ~ dnorm(0, 0.01)
-  tau_jre ~ dgamma(1, 0.01)
-  for (j in 1:n.days) {
+  tau_jre ~ dgamma(0.1, 0.1)
+  for (j in 1:n_days) {
      J_RE[j] ~ dnorm(0, tau_jre)
   }
 
@@ -521,10 +491,10 @@ cat(" model {
     # Abundance  
     # ---------------------------------
     
-    # Normal 
+    # ztNormal
     log(mu[s]) <- beta0 + beta1 * Herb_COH[s] +  beta2 * Woody_SPLIT[s]
-    N[s] ~ dnorm(mu[s], N_tau[s])
-
+    N[s] ~ dnorm(mu[s], tau_N) T(0,)
+    
     # Survey
     for (j in 1:J[s]) {
     
@@ -538,8 +508,8 @@ cat(" model {
     # ---------------------------------
     
     # Survey Random Effect
-    log(delta[s, j]) <- J_RE[j]
-
+    log(delta[s, j]) <- gamma0 + gamma1[Sky[j]] + J_RE[j]  
+    
     # ---------------------------------
     # Observations
     # ---------------------------------
@@ -596,11 +566,9 @@ cat(" model {
   # -------------------------------------------
   for (u in 1:U) {
   
-    # Predict abundance
+    # ztNormal
     log(mu_pred[u]) <- log(rho[u]) + beta0 + beta1 * Herb_COH_pred[u] + beta2 * Woody_SPLIT_pred[u]
-    N_pred[u] ~ dnorm(mu_pred[u], N_tau_pred[u] * rho[u])
-    
-
+    N_pred[u] ~ dnorm(mu_pred[u], tau_N / rho[u]) T(0,) 
   }
   
   # -------------------------------------------
@@ -662,31 +630,30 @@ MCMCvis::MCMCtrace(fm1,
                    params = c('N_tot',
                               'N_samp_tot',
                               'N_pred_tot',
-                              'mu_Ntau',
-                              'tau_Ntau',
-                              'r_phi',
-                              'omega',
                               'beta0',
                               'beta1',
                               'beta2',
+                              'mu_alpha',
                               'alpha0',  
                               'alpha1', 
                               'alpha2',
                               'alpha3',
-                              'N_tau',
-                              'N_tau_pred',
-                              'mu_jre',
+                              'r_phi',
+                              'omega',
+                              'gamma0',
+                              'gamma1',
                               'tau_jre',
                               'J_RE',
+                              'tau_N',
+                              'sigma_N',
                               'mu',
                               'mu_pred',
                               'N',
                               'N_pred',
-                              'phi',
-                              'delta'
-
+                              'delta',
+                              'phi'
                    ),
-                   pdf = T,
+                   pdf = TRUE,
                    filename = "ARU_Bsong_TracePlots.pdf",
                    wd = "./Figures"
 )
@@ -698,7 +665,7 @@ check_rhat(fm1$Rhat, threshold = 1.1)
 # effectiveSize(fm1) 
 
 # Save model
-saveRDS(fm1, "./Data/Model_Data/BsongModelOutput.rds")
+# saveRDS(fm1, "./Data/Model_Data/BsongModelOutput.rds")
 
 # -------------------------------------------------------
 # Posterior Predictive Checks
@@ -827,26 +794,20 @@ alpha1_samples <- combined_chains[, "alpha1"]
 alpha2_samples <- combined_chains[, "alpha2"]
 alpha3_samples <- combined_chains[, "alpha3"]
 
-# Extract site random effect
-jRE_cols  <- grep("^J_RE\\[", colnames(combined_chains), value = TRUE)
-jRE_samples <- combined_chains[, jRE_cols]
-jRE_samples <- rowMeans(jRE_samples) # Row means
-
-# Compute 95% CI for each beta
+# Compute 95% CI for each
 alpha_df <- data.frame(
   value = c(alpha0_samples, 
             alpha1_samples, 
             alpha2_samples,
-            alpha3_samples,
-            jRE_samples),  
+            alpha3_samples),  
   parameter = rep(c("alpha0", 
                     "alpha1", 
                     "alpha2",
-                    "alpha3",
-                    "jRE"), each = length(alpha0_samples))
+                    "alpha3"), each = length(alpha0_samples))
 ) %>%
   group_by(parameter) %>%
-  filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  
+  filter(value >= quantile(value, 0.025) & 
+           value <= quantile(value, 0.975))  
 
 # Add model
 alpha_df$Model <- model_name
@@ -858,7 +819,7 @@ alpha_summary <- alpha_df %>%
     mean = mean(value),
     LCI = min(value),
     UCI = max(value),
-    .groups = "drop"   # optional: ungroups after summarising
+    .groups = "drop"  
   )
 
 # view
@@ -927,6 +888,37 @@ param_summary <- rbind(p_summary, delta_summary)
 
 # View
 print(param_summary)
+
+# Random Effect on vocal rate
+jRE_cols  <- grep("^J_RE\\[", colnames(combined_chains), value = TRUE)
+jRE_samples <- combined_chains[, jRE_cols]
+jRE_samples <- rowMeans(jRE_samples) # Row means
+
+# Compute 95% CI for each beta
+jre_df <- data.frame(
+  value = c(jRE_samples),  
+  parameter = rep(c("jRE"), each = length(jRE_samples))
+) %>%
+  group_by(parameter) %>%
+  filter(value >= quantile(value, 0.025) & 
+           value <= quantile(value, 0.975))  
+
+# Add model
+jre_df$Model <- model_name
+
+# Create summary
+jre_summary <- jre_df %>%
+  group_by(parameter, Model) %>%
+  summarise(
+    mean = mean(value),
+    LCI = min(value),
+    UCI = max(value),
+    .groups = "drop"  
+  )
+
+# view
+print(jre_summary)
+
 
 # -------------------------------------------------------
 #  Predict Abundance 
