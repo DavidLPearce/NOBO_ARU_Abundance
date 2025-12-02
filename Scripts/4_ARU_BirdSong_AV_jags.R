@@ -370,7 +370,7 @@ params <- c(# Abundance
             'alpha3',
             #  Vocalization
             'gamma0',
-            'gamma1',
+            # 'gamma1',
             'tau_jre',
             'J_RE',
             'omega',
@@ -459,10 +459,10 @@ cat(" model {
   # making the intercept 6 calls on the natural scale.
   gamma0 ~ dnorm(log(6), 1 / pow(0.75, 2) ) T(0,)
   
-  # Sky (condition) is a categorical covariate
-  for (l in 1:Sky_Lvls){
-  gamma1[l] ~ dnorm(0, 0.1)
-  }
+  # # Sky (condition) is a categorical covariate
+  # for (l in 1:Sky_Lvls){
+  # gamma1[l] ~ dnorm(0, 0.1)
+  # }
   
   # Survey random effect
   tau_jre ~ dgamma(0.1, 0.1)
@@ -508,7 +508,7 @@ cat(" model {
     # ---------------------------------
     
     # Survey Random Effect
-    log(delta[s, j]) <- gamma0 + gamma1[Sky[j]] + J_RE[j]  
+    log(delta[s, j]) <- gamma0 + J_RE[j] #  gamma1[Sky[j]] + 
     
     # ---------------------------------
     # Observations
@@ -641,7 +641,7 @@ MCMCvis::MCMCtrace(fm1,
                               'r_phi',
                               'omega',
                               'gamma0',
-                              'gamma1',
+                              # 'gamma1',
                               'tau_jre',
                               'J_RE',
                               'tau_N',
