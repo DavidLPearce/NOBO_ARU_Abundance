@@ -237,31 +237,35 @@ J_val <- rep(14, S_val)
 # Covariates 
 # ----------------------
 
-# survey random effect index
-days <- matrix(rep(1:14, times = 27), nrow = 27, ncol = 14, byrow = TRUE)
+# Number of surveys for survey random effect
+n_days <- max(J)
 
 # Format abundance covariates
-Herb_COH <- as.matrix(scale(site_covs[,'herb_ClmIdx'])) # herb_COH
-Woody_SPLIT <- as.matrix(scale(site_covs[, 'woody_AggInx']))# woody_SPLIT
+Herb_COH <- as.numeric(scale(site_covs[,'herb_ClmIdx'])) # herb_COH
+Woody_SPLIT <- as.numeric(scale(site_covs[, 'woody_AggInx']))# woody_SPLIT
 
 # Inspect
-head(Herb_COH)
-head(Woody_SPLIT)
+print(Herb_COH)
+print(Woody_SPLIT)
 
 # Format detection covariates
-Wind <- as.matrix(scale(weather_dat[, 'Wind_mph']))
-VegDens <- scale(site_covs[,'vegDens50m'])
+Wind <- as.numeric(scale(weather_dat[, 'Wind_mph']))
+VegDens <- as.numeric(scale(site_covs[,'vegDens50m']))
+
+# Inspect
+print(Wind)
+print(VegDens)
 
 # ----------------------
 # Prepare prediction data
 # ----------------------
 
 # Scale prediction covariates using the SAME scaling from training data
-pred_Herb_COH <- scale(predict_covs[,'herb_COH'])
-pred_Woody_SPLIT <- scale(predict_covs[,'woody_SPLIT'])
+pred_Herb_COH <- as.numeric(scale(predict_covs[,'herb_COH']))
+pred_Woody_SPLIT <- as.numeric(scale(predict_covs[,'woody_SPLIT']))
 
 # Calculate area ratios
-A_sampled <- pi * (227^2)
+A_sampled <- pi * (227^2)  # ~Area of NOBO home range/scale covs were extracted at
 A_unsampled <- predict_covs$area_m2
 rho <- A_unsampled / A_sampled
 
@@ -295,14 +299,14 @@ data <- list(S = S,
              S_A = S_A, 
              J_A = J_A, 
              sites_a_v = sites_a_v, 
-             n_days = max(J),
-             Herb_COH = as.numeric(Herb_COH),
-             Woody_SPLIT = as.numeric(Woody_SPLIT),
-             Wind = as.numeric(Wind),
-             VegDens = as.numeric(VegDens),
+             n_days = n_days,
+             Herb_COH = Herb_COH,
+             Woody_SPLIT = Woody_SPLIT,
+             Wind = Wind,
+             VegDens = VegDens,
              U = U,
-             Herb_COH_pred = as.numeric(pred_Herb_COH),
-             Woody_SPLIT_pred = as.numeric(pred_Woody_SPLIT),
+             Herb_COH_pred = pred_Herb_COH,
+             Woody_SPLIT_pred = pred_Woody_SPLIT,
              rho = rho
 )
 
@@ -336,11 +340,6 @@ n_adapt <- 5000
 # posterior samples
 post_samps = (((n_iter - n_burnin) / n_thin) * n_chains)
 print(post_samps)
-
-# posterior samples
-post_samps = (((n_iter - n_burnin) / n_thin) * n_chains)
-print(post_samps)
-
 
 # ----------------------
 # Model Specifications
