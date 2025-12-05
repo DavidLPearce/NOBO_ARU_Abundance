@@ -42,11 +42,11 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- Ncores  * 0.3 # For low background use 80%, for medium use 50% of Ncores
+workers <- Ncores  * 0.5 # For low background use 80%, for medium use 50% of Ncores
 print(workers)
 
 # Source custom function for checking Rhat values > 1.1
-source("./Scripts/Rhat_check_function.R")
+source("./Scripts/Functions/Rhat_check_function.R")
 
 # Model name object
 model_name <- "PC MCR"
@@ -102,6 +102,8 @@ head(pc_CMR)
 
 # Subset detection intervals
 y <- as.matrix(pc_CMR[,c("int1","int2","int3", "int4")])
+
+# AVERAGE CALL RATE?? - use this and Lutima for AV model gamma0
 
 # Number of time intervals
 J <- 4
@@ -179,21 +181,33 @@ str(data)
 # -------------------
 # MCMC Specifications
 # -------------------
+# n_iter <- 300000
+# n_burnin <- 100000
+# n_chains <- 3
+# n_thin <- 50
+# n_adapt <- 5000
 
-n_iter = 200000
-n_burnin = 60000
-n_chains = 3 
-n_thin = 10
-n_adapt = 5000
+# Test Settings
+n_iter <- 20000
+n_burnin <- 0
+n_chains <- 6
+n_thin <- 10
+n_adapt <- 5000
 
 # Posterior samples
 n_post_samps = ((n_iter * n_chains) - n_burnin) / n_thin
 print(n_post_samps)
 
 
+# ----------------------
+# Model Specifications
+# ----------------------
+
 # Parameters monitored
 params <- c("lambda",
+            "lambda_pred",
             "N",
+            "N_pred",
             "N_tot",
             "alpha0", 
             "alpha1", 
@@ -203,9 +217,8 @@ params <- c("lambda",
             "beta1",
             "beta2",
             "psi",
-            "S_RE_lam",
-            'tau_lam',
-            "S_RE_det",
+            'tau_sre',
+            "S_RE",
             "tau_det",
             "p_Bayes",
             "sum_obs",
@@ -216,12 +229,11 @@ params <- c("lambda",
 # Initial values
 inits  <- function() {
   list (p0 = runif(1),
-        alpha1 = rep(0, Wind_Lvls),
-        alpha2 = 0,
-        beta0 = 0,
-        beta1 = 0,
-        beta2 = 0,
-        tau = 1,
+        alpha1 = rnorm(Wind_Lvls, 0, 1),
+        alpha2 = rnorm(1, 0, 1),
+        beta0 = rnorm(1, 0, 1),
+        beta1 = rnorm(1, 0, 1),
+        beta2 = rnorm(1, 0, 1),
         z = c( rep(1,nind), rep(0, (M-nind)))
 )}
 
@@ -235,9 +247,9 @@ model {
   # ---------------------------------
   # Abundance Priors
   # ---------------------------------
-  beta0 ~ dnorm(0, 0.001) # Intercept
-  beta1 ~ dnorm(0, 0.001) # Herbaceous cohesion index
-  beta2 ~ dnorm(0, 0.001) # Woody splitting index
+  beta0 ~ dnorm(0, 0.1) # Intercept
+  beta1 ~ dnorm(0, 0.1) # Herbaceous cohesion index
+  beta2 ~ dnorm(0, 0.1) # Woody splitting index
   
   # # Site random effect
   # tau_lam ~ dgamma(0.001, 0.001)
@@ -248,21 +260,21 @@ model {
   # ---------------------------------
   # Detection Priors
   # ---------------------------------
-  p0 ~ dunif(0,1)
+  p0 ~ dunif(0, 1)
   alpha0 <- log(p0/(1-p0)) 
   
   # Wind is a categorical covariate
   for (w in 1:Wind_Lvls){
-  alpha1[w] ~ dnorm(0, 0.001)
+  alpha1[w] ~ dnorm(0, 0.1)
   }
   
   # Vegetation Density
-  alpha2 ~ dnorm(0, 0.001)
+  alpha2 ~ dnorm(0, 0.1)
   
   # Site-level random effect for pseudoreplication
-  tau_det ~ dgamma(0.001, 0.001) 
+  tau_sre ~ dgamma(0.01, 0.01) 
   for(s in 1:S){  
-    S_RE_det[s] ~ dnorm(0, tau_det)  
+    S_RE[s] ~ dnorm(0, tau_det)  
   }
   
   # ---------------------------------
@@ -277,7 +289,7 @@ model {
   # -------------------------------------------
 
   # ---------------------------------
-  # Abundance Submodel
+  # Abundance
   # ---------------------------------
 
   for(s in 1:S){
@@ -287,11 +299,12 @@ model {
     probs[s] <- lambda[s] / sum(lambda[])
     
     # Estimated abundance at site s
-    N[s] <- sum(group[] == s)  
-  }
+    N[s] <- sum(group[] == s) 
+    
+  } # End S
 
   # ---------------------------------
-  # Presence Submodel 
+  # Presence 
   # ---------------------------------
 
   for(i in 1:M){
@@ -303,18 +316,34 @@ model {
     z[i] ~ dbern(psi)         
     
   # ---------------------------------
-  # Detection Submodel
+  # Detection
   # ---------------------------------
  
     for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1[Wind[group[i], 1]] + alpha2 * VegDens[group[i],1] + S_RE_det[group[i]]
+      logit(p[i,j]) <- alpha0 + alpha1[Wind[group[i], 1]] + alpha2 * VegDens[group[i],1] + S_RE[group[i]]
       pz[i,j] <- p[i,j] * z[i]
       y[i,j] ~ dbern(pz[i,j])
       
-  # ---------------------------------
-  # Posterior Predictive checks
-  # ---------------------------------
+    } # End J
+  } # End M
+  
+  # -------------------------------------------
+  # Predict Abundance at Unsampled Areas 
+  # -------------------------------------------
+  
+  for (u in 1:U) {
 
+    log(lambda_pred[u]) <- log(rho[u]) + beta0 + beta1 * Herb_COH_pred[u] + beta2 * Woody_SPLIT_pred[u]
+    N_pred[u] ~ dpois(lambda_pred[u]) 
+ 
+  }   
+  
+  # -------------------------------------------
+  # PPC and Bayesian P-value
+  # -------------------------------------------
+
+  for(i in 1:M){
+   for(j in 1:J){
     # Generate replicated data
     y_rep[i,j] ~ dbern(pz[i,j]) 
     
@@ -326,10 +355,18 @@ model {
     # discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  
     discrepancy_rep[i,j] <- pow(y_rep[i,j] - p[i,j], 2)
 
-
     } # End J
   } # End M
+    
+    # Sum of discrepancies for observed data
+    sum_obs <- sum(discrepancy_obs[,])  
   
+    # Sum of discrepancies for replicated data
+    sum_rep <- sum(discrepancy_rep[,])  
+  
+    # Proportion of times replicated > observed
+    p_Bayes <- step(sum_rep - sum_obs)
+
   # ---------------------------------
   # Derived Metrics
   # ---------------------------------
@@ -337,29 +374,35 @@ model {
   # Abundance
   N_tot <- sum(z[])
   
-  # ---------------------------------
-  # Bayesian p-value
-  # ---------------------------------
+  # Abundance at unsampled sites
+  N_pred_tot <- sum(N_pred[])
   
-  # Sum of discrepancies for observed data
-  sum_obs <- sum(discrepancy_obs[,])  
+  # Total abundance
+  N_tot <- sum(N[]) + sum(N_pred[])
   
-  # Sum of discrepancies for replicated data
-  sum_rep <- sum(discrepancy_rep[,])  
+  # Overall site mean abundances
+  samp_site_Nmean <-  sum(N[]) / S
+  pred_site_Nmean <- sum(N_pred[]) / U
   
-  # Proportion of times replicated > observed
-  p_Bayes <- step(sum_rep - sum_obs)  
+  # Expected site mean abundance
+  samp_site_lambda_mean <-  sum(lambda[]) / S
+  pred_site_lambda_mean <- sum(lambda_pred[]) / U
+  
+  # Variance
+  samp_site_lambda_var <- sum( (lambda[] - samp_site_lambda_mean)^2 ) / (S - 1)
+  pred_site_lambda_var <- sum( (lambda_pred[] - pred_site_lambda_mean)^2 ) / (U - 1)
+
   
 }
 
-", fill=TRUE, file = "./jags_models/PC_MCR_Model.txt")
+", fill=TRUE, file = "./jags_models/Model_PC_MCR.txt")
 # ------------End Model-------------
 
 # Fit Model
 fm1 <- jags(data = data, 
              parameters.to.save = params,
              inits = inits, 
-             model.file = "./jags_models/PC_MCR_Model.txt",
+             model.file = "./jags_models/Model_PC_MCR.txt",
              n.iter = n_iter,
              n.burnin = n_burnin,
              n.chains = n_chains, 
@@ -368,43 +411,57 @@ fm1 <- jags(data = data,
              parallel = TRUE,
              n.cores = workers,
              verbose = TRUE,
-             DIC = FALSE)
+             DIC = FALSE
+)
 
 # -------------------------------------------------------
 # Check Convergence
 # -------------------------------------------------------
 
-# Rhat
-check_rhat(fm1$Rhat, threshold = 1.1)
 
 # Trace plots
 MCMCvis::MCMCtrace(fm1, 
-                   params = c("lambda",
-                              "N",
-                              "N_tot",
-                              "alpha0", 
-                              "alpha1", 
-                              "alpha2", 
+                   params = c("N_tot",
+                              "N_samp_tot",
+                              "N_pred_tot",
                               "beta0", 
                               "beta1",
                               "beta2",
-                              "psi",
-                              # "S_RE_lam",
-                              # 'tau_lam',
-                              "S_RE_det",
-                              "tau_det"
+                              "alpha0", 
+                              "alpha1", 
+                              "alpha2", 
+                              'psi',
+                              'tau_sre',
+                              "S_RE",
+                              "samp_site_mu_var",
+                              "pred_site_mu_var",
+                              "samp_site_mu_mean",
+                              "pred_site_mu_mean",
+                              "samp_site_Nmean",
+                              "pred_site_Nmean",
+                              "lambda",
+                              "lambda_pred",
+                              "N",
+                              "N_pred",
+
                    ),
                    pdf = T,
-                   filename = "PC-MCR_TracePlots.pdf",
+                   filename = "TracePlots_PC_MCR.pdf",
                    wd = "./Figures"
 )
 
+# Rhat
+check_rhat(fm1$Rhat, threshold = 1.1)
+
+
+# Save model
+saveRDS(fm1, "./Data/Model_Data/Fit_Model_PC_MCR.rds")
+
+ 
 # -------------------------------------------------------
-# Combine Chains for Posterior inference
+# Posterior Predictive Checks
 # -------------------------------------------------------
 
-# Combine chains
-combined_chains <- as.mcmc(do.call(rbind, fm1$samples))
 
 # ----------------------
 # Extract Fit
@@ -412,9 +469,11 @@ combined_chains <- as.mcmc(do.call(rbind, fm1$samples))
 
 # Abundance
 fit_y_data <- data.frame(
-  Observed = as.vector(combined_chains[, "sum_obs"]), # Observed values
-  Predicted = as.vector(combined_chains[, "sum_rep"]) # Predicted values
+  Observed = fm1$sims.list$sum_obs, # Observed values
+  Predicted = fm1$sims.list$sum_rep,  # Predicted values
+  type = rep(c("Observed", "Predicted"), each = length(fm1$sims.list$sum_obs))
 )
+
 
 # ----------------------
 # Density Plot
@@ -441,15 +500,17 @@ y_PPC_Dens <- ggplot(fit_y_data) +
 print(y_PPC_Dens)
 
 # Export                
-ggsave(plot = y_PPC_Dens, "./Figures/PPC_BP_PC-MCR_Yobs.jpeg", width = 8, height = 5, dpi = 300)
+ggsave(plot = y_PPC_Dens, "./Figures/PPC_BP_PC_MCR.jpeg", width = 8, height = 5, dpi = 300)
 dev.off()
 
 # -------------------------------------------------------
 #
-#   Beta Estimates and Covariate Effects 
+#                 Posterior Estimates  
 #
 # -------------------------------------------------------
 
+# Combine chains for posterior inference
+combined_chains <- as.mcmc(do.call(rbind, fm1$samples))
 
 # -------------------------------------------------------
 # Beta Estimates
@@ -484,8 +545,8 @@ beta_summary <- beta_df %>%
 print(beta_summary)
 
 # Export beta dataframe and summary
-saveRDS(beta_df, "./Data/Model_Data/PC_MCR_beta_df.rds")
-write.csv(beta_summary, "./Figures/PC_MCR_BetaSummary.csv")
+saveRDS(beta_df, "./Data/Model_Data/Beta_df_PC_MCR.rds")
+write.csv(beta_summary, "./Data/Model_Data/Beta_Summary_PC_MCR.csv")
 
 # -------------------------------------------------------
 # Alpha Estimates
@@ -501,10 +562,13 @@ alpha1_samples_4 <- alpha1_samples[,4]
 alpha1_samples_5 <- alpha1_samples[,5]
 alpha2_samples <- combined_chains[, "alpha2"]
 
+
 # Extract site random effect
-sRE_samples <- combined_chains[, c("S_RE_det[1]", "S_RE_det[2]","S_RE_det[3]","S_RE_det[4]","S_RE_det[5]",
-                                   "S_RE_det[6]", "S_RE_det[7]", "S_RE_det[8]", "S_RE_det[9]", "S_RE_det[10]")]
+sRE_cols  <- grep("^S_RE_det\\[", colnames(combined_chains), value = TRUE)
+sRE_samples <- combined_chains[, sRE_cols]
 sRE_samples <- rowMeans(sRE_samples) # Row means
+
+
 
 # Compute 95% CI  
 alpha_df <- data.frame(
@@ -545,7 +609,7 @@ alpha_summary <- alpha_df %>%
 print(alpha_summary)
 
 # Export alpha summary
-saveRDS(alpha_summary, "./Data/Model_Data/PC_MCR_AlphaSummary.rds")
+saveRDS(alpha_summary, "./Data/Model_Data/Alpha_Summary_PC_MCR.rds")
 
 
 # -------------------------------------------------------
@@ -578,59 +642,68 @@ print(p_summary)
 #   Estimating Abundance 
 # -------------------------------------------------------
 
-# Extracting Abundance
-Ntot_samples <- combined_chains[ ,"N_tot"]
+# Extract abundance at surveyed sites
+N_survyed_cols <- grep("^N\\[", colnames(combined_chains), value = TRUE)
+N_survyed_samples <- combined_chains[, N_survyed_cols, drop = FALSE] 
+colnames(N_survyed_samples) <- paste0("S", 1:S)
 
-# Ntotal is the abundance based on 10 point counts at a radius of 200m.
+# Extract abundance at unsurveyed sites
+N_unsurvyed_cols <- grep("^N_pred\\[", colnames(combined_chains), value = TRUE)
+N_unsurvyed_samples <- combined_chains[, N_unsurvyed_cols, drop = FALSE] 
+colnames(N_unsurvyed_samples) <- paste0("U", 1:U)
+min(N_unsurvyed_samples)
 
-# Area in hectares of a 200m radius circle
-area <- pi * (200^2) / 10000  # Area in hectares
+# Combine into one dataframe
+N_samples_df <- cbind(N_survyed_samples, N_unsurvyed_samples)
+str(N_samples_df)
 
-# Calculate density (individuals per hectare)
-dens_samples <- Ntot_samples / (area * 10)
+# Site Summary
+site_summary <- data.frame(
+  Site = colnames(N_samples_df),
+  Mean = apply(N_samples_df, 2, mean),
+  LCL  = apply(N_samples_df, 2, quantile, 0.025),
+  UCL  = apply(N_samples_df, 2, quantile, 0.975)
+)
 
-# Create data frame for density
-dens_df <- data.frame(Model = rep(model_name, length(dens_samples)), Density = dens_samples)
-colnames(dens_df)[2] <- "Density"
-head(dens_df)
+print(site_summary)
 
-# Abundance estimates
-abund_df <- dens_df # posterior estimates
-abund_df$Density <- abund_df$Density * 1096  
+# Total Summary 
+total_N_samples <- combined_chains[,'N_tot']
+total_summary <- data.frame(
+  Mean = mean(total_N_samples),
+  LCI  = quantile(total_N_samples, 0.025),
+  UCI  = quantile(total_N_samples, 0.975),
+  Model = model_name,
+  Parameter = "Abundance"
+)
 
-abund_summary <- abund_df %>% # summary
-  group_by(Model) %>%
-  summarise(
-    mean = mean(Density),
-    LCI = quantile(Density, 0.025),
-    UCI = quantile(Density, 0.975)
-  )
+print(total_summary)
 
-# Add model
-abund_summary$Model <- model_name
+# Density hectare
+dens_summary_ha <- total_summary[,1:3] / 1098
+dens_summary_ha$Model <- model_name
+dens_summary_ha$Parameter <- "Density (N/ha)"
+dens_summary_ha
 
-# Add parameter name
-abund_summary$Parameter <- "abundance"
+# Density Acre
+dens_summary_ac <- total_summary[,1:3] / 2710
+dens_summary_ac$Model <- model_name
+dens_summary_ac$Parameter <- "Density (N/ac)"
+dens_summary_ac
 
-# View
-print(abund_summary)
-
-# Combine with detection
-param_summary <- rbind(p_summary, abund_summary)
-
-# View
+# Combine with detection and vocal rate
+param_summary <- rbind(param_summary, total_summary, dens_summary_ha, dens_summary_ac)
 print(param_summary)
 
-# Trim abund df to 95% CI
-abund_95df <- abund_df %>%
-  left_join(abund_summary, by = "Model") %>%
-  filter(Density >= LCI & Density <= UCI) %>%
-  select(-LCI, -UCI)
-
+# Trim total_abundance_samples to 95% CI
+total_N_samples_95CI <- total_N_samples[
+  total_N_samples >= quantile(total_N_samples, 0.025) &
+    total_N_samples <= quantile(total_N_samples, 0.975)
+]
 
   
 # Export alpha summary
-saveRDS(abund_95df, "./Data/Model_Data/PC_MCR_abund_df.rds")
-saveRDS(param_summary, "./Data/Model_Data/PC_MCR_param_summary.rds")
+saveRDS(abund_95df, "./Data/Model_Data/Abund_df_PC_MCR.rds")
+saveRDS(param_summary, "./Data/Model_Data/Param_Summary_PC_MCR.rds")
 
 # ------------ End Script -----------------
