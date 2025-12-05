@@ -28,7 +28,6 @@
 
 # Install packages (if needed)
 # install.packages("tidyverse")
-# install.packages("ggfortify")
 # install.packages("gridExtra")
 # install.packages("jagsUI")
 # install.packages("coda")
@@ -36,7 +35,6 @@
 
 # Load library
 library(tidyverse)
-library(ggfortify)
 library(gridExtra)
 library(jagsUI)
 library(coda)
@@ -109,7 +107,7 @@ weather_dat <- read.csv("./Data/Acoustic_Data/ARU_weathercovs.csv")
 # Surveyed Site covariates
 site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
 
-# Not Sampled area covariates
+# Unsampled area covariates
 predict_covs <- read.csv("./Data/Acoustic_Data/ARU_PredictsiteCovs.csv")
 
 # -------------------------------------------------------
@@ -244,11 +242,6 @@ head(Woody_SPLIT)
 Wind <- as.matrix(scale(weather_dat[, 'Wind_mph']))
 VegDens <- scale(site_covs[,'vegDens50m'])
 
-# Format vocalization covariates
-Sky <- weather_dat[, 'Sky_Condition']
-Sky <- as.numeric(as.factor(Sky))
-Sky_Lvls = length(unique(Sky))
-
 # ----------------------
 # Prepare prediction data
 # ----------------------
@@ -297,8 +290,6 @@ data <- list(S = S,
              Woody_SPLIT = as.numeric(Woody_SPLIT),
              Wind = as.numeric(Wind),
              VegDens = as.numeric(VegDens),
-             Sky = Sky, 
-             Sky_Lvls = Sky_Lvls,
              U = U,
              Herb_COH_pred = as.numeric(pred_Herb_COH),
              Woody_SPLIT_pred = as.numeric(pred_Woody_SPLIT),
@@ -318,21 +309,14 @@ str(data)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-n_iter = 500000
-n_burnin = 250000
-n_chains = 3
-n_thin = 50
-n_adapt = 5000
+n_iter <- 300000
+n_burnin <- 100000
+n_chains <- 3
+n_thin <- 50
+n_adapt <- 5000
 
-# Doser et al. settings
-# n_iter <- 200000
-# n_burnin <- 60000
-# n_chains <- 3
-# n_thin <- 50
-# n_adapt <- 5000
-
-# # Test Settings
-# n_iter <- 10000
+# Test Settings
+# n_iter <- 20000
 # n_burnin <- 0
 # n_chains <- 6
 # n_thin <- 10
@@ -354,6 +338,7 @@ params <- c(# Abundance
             'beta2',
             'tau_N',
             'sigma_N',
+            'sigma2_N',
             'mu', 
             'N',
             'N_samp_tot',
@@ -361,6 +346,12 @@ params <- c(# Abundance
             'N_pred',
             'N_pred_tot',
             'N_tot',
+            'samp_site_mu_var',
+            'pred_site_mu_var',
+            'samp_site_mu_mean',
+            'pred_site_mu_mean',
+            'samp_site_Nmean',
+            'pred_site_Nmean',
             # Detection
             'p_a', 
             'mu_alpha',
@@ -370,8 +361,8 @@ params <- c(# Abundance
             'alpha3',
             #  Vocalization
             'gamma0',
-            # 'gamma1',
             'tau_jre',
+            'sigma_jre',
             'J_RE',
             'omega',
             'delta',
@@ -382,7 +373,6 @@ params <- c(# Abundance
             'fit_y_pred',
             'fit_v',
             'fit_v_pred',
-            
             'bp_y',
             'bp_v')
 
@@ -394,15 +384,12 @@ make_inits <- function() {
     beta0  = rnorm(1, 0, 1),
     beta1  = rnorm(1, 0, 1),
     beta2  = rnorm(1, 0, 1),
-    a_Ntau = rgamma(1, 2, 0.5),
-    b_Ntau = rgamma(1, 2, 0.5),
     # Detection
     alpha1 = runif(1, 0, 1), 
     alpha2 = rnorm(1, 0, 1),
     alpha3 = rnorm(1, 0, 1),
     # Vocalization
     gamma0 = runif(1, log(6), log(15)),
-    gamma1 = rnorm(Sky_Lvls, 0, 1),
     omega  = runif(1, 0, 0.25)
   )
 }
@@ -427,9 +414,15 @@ cat(" model {
   beta1 ~ dnorm(0, 0.1) # Herbaceous
   beta2 ~ dnorm(0, 0.1) # Woody 
   
-  # Underdispersion
-  tau_N ~ dgamma(0.01, 0.01)  
-  sigma_N <- 1 / sqrt(tau_N)
+  # Underdispersion: variance < mean
+  sigma_N ~ dunif(0.1, 1)
+  tau_N = 1/pow(sigma_N, 2)
+  sigma2_N <- 1/tau_N
+  
+  # variance (sigma2), standard deviation (sigma), precision (tau) relationship
+  #     variance = (stddev)^2 = 1/precision
+  #     stddev = 1/sqrt(precision) = sqrt(variance)
+  #     precision = 1/stddev^2 = 1/variance
   
   # ------------------------
   # Detection Priors
@@ -457,15 +450,12 @@ cat(" model {
   # ~2 calls/10 mins * 3 ten min periods = 6 calls/30 mins
   # must be on the log scale to match the log-link function on delta,
   # making the intercept 6 calls on the natural scale.
-  gamma0 ~ dnorm(log(6), 1 / pow(0.75, 2) ) T(0,)
+  gamma0 ~ dnorm(log(6), 1/pow(0.75, 2)) T(0,)
   
-  # # Sky (condition) is a categorical covariate
-  # for (l in 1:Sky_Lvls){
-  # gamma1[l] ~ dnorm(0, 0.1)
-  # }
   
   # Survey random effect
-  tau_jre ~ dgamma(0.1, 0.1)
+  tau_jre ~ dgamma(0.01, 0.01)  
+  sigma_jre <- 1 / sqrt(tau_jre)
   for (j in 1:n_days) {
      J_RE[j] ~ dnorm(0, tau_jre)
   }
@@ -483,7 +473,7 @@ cat(" model {
   # Likelihood and Process Model 
   #
   # -------------------------------------------
-  
+
   # Site
   for (s in 1:S) {
     
@@ -494,7 +484,8 @@ cat(" model {
     # ztNormal
     log(mu[s]) <- beta0 + beta1 * Herb_COH[s] +  beta2 * Woody_SPLIT[s]
     N[s] ~ dnorm(mu[s], tau_N) T(0,)
-    
+
+
     # Survey
     for (j in 1:J[s]) {
     
@@ -508,7 +499,7 @@ cat(" model {
     # ---------------------------------
     
     # Survey Random Effect
-    log(delta[s, j]) <- gamma0 + J_RE[j] #  gamma1[Sky[j]] + 
+    log(delta[s, j]) <- gamma0  + J_RE[j] # + gamma1[Sky[j]]
     
     # ---------------------------------
     # Observations
@@ -568,7 +559,8 @@ cat(" model {
   
     # ztNormal
     log(mu_pred[u]) <- log(rho[u]) + beta0 + beta1 * Herb_COH_pred[u] + beta2 * Woody_SPLIT_pred[u]
-    N_pred[u] ~ dnorm(mu_pred[u], tau_N / rho[u]) T(0,) 
+    N_pred[u] ~ dnorm(mu_pred[u], tau_N / rho[u]) T(0,)
+ 
   }
   
   # -------------------------------------------
@@ -598,8 +590,20 @@ cat(" model {
   # Total abundance
   N_tot <- sum(N[]) + sum(N_pred[])
   
+  # Overall site mean abundances
+  samp_site_Nmean <-  sum(N[]) / S
+  pred_site_Nmean <- sum(N_pred[]) / U
+  
+  # Expected site mean abundance
+  samp_site_mu_mean <-  sum(mu[]) / S
+  pred_site_mu_mean <- sum(mu_pred[]) / U
+  
+  # Variance
+  samp_site_mu_var <- sum( (mu[] - samp_site_mu_mean)^2 ) / (S - 1)
+  pred_site_mu_var <- sum( (mu_pred[] - pred_site_mu_mean)^2 ) / (U - 1)
+  
 }
-", fill = TRUE, file = "./JAGs_Models/AV_Bsong_Model.txt")
+", fill = TRUE, file = "./JAGs_Models/Model_AV_Bsong.txt")
 # ------------End Model-------------
 
 # -------------------------------------------------------
@@ -609,7 +613,7 @@ cat(" model {
 fm1 <- jagsUI::jags(data = data,
                      inits = inits,
                      parameters.to.save = params,
-                     model.file = "./JAGs_Models/AV_Bsong_Model.txt",
+                     model.file = "./JAGs_Models/Model_AV_Bsong.txt",
                      n.iter = n_iter,
                      n.burnin = n_burnin,
                      n.chains = n_chains,
@@ -618,7 +622,8 @@ fm1 <- jagsUI::jags(data = data,
                      parallel = TRUE,
                      n.cores = workers,
                      verbose = TRUE,
-                     DIC = FALSE)
+                     DIC = FALSE
+)
 
 
 # -------------------------------------------------------
@@ -641,11 +646,18 @@ MCMCvis::MCMCtrace(fm1,
                               'r_phi',
                               'omega',
                               'gamma0',
-                              # 'gamma1',
                               'tau_jre',
+                              'sigma_jre',
                               'J_RE',
                               'tau_N',
                               'sigma_N',
+                              'sigma2_N',
+                              'samp_site_mu_var',
+                              'pred_site_mu_var',
+                              'samp_site_mu_mean',
+                              'pred_site_mu_mean',
+                              'samp_site_Nmean',
+                              'pred_site_Nmean',
                               'mu',
                               'mu_pred',
                               'N',
@@ -654,18 +666,15 @@ MCMCvis::MCMCtrace(fm1,
                               'phi'
                    ),
                    pdf = TRUE,
-                   filename = "ARU_Bsong_TracePlots.pdf",
+                   filename = "TracePlots_ARU_Bsong.pdf",
                    wd = "./Figures"
 )
 
 # Rhat
 check_rhat(fm1$Rhat, threshold = 1.1) 
 
-# gelman.diag(fm1)  # Rhat should be < 1.1
-# effectiveSize(fm1) 
-
 # Save model
-# saveRDS(fm1, "./Data/Model_Data/BsongModelOutput.rds")
+saveRDS(fm1, "./Data/Model_Data/Fit_Model_ARU_Bsong.rds")
 
 # -------------------------------------------------------
 # Posterior Predictive Checks
@@ -729,7 +738,7 @@ v_PPC_Dens <- ggplot(fit_v_data) +
 grid.arrange(y_PPC_Dens, v_PPC_Dens, nrow = 2)
 
 # Save to file
-jpeg("Figures/PPC_BP_ARU-Bsong.jpg", width = 10, height = 8, units = "in", res = 300)
+jpeg("Figures/PPC_ARU_Bsong.jpg", width = 10, height = 8, units = "in", res = 300)
 grid.arrange(y_PPC_Dens, v_PPC_Dens, nrow = 2)
 dev.off()
 
@@ -780,8 +789,8 @@ beta_summary <- beta_df %>%
 print(beta_summary)
 
 # Export beta dataframe and summary
-saveRDS(beta_df, "./Data/Model_Data/ARU_Bsong_beta_df.rds")
-write.csv(beta_summary, "./Figures/ARU_Bsong_BetaSummary.csv")
+saveRDS(beta_df, "./Data/Model_Data/Beta_df_ARU_Bsong.rds")
+write.csv(beta_summary, "./Data/Model_Data/Beta_Summary_ARU_Bsong.csv")
 
 
 # -------------------------------------------------------
@@ -826,7 +835,7 @@ alpha_summary <- alpha_df %>%
 print(alpha_summary)
 
 # Export alpha summary
-saveRDS(alpha_summary, "./Data/Model_Data/ARU_Bsong_alpha_summary.rds")
+saveRDS(alpha_summary, "./Data/Model_Data/Alpha_Summary_ARU_Bsong.rds")
 
 
 # -------------------------------------------------------
@@ -894,20 +903,25 @@ jRE_cols  <- grep("^J_RE\\[", colnames(combined_chains), value = TRUE)
 jRE_samples <- combined_chains[, jRE_cols]
 jRE_samples <- rowMeans(jRE_samples) # Row means
 
-# Compute 95% CI for each beta
-jre_df <- data.frame(
-  value = c(jRE_samples),  
-  parameter = rep(c("jRE"), each = length(jRE_samples))
+# Extract gamma0 estimates
+gamma0_samples <- combined_chains[, "gamma0"]
+
+# Compute 95% CI for each
+gamma_df <- data.frame(
+  value = c(gamma0_samples,
+            jRE_samples),  
+  parameter = rep(c("gamma0",
+                    "jRE"), each = length(gamma0_samples))
 ) %>%
   group_by(parameter) %>%
   filter(value >= quantile(value, 0.025) & 
            value <= quantile(value, 0.975))  
 
 # Add model
-jre_df$Model <- model_name
+gamma_df$Model <- model_name
 
 # Create summary
-jre_summary <- jre_df %>%
+gamma_summary <- gamma_df %>%
   group_by(parameter, Model) %>%
   summarise(
     mean = mean(value),
@@ -916,8 +930,17 @@ jre_summary <- jre_df %>%
     .groups = "drop"  
   )
 
-# view
-print(jre_summary)
+# Exponentiate to get on real scale
+gamma_summary[3,3:5] <- exp(gamma_summary[1,3:5])
+gamma_summary$Model <- model_name
+gamma_summary$parameter <- "exp(gamma0)"
+
+# Take a look
+print(gamma_summary)
+
+# Export gamma summary
+saveRDS(gamma_summary, "./Data/Model_Data/Gamma_Summary_ARU_Bsong.rds")
+
 
 
 # -------------------------------------------------------
@@ -938,8 +961,6 @@ min(N_unsurvyed_samples)
 # Combine into one dataframe
 N_samples_df <- cbind(N_survyed_samples, N_unsurvyed_samples)
 str(N_samples_df)
-
-
 
 # Site Summary
 site_summary <- data.frame(
@@ -987,8 +1008,8 @@ total_N_samples_95CI <- total_N_samples[
 
 
 # Export abundance df and parameter summary
-saveRDS(total_N_samples_95CI, "./Data/Model_Data/ARU_Bsong_abund_df.rds")
-saveRDS(param_summary, "./Data/Model_Data/ARU_Bsong_param_summary.rds")
+saveRDS(total_N_samples_95CI, "./Data/Model_Data/Abund_df_ARU_Bsong.rds")
+saveRDS(param_summary, "./Data/Model_Data/Param_Summary_ARU_Bsong.rds")
 
 
 

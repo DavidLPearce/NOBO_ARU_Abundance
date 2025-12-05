@@ -48,11 +48,11 @@ setwd(".")
 # Setting up cores
 Ncores <- parallel::detectCores()
 print(Ncores) # Number of available cores
-workers <- Ncores * 0.3 # For low background use 80%, for medium use 50% of Ncores
+workers <- Ncores * 0.5 # For low background use 80%, for medium use 50% of Ncores
 print(workers)
 
 # Source custom function for checking Rhat values > 1.1
-source("./Scripts/Rhat_check_function.R")
+source("./Scripts/Functions/Rhat_check_function.R")
 
 # Model name object
 model_name <- "AV Bnet"
@@ -108,6 +108,9 @@ weather_dat <- read.csv("./Data/Acoustic_Data/ARU_weathercovs.csv")
 # Site covariates
 site_covs <- read.csv("./Data/Acoustic_Data/ARU_siteCovs.csv")
 
+# Unsampled area covariates
+predict_covs <- read.csv("./Data/Acoustic_Data/ARU_PredictsiteCovs.csv")
+
 # -------------------------------------------------------
 #
 #    Data Wrangling
@@ -129,9 +132,9 @@ nrow(bnet_dat)
 bnet_dat <- bnet_dat %>%
   mutate(Occasion = match(Date, date_order))
 
-# ----------------------------
+# ----------------------
 # Observation Matrix
-# ----------------------------
+# ----------------------
 
 # Adding a row count
 bnet_dat$Count <- 1
@@ -171,8 +174,6 @@ v_mat <- as.matrix(v)
 sites_a <- which(rowSums(!is.na(v_mat) & v >= 1) > 0)
 print(sites_a)
 
-
-
 # Creating a binary detection matrix, values >= 1 become 1, and 0 stays 0
 v_df <- as.data.frame(v)
 y <- v_df %>% mutate(across(where(is.numeric), ~ if_else(. >= 1, 1, 0)))
@@ -206,9 +207,9 @@ for (i in 1:S) {
 }
 print(A_times)
 
-# ---------------------------------------
+# -----------------------
 # Manually validated  
-# ---------------------------------------
+# ----------------------
 
 # Validated Calls
 # Do not include sites with no calls
@@ -232,9 +233,9 @@ S_val <- nrow(n)
 J_val <- rep(14, S_val)
 
 
-# ---------------------------------------
+# ----------------------
 # Covariates 
-# ---------------------------------------
+# ----------------------
 
 # survey random effect index
 days <- matrix(rep(1:14, times = 27), nrow = 27, ncol = 14, byrow = TRUE)
@@ -251,24 +252,34 @@ head(Woody_SPLIT)
 Wind <- as.matrix(scale(weather_dat[, 'Wind_mph']))
 VegDens <- scale(site_covs[,'vegDens50m'])
 
-# Area surveyed 
-area <- pi * (200^2) / 10000  # in hectares
-Offset <- rep(area, 27)
+# ----------------------
+# Prepare prediction data
+# ----------------------
 
+# Scale prediction covariates using the SAME scaling from training data
+pred_Herb_COH <- scale(predict_covs[,'herb_COH'])
+pred_Woody_SPLIT <- scale(predict_covs[,'woody_SPLIT'])
 
-# ---------------------------------------
+# Calculate area ratios
+A_sampled <- pi * (227^2)
+A_unsampled <- predict_covs$area_m2
+rho <- A_unsampled / A_sampled
+
+# Number of unsampled sites
+U <- nrow(predict_covs)
+
+# ----------------------
 # Bayesian P-value
-# ---------------------------------------
+# ----------------------
 
 S_A <- sum(J_r > 0)
 sites_a_v <- which(J_r > 0)
 J_A <- max(J)
 
 
-# ---------------------------------------
+# ----------------------
 # Bundle Data 
-# ---------------------------------------
-
+# ----------------------
 data <- list(S = S, 
              J = J, 
              v = v, 
@@ -284,13 +295,16 @@ data <- list(S = S,
              S_A = S_A, 
              J_A = J_A, 
              sites_a_v = sites_a_v, 
-             days = days,
-             n.days = max(J),
-             Herb_COH = Herb_COH,
-             Woody_SPLIT = Woody_SPLIT,
-             Wind = Wind,
-             VegDens = VegDens,
-             Offset = area)
+             n_days = max(J),
+             Herb_COH = as.numeric(Herb_COH),
+             Woody_SPLIT = as.numeric(Woody_SPLIT),
+             Wind = as.numeric(Wind),
+             VegDens = as.numeric(VegDens),
+             U = U,
+             Herb_COH_pred = as.numeric(pred_Herb_COH),
+             Woody_SPLIT_pred = as.numeric(pred_Woody_SPLIT),
+             rho = rho
+)
 
 # Check structure
 str(data)
@@ -306,63 +320,89 @@ str(data)
 # ----------------------
 # MCMC Specifications
 # ----------------------
-n_iter = 800000
-n_burnin = 200000
-n_chains = 3 
-n_thin = 10
-n_adapt = 5000
+n_iter <- 300000
+n_burnin <- 100000
+n_chains <- 3
+n_thin <- 50
+n_adapt <- 5000
+
+# Test Settings
+# n_iter <- 20000
+# n_burnin <- 0
+# n_chains <- 6
+# n_thin <- 10
+# n_adapt <- 5000
 
 # posterior samples
 post_samps = (((n_iter - n_burnin) / n_thin) * n_chains)
 print(post_samps)
+
+# posterior samples
+post_samps = (((n_iter - n_burnin) / n_thin) * n_chains)
+print(post_samps)
+
 
 # ----------------------
 # Model Specifications
 # ----------------------
 
 # Parameters monitored
-params <- c('mu', # Abundance
-            'N_tot',
-            'N',
-            'beta0',
+params <- c(# Abundance
+            'beta0',  
             'beta1',
             'beta2',
-            'tau_s',
-            'S_RE',
-            'sigma_mu',
-            'p_a',# Detection 
+            'lambda', 
+            'N',
+            'N_samp_tot',
+            'lambda_pred',
+            'N_pred',
+            'N_pred_tot',
+            'N_tot',
+            'samp_site_lambda_var',
+            'pred_site_lambda_var',
+            'samp_site_lambda_mean',
+            'pred_site_lambda_mean',
+            'samp_site_Nmean',
+            'pred_site_Nmean',
+            # Detection
+            'p_a', 
+            'mu_alpha',
             'alpha0', 
             'alpha1', 
             'alpha2',
             'alpha3',
-            'mu_j',#  Vocalization
-            'tau_j',
+            #  Vocalization
+            'gamma0',
+            'tau_jre',
+            'sigma_jre',
             'J_RE',
             'omega',
             'delta',
             'phi',
             'r_phi',
-            'lam_phi',
-            'fit_y',# Posterior Predictive Checks
+            # Posterior Predictive Checks
+            'fit_y',   
             'fit_y_pred',
             'fit_v',
             'fit_v_pred',
-            'bp_y', # Bayes p-value
+            'bp_y',
             'bp_v')
-
-
 
 # Initial Values 
 make_inits <- function() {
   list(
-    N      = rep (1, S),  # Abundance
-    beta0  = rnorm(1, 0, 1),
-    beta1  = rnorm(1, 0, 1),
-    beta2  = rnorm(1, 0, 1),
-    alpha1 = runif(1, 0, 1),        # Detection
-    alpha2 = rnorm(1, 0, 1),
-    alpha3 = rnorm(1, 0, 1),
-    omega  = runif(1, 0, 1)         # Vocalization
+      # Abundance
+      N      = rep(1, S),
+      beta0  = rnorm(1, 0, 1),
+      beta1  = rnorm(1, 0, 1),
+      beta2  = rnorm(1, 0, 1),
+      # Detection
+      alpha1 = runif(1, 0, 1), 
+      alpha2 = rnorm(1, 0, 1),
+      alpha3 = rnorm(1, 0, 1),
+      # Vocalization
+      gamma0 = runif(1, log(6), log(15)),
+      omega  = runif(1, 0, 10)
   )
 }
 
@@ -380,98 +420,88 @@ cat(" model {
   # ----------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 0.001) 
+  beta0 ~ dnorm(0, 0.1) 
   
   # Covariate effect
-  beta1 ~ dnorm(0, 0.001) # Herbaceous
-  beta2 ~ dnorm(0, 0.001) # Woody 
- 
-  # Site random effect
-  tau_s ~ dgamma(0.001, 0.001)
-  for (s in 1:S) {
-     S_RE[s] ~ dnorm(beta0, tau_s)
-  }
-
-  # Underdispersion
-  for (s in 1:S) {
-  sigma_mu[s] ~ dnorm(0,1) T(0,)
-  }
+  beta1 ~ dnorm(0, 0.1) # Herbaceous
+  beta2 ~ dnorm(0, 0.1) # Woody 
   
   # ------------------------
   # Detection Priors
   # ------------------------
   
   # Intercept
-  alpha0 <- logit(mu_alpha) # Constrains alpha0 to be between 0 and 1 on the logit scale (propability)
+  alpha0 <- logit(mu_alpha)
   mu_alpha ~ dunif(0, 1)
   
   # True individuals
   alpha1 ~ dunif(0, 1000) # Constrained to be positive
   
   # Covariate effect
-  alpha2 ~ dnorm(0, 0.001) # Wind
-  alpha3 ~ dnorm(0, 0.001) # Vegetation Density
+  alpha2 ~ dnorm(0, 0.1) # Wind
+  alpha3 ~ dnorm(0, 0.1) # Vegetation Density
   
   # ------------------------
   # Call Rate Priors
   # ------------------------
   
   # False positive rate
-  omega  ~ dunif(0, 1000) # From Doser et al.  
+  omega  ~ dunif(0, 1000) # From Doser et al. 
+  
+  # base vocal rate/30 min: 
+  # ~2 calls/10 mins * 3 ten min periods = 6 calls/30 mins
+  # must be on the log scale to match the log-link function on delta,
+  # making the intercept 6 calls on the natural scale.
+  gamma0 ~ dnorm(log(6), 1/pow(0.75, 2)) T(0,)
+  
   
   # Survey random effect
-  tau_j ~ dgamma(0.001, 0.001)
-  for (j in 1:n.days) {
-     J_RE[j] ~ dnorm(0, tau_j)
+  tau_jre ~ dgamma(0.01, 0.01) # dgamma(0.1, 0.1)
+  sigma_jre <- 1 / sqrt(tau_jre)
+  for (j in 1:n_days) {
+     J_RE[j] ~ dnorm(0, tau_jre)
   }
 
   # Overdispersion
-  r_phi ~ dgamma(0.001, 0.001)
-  lam_phi ~ dgamma(0.001, 0.001)
+  r_phi ~ dgamma(0.01, 0.01)
   for (s in 1:S) {
     for (j in 1:J_A) {
-      phi[s, j] ~ dgamma(r_phi, lam_phi)
+      phi[s, j] ~ dgamma(r_phi, r_phi)
     }
   }
-  
 
-  
   # -------------------------------------------
   #
   # Likelihood and Process Model 
   #
   # -------------------------------------------
-  
+
   # Site
   for (s in 1:S) {
     
     # ---------------------------------
-    # Abundance Submodel  
+    # Abundance  
     # ---------------------------------
     
-    # Normal 
-    log(mu[s]) <- S_RE[s] + beta1 * Herb_COH[s, 1] +  beta2 * Woody_SPLIT[s, 1]
-    N[s] ~ dnorm(mu[s], sigma_mu[s])
-    
-    # Log-Normal
-    # mu[s] <-  S_RE[s] + beta1 * Herb_COH[s, 1] +  beta2 * Woody_SPLIT[s, 1]
-    # N[s] ~ dlnorm(mu[s], sigma_mu[s]) 
+    # Poisson
+    log(lambda[s]) <- beta0 + beta1 * Herb_COH[s] +  beta2 * Woody_SPLIT[s]
+    N[s] ~ dpois(lambda[s])
 
     # Survey
     for (j in 1:J[s]) {
+    
+    # ---------------------------------
+    # Detection   
+    # ---------------------------------
+    logit(p_a[s, j]) <- alpha0 + alpha1 * N[s]  + alpha2 * Wind[j] + alpha3 * VegDens[s] 
 
     # ---------------------------------
-    # Detection Submodel  
-    # ---------------------------------
-    logit(p_a[s, j]) <- alpha0 + alpha1 * N[s]  + alpha2 * Wind[j,1] + alpha3 * VegDens[s, 1] 
-
-    # ---------------------------------
-    # Call rate Submodel  
+    # Call rate  
     # ---------------------------------
     
     # Survey Random Effect
-    log(delta[s, j]) <- J_RE[j]
-
+    log(delta[s, j]) <- gamma0  + J_RE[j] # + gamma1[Sky[j]]
+    
     # ---------------------------------
     # Observations
     # ---------------------------------
@@ -522,6 +552,19 @@ cat(" model {
     } # End J
   } # End S
   
+  
+  # -------------------------------------------
+  # Predict Abundance at Unsampled Areas 
+  # -------------------------------------------
+  for (u in 1:U) {
+  
+    # Poisson
+    log(lambda_pred[u]) <- log(rho[u]) + beta0 + beta1 * Herb_COH_pred[u] + beta2 * Woody_SPLIT_pred[u]
+    N_pred[u] ~ dpois(lambda_pred[u])
+    
+
+  }
+  
   # -------------------------------------------
   # PPC and Bayesian P-value
   # -------------------------------------------
@@ -540,11 +583,28 @@ cat(" model {
   # Derive Parameters
   # -------------------------------------------
   
-  # Abundance
-  N_tot <- sum(N[])
-
-}
-", fill = TRUE, file = "./JAGs_Models/AV_Bnet_Model.txt")
+  # Abundance at sampled sites
+  N_samp_tot <- sum(N[])
+  
+  # Abundance at unsampled sites
+  N_pred_tot <- sum(N_pred[])
+  
+  # Total abundance
+  N_tot <- sum(N[]) + sum(N_pred[])
+  
+  # Overall site mean abundances
+  samp_site_Nmean <-  sum(N[]) / S
+  pred_site_Nmean <- sum(N_pred[]) / U
+  
+  # Expected site mean abundance
+  samp_site_lambda_mean <-  sum(lambda[]) / S
+  pred_site_lambda_mean <- sum(lambda_pred[]) / U
+  
+  # Variance
+  samp_site_lambda_var <- sum( (lambda[] - samp_site_lambda_mean)^2 ) / (S - 1)
+  pred_site_lambda_var <- sum( (lambda_pred[] - pred_site_lambda_mean)^2 ) / (U - 1)
+  
+}", fill = TRUE, file = "./JAGs_Models/Model_AV_Bnet.txt")
 # ------------End Model-------------
 
 # -------------------------------------------------------
@@ -554,7 +614,7 @@ cat(" model {
 fm1 <- jagsUI::jags(data = data,
                     inits = inits,
                     parameters.to.save = params,
-                    model.file = "./JAGs_Models/AV_Bnet_Model.txt",
+                    model.file = "./JAGs_Models/Model_AV_Bnet.txt",
                     n.iter = n_iter,
                     n.burnin = n_burnin,
                     n.chains = n_chains,
@@ -563,44 +623,56 @@ fm1 <- jagsUI::jags(data = data,
                     parallel = TRUE,
                     n.cores = workers,
                     verbose = TRUE,
-                    DIC = FALSE)
+                    DIC = FALSE
+)
 
 
 # -------------------------------------------------------
 # Check Convergence
 # -------------------------------------------------------
 
-# Rhat
-check_rhat(fm1$Rhat, threshold = 1.1) 
-
 # Trace plots
 MCMCvis::MCMCtrace(fm1, 
-                   params = c('mu',  
-                              'N_tot',
-                              'N',
+                   params = c('N_tot',
+                              'N_samp_tot',
+                              'N_pred_tot',
                               'beta0',
                               'beta1',
                               'beta2',
-                              'tau_s',
-                              'S_RE',
-                              'sigma_mu',
+                              'mu_alpha',
                               'alpha0',  
                               'alpha1', 
                               'alpha2',
                               'alpha3',
-                              'mu_j', 
-                              'tau_j',
-                              'J_RE',
-                              'omega',
-                              'delta',
-                              'phi',
                               'r_phi',
-                              'lam_phi'
+                              'omega',
+                              'gamma0',
+                              'tau_jre',
+                              'sigma_jre',
+                              'J_RE',
+                              'samp_site_lambda_var',
+                              'pred_site_lambda_var',
+                              'samp_site_lambda_mean',
+                              'pred_site_lambda_mean',
+                              'samp_site_Nmean',
+                              'pred_site_Nmean',
+                              'lambda',
+                              'lambda_pred',
+                              'N',
+                              'N_pred',
+                              'delta',
+                              'phi'
                    ),
-                   pdf = T,
-                   filename = "ARU_Bnet_TracePlots.pdf",
+                   pdf = TRUE,
+                   filename = "TracePlots_ARU_Bnet.pdf",
                    wd = "./Figures"
 )
+
+# Rhat
+check_rhat(fm1$Rhat, threshold = 1.1) 
+
+# Save model
+saveRDS(fm1, "./Data/Model_Data/Fit_Model_ARU_Bnet.rds")
 
 
 # -------------------------------------------------------
@@ -666,7 +738,7 @@ v_PPC_Dens <- ggplot(fit_v_data) +
 grid.arrange(y_PPC_Dens, v_PPC_Dens, nrow = 2)
 
 # Save to file
-jpeg("Figures/PPC_BP_ARU-Bnet.jpg", width = 10, height = 8, units = "in", res = 300)
+jpeg("Figures/PPC_ARU_Bnet.jpg", width = 10, height = 8, units = "in", res = 300)
 grid.arrange(y_PPC_Dens, v_PPC_Dens, nrow = 2)
 dev.off()
 
@@ -718,8 +790,8 @@ beta_summary <- beta_df %>%
 print(beta_summary)
 
 # Export beta dataframe and summary
-saveRDS(beta_df, "./Data/Model_Data/ARU_Bnet_beta_df.rds")
-write.csv(beta_summary, "./Figures/ARU_Bnet_BetaSummary.csv")
+saveRDS(beta_df, "./Data/Model_Data/Beta_df_ARU_Bnet.rds")
+write.csv(beta_summary, "./Data/Model_Data/Beta_Summary_ARU_Bnet.csv")
 
 
 
@@ -733,29 +805,20 @@ alpha1_samples <- combined_chains[, "alpha1"]
 alpha2_samples <- combined_chains[, "alpha2"]
 alpha3_samples <- combined_chains[, "alpha3"]
 
-# Extract site random effect
-jRE_samples <- combined_chains[, c("J_RE[1]", "J_RE[2]","J_RE[3]","J_RE[4]","J_RE[5]",
-                                   "J_RE[6]", "J_RE[7]", "J_RE[8]", "J_RE[9]", "J_RE[10]",
-                                   "J_RE[11]", "J_RE[12]", "J_RE[13]", "J_RE[14]"
-)]
-
-jRE_samples <- rowMeans(jRE_samples) # Row means
-
-# Compute 95% CI for each beta
+# Compute 95% CI for each
 alpha_df <- data.frame(
   value = c(alpha0_samples, 
             alpha1_samples, 
             alpha2_samples,
-            alpha3_samples,
-            jRE_samples),  
+            alpha3_samples),  
   parameter = rep(c("alpha0", 
                     "alpha1", 
                     "alpha2",
-                    "alpha3",
-                    "jRE"), each = length(alpha0_samples))
+                    "alpha3"), each = length(alpha0_samples))
 ) %>%
   group_by(parameter) %>%
-  filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  
+  filter(value >= quantile(value, 0.025) & 
+           value <= quantile(value, 0.975))  
 
 # Add model
 alpha_df$Model <- model_name
@@ -767,19 +830,20 @@ alpha_summary <- alpha_df %>%
     mean = mean(value),
     LCI = min(value),
     UCI = max(value),
-    .groups = "drop"   # optional: ungroups after summarising
+    .groups = "drop"  
   )
 
 # view
 print(alpha_summary)
 
 # Export alpha summary
-saveRDS(alpha_summary, "./Data/Model_Data/ARU_Bnet_alpha_summary.rds")
+saveRDS(alpha_summary, "./Data/Model_Data/Alpha_Summary_ARU_Bnet.rds")
 
 
 # -------------------------------------------------------
 # Detection probability 
 # -------------------------------------------------------
+
 
 # Extract samples
 p_samples <- combined_chains[, grepl("^p_a\\[", colnames(combined_chains))]
@@ -789,7 +853,7 @@ all_p_samples <- as.vector(p_samples)
 
 # Create summary
 p_summary <- data.frame(
-  mean = mean(all_p_samples),
+  Mean = mean(all_p_samples),
   LCI = quantile(all_p_samples, 0.025),
   UCI = quantile(all_p_samples, 0.975)
 )
@@ -798,12 +862,10 @@ p_summary <- data.frame(
 p_summary$Model <- model_name
 
 # Add parameter name
-p_summary$Parameter <- "detection"
+p_summary$Parameter <- "Detection"
 
 # view
 print(p_summary)
-
-
 
 # -------------------------------------------------------
 # Vocalization Estimates
@@ -817,7 +879,7 @@ all_deltas <- as.vector(delta_samples)
 
 # Create summary
 delta_summary <- data.frame(
-  mean = mean(all_deltas),
+  Mean = mean(all_deltas),
   LCI = quantile(all_deltas, 0.025),
   UCI = quantile(all_deltas, 0.975)
 )
@@ -826,7 +888,7 @@ delta_summary <- data.frame(
 delta_summary$Model <- model_name
 
 # Add parameter name
-delta_summary$Parameter <- "vocal rate"
+delta_summary$Parameter <- "Vocal Rate"
 
 # View
 print(delta_summary)
@@ -837,62 +899,118 @@ param_summary <- rbind(p_summary, delta_summary)
 # View
 print(param_summary)
 
+# Random Effect on vocal rate
+jRE_cols  <- grep("^J_RE\\[", colnames(combined_chains), value = TRUE)
+jRE_samples <- combined_chains[, jRE_cols]
+jRE_samples <- rowMeans(jRE_samples) # Row means
+
+# Extract gamma0 estimates
+gamma0_samples <- combined_chains[, "gamma0"]
+
+# Compute 95% CI for each
+gamma_df <- data.frame(
+  value = c(gamma0_samples,
+            jRE_samples),  
+  parameter = rep(c("gamma0",
+                    "jRE"), each = length(gamma0_samples))
+) %>%
+  group_by(parameter) %>%
+  filter(value >= quantile(value, 0.025) & 
+           value <= quantile(value, 0.975))  
+
+# Add model
+gamma_df$Model <- model_name
+
+# Create summary
+gamma_summary <- gamma_df %>%
+  group_by(parameter, Model) %>%
+  summarise(
+    mean = mean(value),
+    LCI = min(value),
+    UCI = max(value),
+    .groups = "drop"  
+  )
+
+# Exponentiate to get on real scale
+gamma_summary[3,3:5] <- exp(gamma_summary[1,3:5])
+gamma_summary$Model <- model_name
+gamma_summary[3,1] <- "exp(gamma0)"
+
+# Take a look
+print(gamma_summary)
+
+# Export gamma summary
+saveRDS(gamma_summary, "./Data/Model_Data/Gamma_Summary_ARU_Bnet.rds")
+
 # -------------------------------------------------------
 #  Estimating Abundance 
 # -------------------------------------------------------
 
-# Extract abundance posterior
-Ntot_samples <- combined_chains[ ,"N_tot"]
+# Extract abundance at surveyed sites
+N_survyed_cols <- grep("^N\\[", colnames(combined_chains), value = TRUE)
+N_survyed_samples <- combined_chains[, N_survyed_cols, drop = FALSE] 
+colnames(N_survyed_samples) <- paste0("S", 1:S)
 
-# Ntotal is the abundance based on 27 acoustic sites at a radius of 200m.
+# Extract abundance at unsurveyed sites
+N_unsurvyed_cols <- grep("^N_pred\\[", colnames(combined_chains), value = TRUE)
+N_unsurvyed_samples <- combined_chains[, N_unsurvyed_cols, drop = FALSE] 
+colnames(N_unsurvyed_samples) <- paste0("U", 1:U)
+min(N_unsurvyed_samples)
 
-# Area in hectares of a 200m radius circle
-area <- pi * (200^2) / 10000  # Area in hectares
+# Combine into one dataframe
+N_samples_df <- cbind(N_survyed_samples, N_unsurvyed_samples)
+str(N_samples_df)
 
-# Calculate density (individuals per hectare)
-dens_samples <- Ntot_samples / (area * 27)
 
-# Create data frame for density
-dens_df <- data.frame(Model = rep(model_name, length(dens_samples)), Density = dens_samples)
-colnames(dens_df)[2] <- "Density"
-head(dens_df)
 
-# Abundance estimates
-abund_df <- dens_df # posterior estimates
-abund_df$Density <- abund_df$Density * 1096  
+# Site Summary
+site_summary <- data.frame(
+  Site = colnames(N_samples_df),
+  Mean = apply(N_samples_df, 2, mean),
+  LCL  = apply(N_samples_df, 2, quantile, 0.025),
+  UCL  = apply(N_samples_df, 2, quantile, 0.975)
+)
 
-abund_summary <- abund_df %>% # summary
-  group_by(Model) %>%
-  summarise(
-    mean = mean(Density),
-    LCI = quantile(Density, 0.025),
-    UCI = quantile(Density, 0.975)
-  )
+print(site_summary)
 
-# Add model
-abund_summary$Model <- model_name
+# Total Summary 
+total_N_samples <- combined_chains[,'N_tot']
+total_summary <- data.frame(
+  Mean = mean(total_N_samples),
+  LCI  = quantile(total_N_samples, 0.025),
+  UCI  = quantile(total_N_samples, 0.975),
+  Model = model_name,
+  Parameter = "Abundance"
+)
 
-# Add parameter name
-abund_summary$Parameter <- "abundance"
+print(total_summary)
 
-# View
-print(abund_summary)
+# Density hectare
+dens_summary_ha <- total_summary[,1:3] / 1098
+dens_summary_ha$Model <- model_name
+dens_summary_ha$Parameter <- "Density (N/ha)"
+dens_summary_ha
 
-# Combine with detection
-param_summary <- rbind(param_summary, abund_summary)
+# Density Acre
+dens_summary_ac <- total_summary[,1:3] / 2710
+dens_summary_ac$Model <- model_name
+dens_summary_ac$Parameter <- "Density (N/ac)"
+dens_summary_ac
 
-# View
+# Combine with detection and vocal rate
+param_summary <- rbind(param_summary, total_summary, dens_summary_ha, dens_summary_ac)
 print(param_summary)
 
-# Trim abund df to 95% CI
-abund_95df <- abund_df %>%
-  left_join(abund_summary, by = "Model") %>%
-  filter(Density >= LCI & Density <= UCI) %>%
-  select(-LCI, -UCI)
-
+# Trim total_abundance_samples to 95% CI
+total_N_samples_95CI <- total_N_samples[
+  total_N_samples >= quantile(total_N_samples, 0.025) &
+    total_N_samples <= quantile(total_N_samples, 0.975)
+]
 
 # Export abundance df and parameter summary
-saveRDS(abund_95df, "./Data/Model_Data/ARU_Bnet_abund_df.rds")
-saveRDS(param_summary, "./Data/Model_Data/ARU_Bnet_param_summary.rds")
+saveRDS(total_N_samples_95CI, "./Data/Model_Data/Abund_df_ARU_Bnet.rds")
+saveRDS(param_summary, "./Data/Model_Data/Param_Summary_ARU_Bnet.rds")
+
+
 
 # ------------ End Script -----------------
