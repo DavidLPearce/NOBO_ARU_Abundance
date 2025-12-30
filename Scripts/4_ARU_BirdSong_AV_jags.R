@@ -251,8 +251,12 @@ print(VegDens)
 # ----------------------
 
 # Scale prediction covariates using the SAME scaling from training data
-pred_Herb_COH <- as.numeric(scale(predict_covs[,'herb_COH']))
-pred_Woody_SPLIT <- as.numeric(scale(predict_covs[,'woody_SPLIT']))
+Herb_COH_pred <- as.numeric(scale(predict_covs[,'herb_COH']))
+Woody_SPLIT_pred <- as.numeric(scale(predict_covs[,'woody_SPLIT']))
+
+# Inspect
+print(Herb_COH_pred)
+print(Woody_SPLIT_pred)
 
 # Calculate area ratios
 A_sampled <- pi * (227^2) # ~Area of NOBO home range/scale covs were extracted at
@@ -295,8 +299,8 @@ data <- list(S = S,
              Wind = Wind,
              VegDens = VegDens,
              U = U,
-             Herb_COH_pred = pred_Herb_COH,
-             Woody_SPLIT_pred = pred_Woody_SPLIT,
+             Herb_COH_pred = Herb_COH_pred,
+             Woody_SPLIT_pred = Woody_SPLIT_pred,
              rho = rho
 )
 
@@ -594,7 +598,7 @@ cat(" model {
   # Total abundance
   N_tot <- sum(N[]) + sum(N_pred[])
   
-  # Overall site mean abundances
+  # Observed site mean abundances
   samp_site_Nmean <-  sum(N[]) / S
   pred_site_Nmean <- sum(N_pred[]) / U
   
