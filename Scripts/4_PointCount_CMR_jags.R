@@ -20,12 +20,14 @@
 
 # Install packages (if needed)
 # install.packages("tidyverse")
+# install.packages("gridExtra")
 # install.packages("jagsUI")
 # install.packages("coda")
 # install.packages("MCMCvis")
 
 # Load library
 library(tidyverse)
+library(gridExtra)
 library(jagsUI)
 library(coda)
 library(MCMCvis)
@@ -71,101 +73,223 @@ pc_dat <- read.csv("./Data/Point_Count_Data/NOBO_PC_Summer2024data.csv")
 # Load in site covariates
 site_covs <- read.csv("./Data/Point_Count_Data/PointCount_siteCovs.csv")
 
+# Unsampled area covariates
+predict_covs <- read.csv("./Data/Point_Count_Data/PC_PredictsiteCovs.csv")
+
 # -------------------------------------------------------
 #
 #                   Data Wrangling
 #
 # -------------------------------------------------------
 
+# ----------------------
+# Observation Matrix
+# ----------------------
+
+# Subset to surveys 2, 3, and 4  
+pc_CMR <- pc_dat %>%
+  filter(Survey %in% c(2:4))
+
+# Check the first few rows
+head(pc_CMR, 10)
+
+# Function to get first detection interval
+get_first_detection <- function(int1, int2, int3, int4) {
+  if(all(is.na(c(int1, int2, int3, int4)))) {
+    return(NA)  
+  }
+  if(int1 == 1) return(1)
+  if(int2 == 1) return(2)
+  if(int3 == 1) return(3)
+  if(int4 == 1) return(4)
+  return(5)  
+}
+# ----
+
+# Add first detection variable
+pc_CMR <- pc_CMR %>%
+  rowwise() %>%
+  mutate(first_detection = get_first_detection(int1, int2, int3, int4)) %>%
+  ungroup()
+
+# Remove rows with NA 
+pc_CMR <- pc_CMR %>%
+  filter(!is.na(first_detection))
+
+# Add a unique identifier  
+pc_CMR <- pc_CMR %>%
+  mutate(UniqueID = paste(PointNum, Survey, NOBOnum, sep = "_"))
+
+# Recode Survey to Visit: Survey 2 -> Visit 1, Survey 3 -> Visit 2, Survey 4 -> Visit 3
+pc_CMR <- pc_CMR %>%
+  mutate(Visit = case_when(
+    Survey == 2 ~ 1,
+    Survey == 3 ~ 2,
+    Survey == 4 ~ 3
+  ))
+
+# Inspect
+pc_CMR %>%
+  select(PointNum, 
+         Visit, 
+         NOBOnum, 
+         int1, int2, int3, int4, 
+         first_detection) %>%
+  head(15) %>%
+  print()
+
+# Define constants
+S <- 10  # Number of sites
+K <- 3   # Number of survey occasions 
+J <- 4   # Number of time intervals
+
+# Create ordered site list
+site_list <- sort(unique(pc_CMR$PointNum))
+
+# Check visits at each site 
+print(table(pc_CMR$PointNum, pc_CMR$Visit))
+
+# All 10 sites were surveyed twice
+all_sites <- 1:S
+all_visits <- 1:K
+
+complete_surveys <- expand.grid(
+  PointNum = all_sites,
+  Visit = all_visits
+) %>%
+  arrange(PointNum, Visit)
+
+print(complete_surveys)
+
+
+# Number of individuals detected
+nind <- nrow(pc_CMR)
+
+# detection variable
+y <- pc_CMR$first_detection
+
+# Create site assignment for each individual
+site <- pc_CMR$PointNum
+
+# Create visit assignment for each individual
+visit <- pc_CMR$Visit
+
+# Data Augmentation; M = augmented population size
+M <- nind + 200
+
+# Augment y
+# Detected individuals: 1-4 (their first detection interval)
+# Augmented individuals: 5 (never detected)
+y_aug <- c(y, rep(5, M - nind))
+
+# Augment site assignment
+# Detected individuals: known sites (2-10)
+# Augmented individuals: NA (unknown, to be estimated)
+site_aug <- c(site, rep(NA, M - nind))
+
+# Augment visit assignment
+# Detected individuals: known visits (1 or 2)
+# Augmented individuals: NA (unknown, to be estimated)
+visit_aug <- c(visit, rep(NA, M - nind))
+
+# ----------------------
+# Covariates
+# ----------------------
+
+# Convert Wind to numeric
+pc_CMR <- pc_CMR %>%
+  mutate(Wind = as.numeric(Wind.Beau.Code))
+
+# Get wind cov for every visit 
+survey_covariates <- pc_dat %>%
+  filter(Survey %in% c(2, 3, 4)) %>%
+  mutate(Visit = case_when(
+    Survey == 2 ~ 1,
+    Survey == 3 ~ 2,
+    Survey == 4 ~ 3
+  )) %>%
+  group_by(PointNum, Visit) %>%
+  summarise(
+    Wind = first(Wind.Beau.Code),
+    Survey = first(Survey),
+    Date = first(Date),
+    .groups = "drop"
+  ) %>%
+  arrange(PointNum, Visit)
+
+# Create Wind matrix: site x visit 
+Wind_matrix <- matrix(NA, nrow = S, ncol = K)
+
+for(i in 1:nrow(survey_covariates)) {
+  site_num <- survey_covariates$PointNum[i]
+  visit <- survey_covariates$Visit[i]
+  Wind_matrix[site_num, visit] <- survey_covariates$Wind[i]
+}
+
+# Add 1 to all Wind values, currently starts at 0
+Wind_matrix <- Wind_matrix + 1
+print(Wind_matrix)
+
+# Number of levels
+Wind_Lvls <- length(unique(as.vector(Wind_matrix)))
+
+
 # Rename SiteID to PointNum for matching
 colnames(site_covs)[1] <- "PointNum"
 
+# Detection covariates  
+VegDens <- as.vector(scale(site_covs$vegDens50m))
 
-# Remove rows with NA values (no birds detected)
-pc_dat <- na.omit(pc_dat)
+# Abundance covariates 
+Herb_COH <- as.vector(scale(site_covs$herb_COH))
+Woody_SPLIT <- as.vector(scale(site_covs$woody_SPLIT))
 
-# Add a unique id column based on Point Count number, NOBO number, and Day of Year
-pc_dat$UniqueID <- paste(pc_dat$PointNum, pc_dat$Survey, pc_dat$NOBOnum,  sep = "_")
+# ----------------------
+# Prepare prediction data
+# ----------------------
 
-# Subset the capture-mark data
-pc_CMR <- pc_dat[, c( "UniqueID" ,"PointNum", "Survey", "NOBOnum",
-                      "int1", "int2", "int3", "int4"),
-                 drop = FALSE]
-
-
-# Reorder pc_CMR by PointNum, Survey
-pc_CMR <- pc_CMR %>%
-  arrange(PointNum, Survey, NOBOnum)
-
-# Take a look
-head(pc_CMR)
-
-# Subset detection intervals
-y <- as.matrix(pc_CMR[,c("int1","int2","int3", "int4")])
-
-# AVERAGE CALL RATE?? - use this and Lutima for AV model gamma0
-
-# Number of time intervals
-J <- 4
-
-# Number of sites
-S <- 10
-
-# Number of individuals detected
-nind <- nrow(y)
-
-# Superpopulation
-print(nind)
-M <- nind + 100 # ensure that M is larger than number detected
-print(M)
-
-# Data Augmentation
-y <- rbind(y, matrix(0, nrow=(M-nind), ncol=4))
-
-# Number of "pseudo-groups" added
-nz <- M - nind
-
-# Make site (Point_Individual) into an integer
-site <- as.numeric(factor(pc_CMR$PointNum))
-
-# Add in NA for M
-site <- c(site, rep(NA, M-nind))
-
-# Take a look
-print(site)
-
-
-# Extract and scale site covariates for detection
-Wind <- pc_dat[, 'Wind.Beau.Code']
-Wind <- as.matrix(as.numeric(as.factor(Wind)))
-Wind_Lvls = nrow(unique(Wind))
-merged_df <- merge(site_covs, pc_CMR, by = "PointNum") # VegDens to stacked 
-VegDens <- merged_df[,c("vegDens50m")]
-VegDens <- scale(VegDens)
+# Scale prediction covariates 
+Herb_COH_pred <- as.numeric(scale(predict_covs[,'herb_COH']))
+Woody_SPLIT_pred <- as.numeric(scale(predict_covs[,'woody_SPLIT']))
 
 # Inspect
-head(Wind)
-head(VegDens)
+print(Herb_COH_pred)
+print(Woody_SPLIT_pred)
 
-# Format abundance covariates
-Herb_COH <- as.matrix(scale(site_covs[,'herb_COH'])) #  herb_ClmIdx
-Woody_SPLIT <- as.matrix(scale(site_covs[, 'woody_SPLIT']))#  woody_AggInx
+# Calculate area ratios
+A_sampled <- pi * (227^2) # ~Area of NOBO home range/scale covs were extracted at
+A_unsampled <- predict_covs$area_m2
+rho <- A_unsampled / A_sampled
 
-# Inspect
-head(Herb_COH)
-head(Woody_SPLIT)
+# Number of unsampled sites
+U <- nrow(predict_covs)
 
-# Bundle data for JAGs
-data <- list(J = J,
-             M = M,
-             S = S,
-             y = y,
-             Wind = Wind,
-             Wind_Lvls = Wind_Lvls,
-             VegDens = VegDens,
-             Herb_COH = Herb_COH,
-             Woody_SPLIT = Woody_SPLIT,
-             group = site
+# ------------------------------------------
+# Bundle all data for JAGS
+# ------------------------------------------
+data <- list(
+  # Sample size
+  M = M,
+  S = S,
+  K = K,
+  nind = nind,
+  # Individual-level data
+  y = y_aug,
+  site = site_aug,
+  visit = visit_aug,
+  # Survey-level covariates
+  Wind = Wind_matrix,    
+  Wind_Lvls = Wind_Lvls,
+  # Site-level covariates
+  VegDens = VegDens,      
+  Herb_COH = Herb_COH,      
+  Woody_SPLIT = Woody_SPLIT,
+  # Prediction
+  U = U,
+  Herb_COH_pred = Herb_COH_pred,
+  Woody_SPLIT_pred = Woody_SPLIT_pred,
+  rho = rho
+  
 )
 
 # Check structure 
@@ -181,62 +305,82 @@ str(data)
 # -------------------
 # MCMC Specifications
 # -------------------
-# n_iter <- 300000
-# n_burnin <- 100000
-# n_chains <- 3
-# n_thin <- 50
-# n_adapt <- 5000
+n_iter <- 300000
+n_burnin <- 100000
+n_chains <- 3
+n_thin <- 50
+n_adapt <- 5000
 
 # Test Settings
-n_iter <- 20000
-n_burnin <- 0
-n_chains <- 6
-n_thin <- 10
-n_adapt <- 5000
+# n_iter <- 10000
+# n_burnin <- 0
+# n_chains <- 6
+# n_thin <- 10
+# n_adapt <- 5000
 
 # Posterior samples
 n_post_samps = ((n_iter * n_chains) - n_burnin) / n_thin
 print(n_post_samps)
-
 
 # ----------------------
 # Model Specifications
 # ----------------------
 
 # Parameters monitored
-params <- c("lambda",
-            "lambda_pred",
-            "N",
-            "N_pred",
-            "N_tot",
-            "alpha0", 
-            "alpha1", 
-            "alpha2", 
-            "p",
-            "beta0", 
-            "beta1",
-            "beta2",
-            "psi",
-            'tau_sre',
-            "S_RE",
-            "tau_det",
-            "p_Bayes",
-            "sum_obs",
-            "sum_rep")
-
-
+params <- c(
+  "lambda",
+  "lambda_pred",
+  "N",
+  "N_pred",
+  "N_samp_tot",
+  "N_pred_tot",
+  "N_tot",
+  "samp_site_lambda_var",
+  "pred_site_lambda_var",
+  "samp_site_lambda_mean",
+  "pred_site_lambda_mean",
+  "samp_site_Nmean",
+  "pred_site_Nmean",
+  "alpha0", 
+  "alpha1", 
+  "alpha2", 
+  "p",
+  "beta0", 
+  "beta1",
+  "beta2",
+  "psi",
+  "sigma_sre",
+  "S_RE",
+  "tau_sre",
+  "p_Bayes",
+  "sum_obs",
+  "sum_rep"
+  
+)
 
 # Initial values
-inits  <- function() {
-  list (p0 = runif(1),
-        alpha1 = rnorm(Wind_Lvls, 0, 1),
-        alpha2 = rnorm(1, 0, 1),
-        beta0 = rnorm(1, 0, 1),
-        beta1 = rnorm(1, 0, 1),
-        beta2 = rnorm(1, 0, 1),
-        z = c( rep(1,nind), rep(0, (M-nind)))
-)}
+make_inits <- function() {
+  list(
+    # Detection parameters
+    p0 = runif(1),
+    alpha1 = rnorm(Wind_Lvls, 0, 1),
+    alpha2 = rnorm(1, 0, 1),
+    
+    # Abundance parameters
+    beta0 = rnorm(1, 0, 1),
+    beta1 = rnorm(1, 0, 1),
+    beta2 = rnorm(1, 0, 1),
+    
+    # Data augmentation variable
+    z = c(rep(1, nind), rbinom(M - nind, 1, 0.5)),
+    
+    # Site random effects
+    site_re = rnorm(S, 0, 1)
+  )
+}
 
+# Initial Values for each chain
+inits <- lapply(1:n_chains, function(x) make_inits())
 
 # -------------------------------------------------------
 # Model Statement
@@ -245,134 +389,157 @@ cat("
 model {
 
   # ---------------------------------
-  # Abundance Priors
+  # Abundance Priors 
   # ---------------------------------
-  beta0 ~ dnorm(0, 0.1) # Intercept
+  
+  # Intercept
+  beta0 ~ dnorm(0, 0.1)
+  
+  # Covariates
   beta1 ~ dnorm(0, 0.1) # Herbaceous cohesion index
   beta2 ~ dnorm(0, 0.1) # Woody splitting index
   
-  # # Site random effect
-  # tau_lam ~ dgamma(0.001, 0.001)
-  # for (s in 1:S) {
-  #    S_RE_lam[s] ~ dnorm(beta0, tau_lam)
-  # }
-
   # ---------------------------------
-  # Detection Priors
+  # Detection Priors 
   # ---------------------------------
-  p0 ~ dunif(0, 1)
-  alpha0 <- log(p0/(1-p0)) 
   
-  # Wind is a categorical covariate
-  for (w in 1:Wind_Lvls){
-  alpha1[w] ~ dnorm(0, 0.1)
+  # Baseline detection probability (per interval)
+  p0 ~ dunif(0, 1)
+  alpha0 <- log(p0 / (1 - p0))   # Logit scale
+  
+  # Wind effect - categorical
+  for(w in 1:Wind_Lvls) {
+    alpha1[w] ~ dnorm(0, 0.1)
   }
   
   # Vegetation Density
   alpha2 ~ dnorm(0, 0.1)
   
-  # Site-level random effect for pseudoreplication
-  tau_sre ~ dgamma(0.01, 0.01) 
+  # Site random effect for pseudoreplication
+  tau_sre ~ dgamma(0.01, 0.01)  
+  sigma_sre <- 1 / sqrt(tau_sre) 
   for(s in 1:S){  
-    S_RE[s] ~ dnorm(0, tau_det)  
+    S_RE[s] ~ dnorm(0, tau_sre)  
+  }
+  
+  # Uniform visit probabilities
+  for(k in 1:K) {
+    visit_probs[k] <- 1 / K
   }
   
   # ---------------------------------
-  # Individual Encounter/Presence Derived 
+  # Abundance 
   # ---------------------------------
-  psi <- sum(lambda[])/M
   
-  # -------------------------------------------
-  #
-  # Likelihood and Process Model 
-  #
-  # -------------------------------------------
+  for(s in 1:S) {
 
-  # ---------------------------------
-  # Abundance
-  # ---------------------------------
-
-  for(s in 1:S){
-    log(lambda[s]) <- beta0 + beta1 * Herb_COH[s, 1] +  beta2 * Woody_SPLIT[s, 1]
+    log(lambda[s]) <- beta0 + beta1 * Herb_COH[s] + beta2 * Woody_SPLIT[s]
     
-    # Individual site probability
+    # Probability of individual site membership
     probs[s] <- lambda[s] / sum(lambda[])
     
-    # Estimated abundance at site s
-    N[s] <- sum(group[] == s) 
-    
-  } # End S
-
-  # ---------------------------------
-  # Presence 
-  # ---------------------------------
-
-  for(i in 1:M){
+    # Estimated abundance 
+    N[s] <- sum(z[] * equals(site_mem[], s))
+  }
   
-    # Group == site membership
-    group[i] ~ dcat(probs[])  
-    
-    # Presence: Data augmentation variables
-    z[i] ~ dbern(psi)         
-    
+  # Inclusion probability
+  psi <- sum(lambda[]) / M
+  
   # ---------------------------------
-  # Detection
+  # Individual-Level Model
   # ---------------------------------
- 
-    for(j in 1:J){
-      logit(p[i,j]) <- alpha0 + alpha1[Wind[group[i], 1]] + alpha2 * VegDens[group[i],1] + S_RE[group[i]]
-      pz[i,j] <- p[i,j] * z[i]
-      y[i,j] ~ dbern(pz[i,j])
-      
-    } # End J
-  } # End M
+  
+  for(i in 1:M) {
+    
+    # Presence/absence 
+    z[i] ~ dbern(psi)
+    
+    # Site membership 
+    site_mem[i] ~ dcat(probs[])
+    
+    # Visit assignment, uniform across K visits
+    visit_mem[i] ~ dcat(visit_probs[])
+    
+    # Detection probability for individual
+    logit(p[i]) <- alpha0 + alpha1[Wind[site_mem[i], visit_mem[i]]] + alpha2 * VegDens[site_mem[i]] + S_RE[site_mem[i]]
+                   
+                    
+    # ---------------------------------
+    # Cell probabilities
+    # ---------------------------------
+
+    ## pi[i,1] = detected in interval 1
+    ## pi[i,2] = detected in interval 2 (not detected in 1)
+    ## pi[i,3] = detected in interval 3 (not detected in 1 or 2)
+    ## pi[i,4] = detected in interval 4 (not detected in 1, 2, or 3)
+    ## pi[i,5] = never detected
+    
+    pi[i,1] <- p[i] * z[i]
+    pi[i,2] <- (1 - p[i]) * p[i] * z[i]
+    pi[i,3] <- pow(1 - p[i], 2) * p[i] * z[i]
+    pi[i,4] <- pow(1 - p[i], 3) * p[i] * z[i]
+    pi[i,5] <- 1 - sum(pi[i, 1:4])
+    
+    # Likelihood: categorical distribution
+    y[i] ~ dcat(pi[i, ])
+  }
+  
+
   
   # -------------------------------------------
   # Predict Abundance at Unsampled Areas 
   # -------------------------------------------
-  
+
   for (u in 1:U) {
 
     log(lambda_pred[u]) <- log(rho[u]) + beta0 + beta1 * Herb_COH_pred[u] + beta2 * Woody_SPLIT_pred[u]
-    N_pred[u] ~ dpois(lambda_pred[u]) 
- 
-  }   
-  
+    N_pred[u] ~ dpois(lambda_pred[u])
+
+  }
+
   # -------------------------------------------
   # PPC and Bayesian P-value
   # -------------------------------------------
 
   for(i in 1:M){
-   for(j in 1:J){
-    # Generate replicated data
-    y_rep[i,j] ~ dbern(pz[i,j]) 
     
-    # Discrepancy for observed data
-    # discrepancy_obs[i,j] <- abs(y[i,j] - p[i,j]) 
-    discrepancy_obs[i,j] <- pow(y[i,j] - p[i,j], 2)
+    # Generate replicated data 
+    y_rep[i] ~ dcat(pi[i,])
     
-    # Discrepancy for replicated data  
-    # discrepancy_rep[i,j] <- abs(y_rep[i,j] - p[i,j])  
-    discrepancy_rep[i,j] <- pow(y_rep[i,j] - p[i,j], 2)
-
-    } # End J
-  } # End M
+    for(j in 1:5){
+      # Observed data indicator
+      y_obs_ind[i,j] <- equals(y[i], j)
+      
+      # Expected probability
+      exp_prob[i,j] <- pi[i,j]
+      
+      # Freeman-Tukey discrepancy for observed
+      ft_obs[i,j] <- pow(sqrt(y_obs_ind[i,j]) - sqrt(exp_prob[i,j]), 2)
+      
+      # Freeman-Tukey discrepancy for replicated
+      y_rep_ind[i,j] <- equals(y_rep[i], j)
+      ft_rep[i,j] <- pow(sqrt(y_rep_ind[i,j]) - sqrt(exp_prob[i,j]), 2)
+    }
     
-    # Sum of discrepancies for observed data
-    sum_obs <- sum(discrepancy_obs[,])  
+    # Sum across categories for this individual
+    discrepancy_obs[i] <- sum(ft_obs[i,])
+    discrepancy_rep[i] <- sum(ft_rep[i,])
+  }
   
-    # Sum of discrepancies for replicated data
-    sum_rep <- sum(discrepancy_rep[,])  
+  # Total discrepancy
+  sum_obs <- sum(discrepancy_obs[])
+  sum_rep <- sum(discrepancy_rep[])
   
-    # Proportion of times replicated > observed
-    p_Bayes <- step(sum_rep - sum_obs)
-
+  # Bayesian p-value
+  p_Bayes <- step(sum_rep - sum_obs)
+  
+  
   # ---------------------------------
-  # Derived Metrics
+  # Derived Quantities
   # ---------------------------------
- 
+  
   # Abundance
-  N_tot <- sum(z[])
+  N_samp_tot <- sum(z[])
   
   # Abundance at unsampled sites
   N_pred_tot <- sum(N_pred[])
@@ -380,7 +547,7 @@ model {
   # Total abundance
   N_tot <- sum(N[]) + sum(N_pred[])
   
-  # Overall site mean abundances
+  # Observed site mean abundances
   samp_site_Nmean <-  sum(N[]) / S
   pred_site_Nmean <- sum(N_pred[]) / U
   
@@ -392,61 +559,62 @@ model {
   samp_site_lambda_var <- sum( (lambda[] - samp_site_lambda_mean)^2 ) / (S - 1)
   pred_site_lambda_var <- sum( (lambda_pred[] - pred_site_lambda_mean)^2 ) / (U - 1)
 
-  
 }
-
-", fill=TRUE, file = "./jags_models/Model_PC_MCR.txt")
+", fill = TRUE, file = "./jags_models/Model_TOD_MCR.txt")
 # ------------End Model-------------
 
+
+# -------------------------------------------------------
 # Fit Model
+# -------------------------------------------------------
+
 fm1 <- jags(data = data, 
-             parameters.to.save = params,
-             inits = inits, 
-             model.file = "./jags_models/Model_PC_MCR.txt",
-             n.iter = n_iter,
-             n.burnin = n_burnin,
-             n.chains = n_chains, 
-             n.thin = n_thin,
-             n.adapt = n_adapt,
-             parallel = TRUE,
-             n.cores = workers,
-             verbose = TRUE,
-             DIC = FALSE
+            parameters.to.save = params,
+            inits = inits, 
+            model.file = "./jags_models/Model_TOD_MCR.txt",
+            n.iter = n_iter,
+            n.burnin = n_burnin,
+            n.chains = n_chains, 
+            n.thin = n_thin,
+            n.adapt = n_adapt,
+            parallel = TRUE,
+            n.cores = workers,
+            verbose = TRUE,
+            DIC = FALSE
 )
 
 # -------------------------------------------------------
 # Check Convergence
 # -------------------------------------------------------
 
-
 # Trace plots
 MCMCvis::MCMCtrace(fm1, 
-                   params = c("N_tot",
-                              "N_samp_tot",
-                              "N_pred_tot",
-                              "beta0", 
-                              "beta1",
-                              "beta2",
-                              "alpha0", 
-                              "alpha1", 
-                              "alpha2", 
-                              'psi',
-                              'tau_sre',
-                              "S_RE",
-                              "samp_site_mu_var",
-                              "pred_site_mu_var",
-                              "samp_site_mu_mean",
-                              "pred_site_mu_mean",
-                              "samp_site_Nmean",
-                              "pred_site_Nmean",
-                              "lambda",
-                              "lambda_pred",
-                              "N",
-                              "N_pred",
-
+                   params = c(
+                     "N_tot",
+                     "N_samp_tot",
+                     "N_pred_tot",
+                     "beta0", 
+                     "beta1",
+                     "beta2",
+                     "alpha0", 
+                     "alpha1", 
+                     "alpha2", 
+                     'psi',
+                     "sigma_sre",
+                     "S_RE",
+                     "samp_site_lambda_var",
+                     "pred_site_lambda_var",
+                     "samp_site_lambda_mean",
+                     "pred_site_lambda_mean",
+                     "samp_site_Nmean",
+                     "pred_site_Nmean",
+                     "lambda",
+                     "lambda_pred",
+                     "N",
+                     "N_pred"
                    ),
                    pdf = T,
-                   filename = "TracePlots_PC_MCR.pdf",
+                   filename = "TracePlots_PC_TOD.pdf",
                    wd = "./Figures"
 )
 
@@ -455,9 +623,8 @@ check_rhat(fm1$Rhat, threshold = 1.1)
 
 
 # Save model
-saveRDS(fm1, "./Data/Model_Data/Fit_Model_PC_MCR.rds")
+# saveRDS(fm1, "./Data/Model_Data/Fit_Model_PC_MCR.rds")
 
- 
 # -------------------------------------------------------
 # Posterior Predictive Checks
 # -------------------------------------------------------
@@ -494,14 +661,11 @@ y_PPC_Dens <- ggplot(fit_y_data) +
   theme_minimal() +
   theme(legend.title = element_blank()) +
   theme(legend.position = "none") + 
-  annotate("text", x = 100, y = 0.03, label = paste0("Bayes p-value = ", mn_bpy), hjust = 0) 
+  annotate("text", x = 10, y = 0.05, label = paste0("Bayes p-value = ", mn_bpy), hjust = 0) 
 
 # View
 print(y_PPC_Dens)
 
-# Export                
-ggsave(plot = y_PPC_Dens, "./Figures/PPC_BP_PC_MCR.jpeg", width = 8, height = 5, dpi = 300)
-dev.off()
 
 # -------------------------------------------------------
 #
@@ -509,7 +673,7 @@ dev.off()
 #
 # -------------------------------------------------------
 
-# Combine chains for posterior inference
+# Combine chains
 combined_chains <- as.mcmc(do.call(rbind, fm1$samples))
 
 # -------------------------------------------------------
@@ -523,11 +687,15 @@ beta2_samples <- combined_chains[, "beta2"]
 
 # Compute 95% CI for each beta
 beta_df <- data.frame(
-  value = c(beta0_samples, beta1_samples, beta2_samples ),
-  parameter = rep(c("beta0", "beta1", "beta2" ), each = length(beta0_samples))
+  value = c(beta0_samples, 
+            beta1_samples,
+            beta2_samples),  
+  parameter = rep(c("beta0", 
+                    "beta1", 
+                    "beta2"), each = length(beta0_samples))
 ) %>%
   group_by(parameter) %>%
-  filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  # Keep only values within 95% CI
+  filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  
 
 # Add model
 beta_df$Model <- model_name
@@ -541,12 +709,14 @@ beta_summary <- beta_df %>%
     UCI = max(value),
     .groups = "drop"  
   )
+
 # view
 print(beta_summary)
 
 # Export beta dataframe and summary
 saveRDS(beta_df, "./Data/Model_Data/Beta_df_PC_MCR.rds")
 write.csv(beta_summary, "./Data/Model_Data/Beta_Summary_PC_MCR.csv")
+
 
 # -------------------------------------------------------
 # Alpha Estimates
@@ -558,13 +728,11 @@ alpha1_samples <- combined_chains[, grepl("^alpha1\\[", colnames(combined_chains
 alpha1_samples_1 <- alpha1_samples[,1]
 alpha1_samples_2 <- alpha1_samples[,2]
 alpha1_samples_3 <- alpha1_samples[,3] 
-alpha1_samples_4 <- alpha1_samples[,4]
-alpha1_samples_5 <- alpha1_samples[,5]
 alpha2_samples <- combined_chains[, "alpha2"]
 
 
 # Extract site random effect
-sRE_cols  <- grep("^S_RE_det\\[", colnames(combined_chains), value = TRUE)
+sRE_cols  <- grep("^S_RE\\[", colnames(combined_chains), value = TRUE)
 sRE_samples <- combined_chains[, sRE_cols]
 sRE_samples <- rowMeans(sRE_samples) # Row means
 
@@ -576,18 +744,14 @@ alpha_df <- data.frame(
             alpha1_samples_1, 
             alpha1_samples_2,
             alpha1_samples_3,
-            alpha1_samples_4,
-            alpha1_samples_5,
             alpha2_samples,
             sRE_samples),  
   parameter = rep(c("alpha0", 
                     "alpha1_1", 
                     'alpha1_2',
                     'alpha1_3',
-                    'alpha1_4',
-                    'alpha1_5',
                     "alpha2",
-                    "sRE_det"), each = length(alpha0_samples))
+                    "S_RE"), each = length(alpha0_samples))
 ) %>%
   group_by(parameter) %>%
   filter(value >= quantile(value, 0.025) & value <= quantile(value, 0.975))  
@@ -610,7 +774,6 @@ print(alpha_summary)
 
 # Export alpha summary
 saveRDS(alpha_summary, "./Data/Model_Data/Alpha_Summary_PC_MCR.rds")
-
 
 # -------------------------------------------------------
 # Detection probability 
@@ -638,72 +801,68 @@ p_summary$Parameter <- "detection"
 # view
 print(p_summary)
 
+
 # -------------------------------------------------------
-#   Estimating Abundance 
+#   Estimating Abundance --- set up to extrapolate from surveyed sites N estimate
 # -------------------------------------------------------
 
-# Extract abundance at surveyed sites
-N_survyed_cols <- grep("^N\\[", colnames(combined_chains), value = TRUE)
-N_survyed_samples <- combined_chains[, N_survyed_cols, drop = FALSE] 
-colnames(N_survyed_samples) <- paste0("S", 1:S)
-
-# Extract abundance at unsurveyed sites
-N_unsurvyed_cols <- grep("^N_pred\\[", colnames(combined_chains), value = TRUE)
-N_unsurvyed_samples <- combined_chains[, N_unsurvyed_cols, drop = FALSE] 
-colnames(N_unsurvyed_samples) <- paste0("U", 1:U)
-min(N_unsurvyed_samples)
-
-# Combine into one dataframe
-N_samples_df <- cbind(N_survyed_samples, N_unsurvyed_samples)
-str(N_samples_df)
-
-# Site Summary
-site_summary <- data.frame(
-  Site = colnames(N_samples_df),
-  Mean = apply(N_samples_df, 2, mean),
-  LCL  = apply(N_samples_df, 2, quantile, 0.025),
-  UCL  = apply(N_samples_df, 2, quantile, 0.975)
-)
-
-print(site_summary)
-
-# Total Summary 
-total_N_samples <- combined_chains[,'N_tot']
-total_summary <- data.frame(
-  Mean = mean(total_N_samples),
-  LCI  = quantile(total_N_samples, 0.025),
-  UCI  = quantile(total_N_samples, 0.975),
-  Model = model_name,
-  Parameter = "Abundance"
-)
-
-print(total_summary)
-
-# Density hectare
-dens_summary_ha <- total_summary[,1:3] / 1098
-dens_summary_ha$Model <- model_name
-dens_summary_ha$Parameter <- "Density (N/ha)"
-dens_summary_ha
-
-# Density Acre
-dens_summary_ac <- total_summary[,1:3] / 2710
-dens_summary_ac$Model <- model_name
-dens_summary_ac$Parameter <- "Density (N/ac)"
-dens_summary_ac
-
-# Combine with detection and vocal rate
-param_summary <- rbind(param_summary, total_summary, dens_summary_ha, dens_summary_ac)
-print(param_summary)
-
-# Trim total_abundance_samples to 95% CI
-total_N_samples_95CI <- total_N_samples[
-  total_N_samples >= quantile(total_N_samples, 0.025) &
-    total_N_samples <= quantile(total_N_samples, 0.975)
-]
-
-  
-# Export alpha summary
-saveRDS(abund_95df, "./Data/Model_Data/Abund_df_PC_MCR.rds")
-saveRDS(param_summary, "./Data/Model_Data/Param_Summary_PC_MCR.rds")
-
-# ------------ End Script -----------------
+# # Extract abundance posterior
+# Ntot_samples <- combined_chains[ ,"N_samp_tot"]
+# 
+# # Ntotal is the abundance based on 10 point counts at a radius of 200m.
+# # To correct for density, Ntotal needs to be divided by 10 * area surveyed
+# area <- pi * (200^2) / 10000  # Area in acres
+# dens_samples <- Ntot_samples / (area * 10)
+# 
+# # Create data frame for density
+# dens_df <- data.frame(Model = rep(model_name, length(dens_samples)), Density = dens_samples)
+# colnames(dens_df)[2] <- "Density"
+# head(dens_df)
+# 
+# # Calculate the mean and 95% Credible Interval
+# dens_summary <- dens_df %>%
+#   group_by(Model) %>%
+#   summarise(
+#     Mean = mean(Density),
+#     Lower_CI = quantile(Density, 0.025),
+#     Upper_CI = quantile(Density, 0.975)
+#   )
+# 
+# # Subset the data within the 95% credible interval
+# dens_df <- dens_df[dens_df$Density >= dens_summary$Lower_CI & dens_df$Density <= dens_summary$Upper_CI, ]
+# 
+# # Getting total abundance
+# abund_summary <- dens_summary
+# abund_summary[,2:4] <- abund_summary[,2:4] * 1096
+# 
+# # Plot Abundance - Violin
+# abund_df <- dens_df
+# abund_df$Density <- abund_df$Density * 1096
+# 
+# ggplot(abund_df, aes(x = Model, y = Density, fill = Model)) + 
+#   geom_violin(trim = FALSE, alpha = 0.6, adjust = 5) +   
+#   labs(x = "Model", y = "Total Abundance ") +
+#   scale_fill_manual(values = c("PC CMR" = "orange")) +   
+#   scale_y_continuous(limits = c(0, 1000),
+#                      breaks = seq(0, 1000, by = 100),
+#                      labels = scales::comma) +
+#   theme_minimal() +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),  
+#         axis.title.x = element_text(face = "bold", margin = margin(t = 10)),  
+#         axis.title.y = element_text(face = "bold", margin = margin(r = 10)),
+#         panel.grid = element_blank(),
+#         legend.position = "none")  
+# 
+# 
+# 
+# # Total abundance
+# abund_summary
+# 
+# # Clear
+# dev.off()
+# 
+# # Export Dataframes
+# saveRDS(dens_df, "./Data/Model_Data/Density_df_PC-CMR.rds")
+# saveRDS(dens_summary, "./Data/Model_Data/Density_summary_PC-CMR.rds")
+# saveRDS(abund_df, "./Data/Model_Data/Abundance_df_PC-CMR.rds")
+# saveRDS(abund_summary, "./Data/Model_Data/Abundance_summary_PC-CMR.rds")
