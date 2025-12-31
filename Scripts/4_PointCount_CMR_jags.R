@@ -560,7 +560,7 @@ model {
   pred_site_lambda_var <- sum( (lambda_pred[] - pred_site_lambda_mean)^2 ) / (U - 1)
 
 }
-", fill = TRUE, file = "./jags_models/Model_TOD_MCR.txt")
+", fill = TRUE, file = "./jags_models/Model_PC_MCR.txt")
 # ------------End Model-------------
 
 
@@ -571,7 +571,7 @@ model {
 fm1 <- jags(data = data, 
             parameters.to.save = params,
             inits = inits, 
-            model.file = "./jags_models/Model_TOD_MCR.txt",
+            model.file = "./jags_models/Model_PC_MCR.txt",
             n.iter = n_iter,
             n.burnin = n_burnin,
             n.chains = n_chains, 
@@ -614,7 +614,7 @@ MCMCvis::MCMCtrace(fm1,
                      "N_pred"
                    ),
                    pdf = T,
-                   filename = "TracePlots_PC_TOD.pdf",
+                   filename = "TracePlots_PC_MCR.pdf",
                    wd = "./Figures"
 )
 
