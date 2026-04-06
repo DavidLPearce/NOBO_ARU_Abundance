@@ -1,6 +1,8 @@
 # Author: David L. Pearce
 # Description:
-#             TBD
+#             Estimating northern bobwhite abundance from point count data using a 
+#              data augmentation capture-mark (mentally)-recapture model.
+
 
 # This code extends code from the following sources: 
 #     1. Kery, M. and Royle, J. A. (2020). Applied hierarchical modeling 
@@ -149,7 +151,7 @@ site_list <- sort(unique(pc_CMR$PointNum))
 # Check visits at each site 
 print(table(pc_CMR$PointNum, pc_CMR$Visit))
 
-# All 10 sites were surveyed twice
+# All 10 sites were surveyed K times
 all_sites <- 1:S
 all_visits <- 1:K
 
@@ -183,7 +185,7 @@ M <- nind + 200
 y_aug <- c(y, rep(5, M - nind))
 
 # Augment site assignment
-# Detected individuals: known sites (2-10)
+# Detected individuals: known sites
 # Augmented individuals: NA (unknown, to be estimated)
 site_aug <- c(site, rep(NA, M - nind))
 
@@ -233,7 +235,6 @@ print(Wind_matrix)
 # Number of levels
 Wind_Lvls <- length(unique(as.vector(Wind_matrix)))
 
-
 # Rename SiteID to PointNum for matching
 colnames(site_covs)[1] <- "PointNum"
 
@@ -241,28 +242,41 @@ colnames(site_covs)[1] <- "PointNum"
 VegDens <- as.vector(scale(site_covs$vegDens50m))
 
 # Abundance covariates 
-Herb_COH <- as.vector(scale(site_covs$herb_COH))
-Woody_SPLIT <- as.vector(scale(site_covs$woody_SPLIT))
+Herb_COH <- scale(site_covs$herb_COH)
+Woody_SPLIT <-  scale(site_covs$woody_SPLIT)
+
+# Extract scaling parameters to scale prediction sites the same
+herb_coh_center <- attr(Herb_COH, "scaled:center")
+herb_coh_scale <- attr(Herb_COH, "scaled:scale")
+woody_split_center <- attr(Woody_SPLIT, "scaled:center")
+woody_split_scale <- attr(Woody_SPLIT, "scaled:scale")
+
+# Convert to vector
+Herb_COH <- as.vector(Herb_COH)
+Woody_SPLIT <- as.vector(Woody_SPLIT)
 
 # ----------------------
 # Prepare prediction data
 # ----------------------
 
-# Scale prediction covariates 
-Herb_COH_pred <- as.numeric(scale(predict_covs[,'herb_COH']))
-Woody_SPLIT_pred <- as.numeric(scale(predict_covs[,'woody_SPLIT']))
+# Scale prediction covariates at the same scale as survey covariates
+Herb_COH_pred <- (predict_covs$herb_COH - herb_coh_center) / herb_coh_scale
+Woody_SPLIT_pred <- (predict_covs$woody_SPLIT - woody_split_center) / woody_split_scale
 
 # Inspect
 print(Herb_COH_pred)
 print(Woody_SPLIT_pred)
 
 # Calculate area ratios
-A_sampled <- pi * (227^2) # ~Area of NOBO home range/scale covs were extracted at
+A_sampled <- pi * (227^2) # Area of NOBO home range/scale covs were extracted at (227 m)
 A_unsampled <- predict_covs$area_m2
 rho <- A_unsampled / A_sampled
 
 # Number of unsampled sites
 U <- nrow(predict_covs)
+
+# Set superpopulation
+M_pred = M * 3 
 
 # ------------------------------------------
 # Bundle all data for JAGS
@@ -285,6 +299,7 @@ data <- list(
   Herb_COH = Herb_COH,      
   Woody_SPLIT = Woody_SPLIT,
   # Prediction
+  M_pred = M_pred,
   U = U,
   Herb_COH_pred = Herb_COH_pred,
   Woody_SPLIT_pred = Woody_SPLIT_pred,
@@ -305,11 +320,11 @@ str(data)
 # -------------------
 # MCMC Specifications
 # -------------------
-n_iter <- 300000
+n_iter <- 250000
 n_burnin <- 100000
 n_chains <- 3
-n_thin <- 50
-n_adapt <- 5000
+n_thin <- 25
+n_adapt <- 10000
 
 # Test Settings
 # n_iter <- 10000
@@ -328,34 +343,32 @@ print(n_post_samps)
 
 # Parameters monitored
 params <- c(
-  "lambda",
-  "lambda_pred",
-  "N",
-  "N_pred",
-  "N_samp_tot",
-  "N_pred_tot",
-  "N_tot",
-  "samp_site_lambda_var",
-  "pred_site_lambda_var",
-  "samp_site_lambda_mean",
-  "pred_site_lambda_mean",
-  "samp_site_Nmean",
-  "pred_site_Nmean",
-  "alpha0", 
-  "alpha1", 
-  "alpha2", 
-  "p",
-  "beta0", 
-  "beta1",
-  "beta2",
-  "psi",
-  "sigma_sre",
-  "S_RE",
-  "tau_sre",
-  "p_Bayes",
-  "sum_obs",
-  "sum_rep"
-  
+            "lambda",
+            "lambda_pred",
+            "N",
+            "N_pred",
+            "N_samp_tot",
+            "N_pred_tot",
+            "N_tot",
+            "samp_site_lambda_var",
+            "pred_site_lambda_var",
+            "samp_site_lambda_mean",
+            "pred_site_lambda_mean",
+            "samp_site_Nmean",
+            "pred_site_Nmean",
+            "alpha0", 
+            "alpha1", 
+            "alpha2", 
+            "p",
+            "beta0", 
+            "beta1",
+            "beta2",
+            "psi",
+            "psi_pred",
+            "S_RE",
+            "p_Bayes",
+            "sum_obs",
+            "sum_rep"
 )
 
 # Initial values
@@ -371,11 +384,15 @@ make_inits <- function() {
     beta1 = rnorm(1, 0, 1),
     beta2 = rnorm(1, 0, 1),
     
-    # Data augmentation variable
+    # Data augmentation variables
     z = c(rep(1, nind), rbinom(M - nind, 1, 0.5)),
     
     # Site random effects
-    site_re = rnorm(S, 0, 1)
+    S_RE = rnorm(S, 0, 1),
+    
+    # Prediction
+    z_pred = rbinom(M_pred, 1, 0.5),
+    site_mem_pred = sample(1:U, M_pred, replace = TRUE)
   )
 }
 
@@ -393,11 +410,11 @@ model {
   # ---------------------------------
   
   # Intercept
-  beta0 ~ dnorm(0, 0.1)
+  beta0 ~ dnorm(0, 1)
   
   # Covariates
-  beta1 ~ dnorm(0, 0.1) # Herbaceous cohesion index
-  beta2 ~ dnorm(0, 0.1) # Woody splitting index
+  beta1 ~ dnorm(0, 1) # Herbaceous cohesion index
+  beta2 ~ dnorm(0, 1) # Woody splitting index
   
   # ---------------------------------
   # Detection Priors 
@@ -409,17 +426,15 @@ model {
   
   # Wind effect - categorical
   for(w in 1:Wind_Lvls) {
-    alpha1[w] ~ dnorm(0, 0.1)
+    alpha1[w] ~ dnorm(0, 1)
   }
   
   # Vegetation Density
-  alpha2 ~ dnorm(0, 0.1)
+  alpha2 ~ dnorm(0, 1)
   
-  # Site random effect for pseudoreplication
-  tau_sre ~ dgamma(0.01, 0.01)  
-  sigma_sre <- 1 / sqrt(tau_sre) 
+  # Site random effect for pseudoreplication (detection model)
   for(s in 1:S){  
-    S_RE[s] ~ dnorm(0, tau_sre)  
+    S_RE[s] ~ dnorm(0, 1)  
   }
   
   # Uniform visit probabilities
@@ -432,13 +447,14 @@ model {
   # ---------------------------------
   
   for(s in 1:S) {
-
+  
+    # Calculate lambda
     log(lambda[s]) <- beta0 + beta1 * Herb_COH[s] + beta2 * Woody_SPLIT[s]
     
     # Probability of individual site membership
     probs[s] <- lambda[s] / sum(lambda[])
     
-    # Estimated abundance 
+    # Estimated abundance
     N[s] <- sum(z[] * equals(site_mem[], s))
   }
   
@@ -468,35 +484,47 @@ model {
     # Cell probabilities
     # ---------------------------------
 
-    ## pi[i,1] = detected in interval 1
-    ## pi[i,2] = detected in interval 2 (not detected in 1)
-    ## pi[i,3] = detected in interval 3 (not detected in 1 or 2)
-    ## pi[i,4] = detected in interval 4 (not detected in 1, 2, or 3)
-    ## pi[i,5] = never detected
-    
-    pi[i,1] <- p[i] * z[i]
-    pi[i,2] <- (1 - p[i]) * p[i] * z[i]
-    pi[i,3] <- pow(1 - p[i], 2) * p[i] * z[i]
-    pi[i,4] <- pow(1 - p[i], 3) * p[i] * z[i]
-    pi[i,5] <- 1 - sum(pi[i, 1:4])
+    pi[i,1] <- p[i] * z[i]                    # detected in interval 1
+    pi[i,2] <- (1 - p[i]) * p[i] * z[i]       # detected in interval 2 (not detected in 1)
+    pi[i,3] <- pow(1 - p[i], 2) * p[i] * z[i] # detected in interval 3 (not detected in 1 or 2)
+    pi[i,4] <- pow(1 - p[i], 3) * p[i] * z[i] # detected in interval 4 (not detected in 1, 2, or 3)
+    pi[i,5] <- 1 - sum(pi[i, 1:4])            # never detected
     
     # Likelihood: categorical distribution
     y[i] ~ dcat(pi[i, ])
   }
-  
 
-  
   # -------------------------------------------
   # Predict Abundance at Unsampled Areas 
   # -------------------------------------------
-
+  
+  
   for (u in 1:U) {
-
+  
+    # Calculate lambda_pred
     log(lambda_pred[u]) <- log(rho[u]) + beta0 + beta1 * Herb_COH_pred[u] + beta2 * Woody_SPLIT_pred[u]
-    N_pred[u] ~ dpois(lambda_pred[u])
+  
+    # Probability of individual site membership
+    probs_pred[u] <- lambda_pred[u] / sum(lambda_pred[])
+
+    # Estimated abundance
+    N_pred[u] <- sum(z_pred[] * equals(site_mem_pred[], u))
+  }
+  
+  # Inclusion probability (capped to prevent invalid dbern)
+  psi_pred <- min(sum(lambda_pred[]) / M_pred, 0.999)
+
+  # Indiviudal-level predictions
+  for(j in 1:M_pred) {
+
+    # Presence/absence
+    z_pred[j] ~ dbern(psi_pred)
+
+    # Site membership
+    site_mem_pred[j] ~ dcat(probs_pred[])
 
   }
-
+ 
   # -------------------------------------------
   # PPC and Bayesian P-value
   # -------------------------------------------
@@ -556,8 +584,8 @@ model {
   pred_site_lambda_mean <- sum(lambda_pred[]) / U
   
   # Variance
-  samp_site_lambda_var <- sum( (lambda[] - samp_site_lambda_mean)^2 ) / (S - 1)
-  pred_site_lambda_var <- sum( (lambda_pred[] - pred_site_lambda_mean)^2 ) / (U - 1)
+  samp_site_lambda_var <- sum((lambda[] - samp_site_lambda_mean)^2 ) / (S - 1)
+  pred_site_lambda_var <- sum((lambda_pred[] - pred_site_lambda_mean)^2 ) / (U - 1)
 
 }
 ", fill = TRUE, file = "./jags_models/Model_PC_MCR.txt")
@@ -600,7 +628,7 @@ MCMCvis::MCMCtrace(fm1,
                      "alpha1", 
                      "alpha2", 
                      'psi',
-                     "sigma_sre",
+                     "psi_pred",
                      "S_RE",
                      "samp_site_lambda_var",
                      "pred_site_lambda_var",
@@ -613,7 +641,7 @@ MCMCvis::MCMCtrace(fm1,
                      "N",
                      "N_pred"
                    ),
-                   pdf = T,
+                   pdf = TRUE,
                    filename = "TracePlots_PC_MCR.pdf",
                    wd = "./Figures"
 )
@@ -660,11 +688,19 @@ y_PPC_Dens <- ggplot(fit_y_data) +
        y = "Density") +
   theme_minimal() +
   theme(legend.title = element_blank()) +
-  theme(legend.position = "none") + 
+  theme(legend.position = "top") + 
   annotate("text", x = 10, y = 0.05, label = paste0("Bayes p-value = ", mn_bpy), hjust = 0) 
 
 # View
 print(y_PPC_Dens)
+
+# Save
+ggsave("Figures/PPC_PC_MCR.jpg",
+       y_PPC_Dens,
+       width = 10, 
+       height = 8,
+       dpi = 300
+)
 
 
 # -------------------------------------------------------
