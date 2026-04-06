@@ -18,7 +18,7 @@ mean <- 0
 # sigma <- 0.75
 # tau <- 1 / sigma^2
 
-tau <- 0.2
+tau <- 1
 sigma <- 1 / sqrt(tau) # exp(sigma)
 
 # precision <- 2
@@ -137,7 +137,7 @@ ggdistribution(
 
 # Parameters
 shape <- 1
-rate  <- 0.1
+rate  <- .1
 
 # Plot
 ggdistribution(
@@ -153,4 +153,36 @@ ggdistribution(
                  "shape = ", shape, "\n",
                  "rate = ", rate
                  )) +
+  theme_classic()
+
+
+# -----------------------------
+# Beta Distribution
+# -----------------------------
+
+# Parameters
+alpha <- 3
+beta  <- 6
+
+# Derived quantities
+mean_beta <- alpha / (alpha + beta)
+var_beta  <- (alpha * beta) / ((alpha + beta)^2 * (alpha + beta + 1))
+sd_beta   <- sqrt(var_beta)
+
+ 
+# Plot
+ggdistribution(
+  dbeta,
+  x = seq(0, 1, length.out = 10000),
+  shape1 = alpha,
+  shape2 = beta,
+  xlab = "Value",
+  ylab = "Density",
+  fill = "black"
+) +
+  ggtitle(paste0("Beta Distribution\n",
+                 "alpha = ", alpha, "\n",
+                 "beta = ", beta, "\n",
+                 "mean = ", round(mean_beta, 3), "\n",
+                 "sd = ", round(sd_beta, 3))) +
   theme_classic()

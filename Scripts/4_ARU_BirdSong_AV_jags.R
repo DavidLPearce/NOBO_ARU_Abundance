@@ -1,6 +1,7 @@
 # Author: David L. Pearce
 # Description:
-#             TBD
+#             Estimating northern bobwhite abundance from BirdNet classified acoustic 
+#             recorder data processed using a false positive N-mixture model framework.
 
 # This code extends code from the following sources: 
 #     1. Chambert, T., Waddle, J. H., Miller, D. A., Walls, S. C., 
@@ -387,15 +388,18 @@ params <- c(# Abundance
 # Initial Values 
 make_inits <- function() {
   list(
+    
     # Abundance
     N      = rep(1, S),
     beta0  = rnorm(1, 0, 1),
     beta1  = rnorm(1, 0, 1),
     beta2  = rnorm(1, 0, 1),
+    
     # Detection
     alpha1 = runif(1, 0, 1), 
     alpha2 = rnorm(1, 0, 1),
     alpha3 = rnorm(1, 0, 1),
+    
     # Vocalization
     gamma0 = runif(1, log(6), log(15)),
     omega  = runif(1, 0, 0.25)
@@ -726,7 +730,7 @@ y_PPC_Dens <- ggplot(fit_y_data) +
                    y = "Density") +
               theme_minimal() +
               theme(legend.title = element_blank()) +
-              theme(legend.position = "none") + 
+              theme(legend.position = "top") + 
               annotate("text", x = 40, y = 0.13, label = paste0("Bayes p-value = ", mn_bpy), hjust = 0)
 
 # v
@@ -743,12 +747,20 @@ v_PPC_Dens <- ggplot(fit_v_data) +
               annotate("text", x = 40, y = 0.06, label = paste0("Bayes p-value = ", mn_bpv), hjust = 0)
 
 # Multipanel figure
-grid.arrange(y_PPC_Dens, v_PPC_Dens, nrow = 2)
+PPC_plot <- grid.arrange(y_PPC_Dens, v_PPC_Dens, nrow = 2)
+PPC_plot
 
-# Save to file
-jpeg("Figures/PPC_ARU_Bsong.jpg", width = 10, height = 8, units = "in", res = 300)
-grid.arrange(y_PPC_Dens, v_PPC_Dens, nrow = 2)
-dev.off()
+# Save
+ggsave("Figures/PPC_ARU_Bsong.jpg",
+       PPC_plot,
+       width = 10, 
+       height = 8,
+       dpi = 300
+)
+
+# Rhat
+check_rhat(fm1$Rhat, threshold = 1.1)  # ---------- DELETE
+
 
 # -------------------------------------------------------
 #
