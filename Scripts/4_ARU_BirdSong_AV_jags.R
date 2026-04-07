@@ -758,10 +758,6 @@ ggsave("Figures/PPC_ARU_Bsong.jpg",
        dpi = 300
 )
 
-# Rhat
-check_rhat(fm1$Rhat, threshold = 1.1)  # ---------- DELETE
-
-
 # -------------------------------------------------------
 #
 #                 Posterior Estimates  
